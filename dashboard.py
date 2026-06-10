@@ -24,6 +24,7 @@ from logging_setup import configure_logging
 from stats_tracker import best_posting_hours, latest_video_stats, read_stats_history, refresh_youtube_stats_history
 from tracker import update_tracker
 from youtube_upload import get_youtube_service, read_upload_records
+from generate_metadata import read_metadata
 from googleapiclient.errors import HttpError
 
 logger = logging.getLogger(__name__)
@@ -1600,6 +1601,7 @@ def build_queue_rows() -> list[dict[str, str]]:
     """Build queue rows from upload records and pending clips."""
     latest_by_id = {row.get("youtube_video_id", ""): row for row in latest_video_stats()}
     privacy_overrides = read_privacy_overrides()
+    metadata_by_filename = read_metadata()
     records = list(read_upload_records())
     rows: list[dict[str, str]] = []
     seen_clips = set()
@@ -1624,11 +1626,12 @@ def build_queue_rows() -> list[dict[str, str]]:
     for clip_path in list_clip_files():
         if clip_path.name in seen_clips:
             continue
+        metadata = metadata_by_filename.get(clip_path.name)
         rows.append(
             {
                 "clip_filename": clip_path.name,
                 "youtube_video_id": "",
-                "title": "",
+                "title": metadata.title if metadata else "",
                 "scheduled_publish_time": "",
                 "display_time": "Not scheduled",
                 "status": "waiting",

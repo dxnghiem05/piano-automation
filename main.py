@@ -52,8 +52,9 @@ def main() -> None:
     generated_clips = generate_clips_for_videos(videos)
 
     clip_paths_to_consider = sorted({clip.clip_path for clip in generated_clips} | set(config.CLIPS_DIR.glob("clip_*.mp4")))
-    not_attempted = [] if args.clip_only else filter_not_attempted(clip_paths_to_consider)[: config.MAX_UPLOADS_PER_RUN]
-    metadata_targets = sorted({clip.clip_path for clip in generated_clips}) if args.clip_only else not_attempted
+    pending_clip_paths = filter_not_attempted(clip_paths_to_consider)
+    not_attempted = [] if args.clip_only else pending_clip_paths[: config.MAX_UPLOADS_PER_RUN]
+    metadata_targets = sorted({clip.clip_path for clip in generated_clips}) if args.clip_only else pending_clip_paths
     metadata = generate_metadata_for_clips(metadata_targets)
     metadata_by_filename: dict[str, ClipMetadata] = {record.filename: record for record in metadata}
     schedule_times = generate_schedule(len(not_attempted))
