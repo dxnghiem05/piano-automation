@@ -117,6 +117,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.handle_privacy_update()
             return
 
+        if parsed.path == "/tiktok-schedule":
+            self.handle_tiktok_schedule()
+            return
+
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
     def handle_upload(self) -> None:
@@ -215,6 +219,27 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
 
         self.redirect(f"/queue#{row_anchor}" if row_anchor.startswith("queue-") else "/queue")
+
+    def handle_tiktok_schedule(self) -> None:
+        """Create local TikTok schedule rows for one stats day."""
+        content_length = int(self.headers.get("Content-Length", "0"))
+        raw_body = self.rfile.read(content_length).decode("utf-8")
+        form = parse_qs(raw_body)
+        stats_date = (form.get("stats_date", [""])[0] or "").strip()
+
+        if stats_date not in stats_history_dates():
+            self.send_error(HTTPStatus.BAD_REQUEST, "Unknown stats date")
+            return
+
+        created = create_tiktok_schedule_for_date(stats_date)
+        if created:
+            RUN_STATE["last_output"] = f"Queued {created} TikTok candidate(s) from {stats_date}."
+            RUN_STATE["last_error"] = ""
+        else:
+            RUN_STATE["last_output"] = f"TikTok candidates from {stats_date} were already queued."
+            RUN_STATE["last_error"] = ""
+
+        self.redirect(f"/tiktok-candidates#day-{stats_date}")
 
     def is_ajax_request(self) -> bool:
         """Return whether the request expects a JSON response."""
@@ -1567,17 +1592,16 @@ def read_tracker_rows() -> list[dict[str, str]]:
 
 
 def render_tiktok_candidates_page(selected_date: str = "") -> str:
-    """Render YouTube-filtered TikTok candidate rankings."""
-    dates = stats_history_dates()
-    selected_date = selected_date if selected_date in dates else (dates[-1] if dates else "")
-    candidates = tiktok_candidates_for_date(selected_date)
-    candidate_rows = "".join(render_tiktok_candidate_card(candidate, index) for index, candidate in enumerate(candidates, 1))
-    if not candidate_rows:
-        candidate_rows = '<p class="muted">No candidates yet. Refresh YouTube Stats after a posting day to rank clips.</p>'
+    """Render daily YouTube-filtered TikTok candidate schedules."""
+    _ = selected_date
+    days = tiktok_candidate_days()
+    scheduled_by_date = read_tiktok_schedule_by_date()
+    day_rows = "".join(render_tiktok_day_row(day, scheduled_by_date.get(day["date"], [])) for day in days)
+    if not day_rows:
+        day_rows = '<p class="muted">No candidates yet. Refresh YouTube Stats after a posting day to rank clips.</p>'
 
-    total_views = sum(candidate["views"] for candidate in candidates)
-    total_likes = sum(candidate["likes"] for candidate in candidates)
-    date_tabs = render_tiktok_date_tabs(dates, selected_date)
+    scheduled_count = sum(len(rows) for rows in scheduled_by_date.values())
+    ready_count = sum(1 for day in days if not scheduled_by_date.get(day["date"], []))
 
     return f"""<!doctype html>
 <html lang="en">
@@ -1625,7 +1649,7 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
     }}
     h2 {{ margin: 0; font-size: 22px; }}
     a {{ color: var(--ink); text-decoration: none; font-weight: 560; }}
-    .links, .date-tabs {{
+    .links {{
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
@@ -1634,17 +1658,13 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
       background: rgba(255,255,255,.08);
       border: 1px solid rgba(255,255,255,.08);
     }}
-    .links a, .date-tabs a {{
+    .links a {{
       min-height: 38px;
       display: inline-flex;
       align-items: center;
       padding: 0 16px;
       border-radius: 999px;
       background: #242424;
-    }}
-    .date-tabs a.active {{
-      background: var(--accent);
-      color: #050505;
     }}
     .hero-grid {{
       display: grid;
@@ -1688,68 +1708,116 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
     }}
     .summary-stat strong {{ display: block; font-size: 24px; }}
     .summary-stat span {{ color: var(--muted); font-size: 12px; }}
-    .candidate-grid {{
+    .day-list {{
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 16px;
-      margin-top: 20px;
+      gap: 18px;
     }}
-    .candidate {{
+    .day-row {{
       border: 1px solid var(--line);
       border-radius: 14px;
       background: #101010;
       overflow: hidden;
     }}
-    .candidate-head {{
+    .day-head {{
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      padding: 16px;
+      padding: 18px;
       border-bottom: 1px solid rgba(255,255,255,.07);
     }}
-    .rank {{
-      width: 34px;
-      height: 34px;
+    .day-title strong {{
+      display: block;
+      font-size: 22px;
+      margin-bottom: 4px;
+    }}
+    .day-title span {{ color: var(--muted); font-size: 13px; }}
+    .candidate-strip {{
       display: grid;
-      place-items: center;
+      grid-template-columns: repeat(5, minmax(150px, 1fr));
+      gap: 12px;
+      padding: 18px;
+    }}
+    .candidate {{
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #181818;
+      padding: 12px;
+    }}
+    .rank {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
       border-radius: 999px;
       background: var(--accent);
       color: #050505;
       font-weight: 700;
+      margin-bottom: 10px;
     }}
-    .score {{ text-align: right; }}
+    .score {{ color: var(--accent); font-size: 12px; margin-top: 8px; }}
     .score strong {{ display: block; font-size: 22px; }}
     .score span {{ color: var(--muted); font-size: 12px; }}
-    .candidate-body {{ padding: 16px; }}
     .title {{
-      font-size: 18px;
+      font-size: 15px;
       font-weight: 560;
-      margin-bottom: 8px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }}
-    .clip {{ color: var(--muted); font-size: 13px; margin-bottom: 14px; }}
+    .clip {{
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 5px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }}
     .metrics {{
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-      margin-bottom: 14px;
+      gap: 8px;
+      margin-top: 12px;
     }}
     .metric {{
       border-radius: 10px;
-      background: #1d1d1d;
-      padding: 10px;
+      background: #242424;
+      padding: 8px;
     }}
+    .metric strong {{ font-size: 13px; }}
+    .metric span {{ color: var(--muted); font-size: 11px; }}
     .metric strong {{ display: block; }}
-    .metric span {{ color: var(--muted); font-size: 12px; }}
-    .actions {{
+    .schedule-box {{
+      min-width: 230px;
+      display: grid;
+      gap: 10px;
+      justify-items: end;
+    }}
+    .schedule-times {{
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
+      justify-content: flex-end;
+      color: var(--muted);
+      font-size: 12px;
     }}
-    .button {{
+    .time-chip {{
+      padding: 6px 9px;
+      border-radius: 999px;
+      background: #242424;
+      color: #d7d7d7;
+    }}
+    .status-chip {{
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(30,215,96,.14);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 560;
+    }}
+    .button, button {{
       min-height: 38px;
       display: inline-flex;
       align-items: center;
@@ -1757,10 +1825,19 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
       padding: 0 14px;
       border-radius: 999px;
       background: #242424;
+      border: 0;
+      color: #fff;
+      font: inherit;
+      font-weight: 560;
+      cursor: pointer;
     }}
-    .button.primary {{
+    .button.primary, button.primary {{
       background: var(--accent);
       color: #050505;
+    }}
+    button:disabled {{
+      cursor: default;
+      opacity: .58;
     }}
     .muted {{
       color: var(--muted);
@@ -1772,6 +1849,10 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
     @media (max-width: 980px) {{
       .top, .hero-grid {{ grid-template-columns: 1fr; flex-direction: column; align-items: flex-start; }}
       .summary-grid {{ grid-template-columns: 1fr; }}
+      .day-head {{ align-items: flex-start; flex-direction: column; }}
+      .candidate-strip {{ grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }}
+      .schedule-box {{ justify-items: start; }}
+      .schedule-times {{ justify-content: flex-start; }}
     }}
   </style>
 </head>
@@ -1790,22 +1871,21 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
     </div>
     <div class="hero-grid">
       <section class="strategy">
-        <h2>{html.escape(selected_date or "No date selected")}</h2>
-        <p>These are the best YouTube Shorts candidates to repost to TikTok the following day. The score rewards views, likes, and comments so highly engaged clips can beat clips with views alone.</p>
+        <h2>Daily TikTok export plan</h2>
+        <p>Each completed YouTube stats day gets a row of its top five Shorts. Press the schedule button for that row when you want those candidates queued for TikTok, one per hour starting at 10 AM.</p>
         <div class="formula">score = views + likes x 25 + comments x 50</div>
       </section>
       <aside class="summary">
-        <h2>Top 5 Pool</h2>
+        <h2>Schedule Queue</h2>
         <div class="summary-grid">
-          <div class="summary-stat"><strong>{len(candidates)}</strong><span>candidates</span></div>
-          <div class="summary-stat"><strong>{total_views:,}</strong><span>views</span></div>
-          <div class="summary-stat"><strong>{total_likes:,}</strong><span>likes</span></div>
+          <div class="summary-stat"><strong>{len(days)}</strong><span>ranked days</span></div>
+          <div class="summary-stat"><strong>{ready_count}</strong><span>ready days</span></div>
+          <div class="summary-stat"><strong>{scheduled_count}</strong><span>queued clips</span></div>
         </div>
       </aside>
     </div>
-    {date_tabs}
-    <div class="candidate-grid">
-      {candidate_rows}
+    <div class="day-list">
+      {day_rows}
     </div>
   </div>
 </body>
@@ -1817,15 +1897,59 @@ def stats_history_dates() -> list[str]:
     return sorted({row.get("checked_date", "") for row in read_stats_history() if row.get("checked_date", "")})
 
 
-def render_tiktok_date_tabs(dates: list[str], selected_date: str) -> str:
-    """Render date filter links for TikTok candidates."""
-    if not dates:
-        return ""
-    links = []
-    for date in dates[-14:]:
-        active = " active" if date == selected_date else ""
-        links.append(f'<a class="{active.strip()}" href="/tiktok-candidates?date={html.escape(date)}">{html.escape(date)}</a>')
-    return f'<nav class="date-tabs" aria-label="Candidate dates">{"".join(links)}</nav>'
+def tiktok_candidate_days() -> list[dict[str, object]]:
+    """Return TikTok candidate rows for every stats day."""
+    days = []
+    for date in reversed(stats_history_dates()):
+        candidates = tiktok_candidates_for_date(date)
+        if candidates:
+            days.append({"date": date, "candidates": candidates})
+    return days
+
+
+def render_tiktok_day_row(day: dict[str, object], scheduled_rows: list[dict[str, str]]) -> str:
+    """Render one daily TikTok candidate row."""
+    stats_date = str(day["date"])
+    candidates = list(day["candidates"])  # type: ignore[arg-type]
+    candidate_markup = "".join(
+        render_tiktok_candidate_card(candidate, index) for index, candidate in enumerate(candidates, 1)
+    )
+    total_views = sum(int(candidate["views"]) for candidate in candidates)
+    total_likes = sum(int(candidate["likes"]) for candidate in candidates)
+    schedule_date = next_tiktok_schedule_date(stats_date)
+    time_chips = "".join(f'<span class="time-chip">{html.escape(label)}</span>' for label in tiktok_schedule_labels(schedule_date, len(candidates)))
+
+    if scheduled_rows:
+        times = ", ".join(format_tiktok_schedule_time(row.get("scheduled_time", "")) for row in scheduled_rows[:5])
+        action_markup = f"""
+          <div class="status-chip">Queued for TikTok</div>
+          <div class="schedule-times">{html.escape(times)}</div>
+        """
+    else:
+        action_markup = f"""
+          <form action="/tiktok-schedule" method="post">
+            <input type="hidden" name="stats_date" value="{html.escape(stats_date)}">
+            <button class="primary" type="submit">Schedule All To TikTok</button>
+          </form>
+          <div class="schedule-times">{time_chips}</div>
+        """
+
+    return f"""
+      <section class="day-row" id="day-{html.escape(stats_date)}">
+        <div class="day-head">
+          <div class="day-title">
+            <strong>{html.escape(format_stats_date(stats_date))}</strong>
+            <span>{len(candidates)} candidates • {total_views:,} views • {total_likes:,} likes</span>
+          </div>
+          <div class="schedule-box">
+            {action_markup}
+          </div>
+        </div>
+        <div class="candidate-strip">
+          {candidate_markup}
+        </div>
+      </section>
+    """
 
 
 def tiktok_candidates_for_date(selected_date: str) -> list[dict[str, str | int | float]]:
@@ -1866,32 +1990,132 @@ def tiktok_candidates_for_date(selected_date: str) -> list[dict[str, str | int |
 def render_tiktok_candidate_card(candidate: dict[str, str | int | float], index: int) -> str:
     """Render one TikTok candidate card."""
     title = str(candidate["title"]).split("#", 1)[0].strip() or str(candidate["clip_filename"])
-    video_id = str(candidate["youtube_video_id"])
     clip_filename = str(candidate["clip_filename"])
-    clip_link = f"/clips/{html.escape(clip_filename)}"
-    youtube_link = f"https://youtu.be/{html.escape(video_id)}" if video_id else "#"
 
     return f"""
       <article class="candidate">
-        <div class="candidate-head">
-          <div class="rank">{index}</div>
-          <div class="score"><strong>{int(candidate["score"]):,}</strong><span>score</span></div>
+        <div class="rank">{index}</div>
+        <div class="title" title="{html.escape(title)}">{html.escape(title)}</div>
+        <div class="clip">{html.escape(clip_filename)}</div>
+        <div class="metrics">
+          <div class="metric"><strong>{int(candidate["views"]):,}</strong><span>views</span></div>
+          <div class="metric"><strong>{int(candidate["likes"]):,}</strong><span>likes</span></div>
+          <div class="metric"><strong>{float(candidate["like_rate"]):.1f}%</strong><span>like rate</span></div>
         </div>
-        <div class="candidate-body">
-          <div class="title" title="{html.escape(title)}">{html.escape(title)}</div>
-          <div class="clip">{html.escape(clip_filename)}</div>
-          <div class="metrics">
-            <div class="metric"><strong>{int(candidate["views"]):,}</strong><span>views</span></div>
-            <div class="metric"><strong>{int(candidate["likes"]):,}</strong><span>likes</span></div>
-            <div class="metric"><strong>{float(candidate["like_rate"]):.1f}%</strong><span>like rate</span></div>
-          </div>
-          <div class="actions">
-            <a class="button primary" href="{clip_link}">Preview Clip</a>
-            <a class="button" href="{youtube_link}" target="_blank">YouTube</a>
-          </div>
-        </div>
+        <div class="score">{int(candidate["score"]):,} score</div>
       </article>
     """
+
+
+def read_tiktok_schedule() -> list[dict[str, str]]:
+    """Read locally queued TikTok candidate schedule rows."""
+    if not config.TIKTOK_SCHEDULE_FILE.exists():
+        return []
+    with config.TIKTOK_SCHEDULE_FILE.open("r", newline="", encoding="utf-8") as file:
+        return list(csv.DictReader(file))
+
+
+def read_tiktok_schedule_by_date() -> dict[str, list[dict[str, str]]]:
+    """Group locally queued TikTok schedule rows by source stats date."""
+    grouped: dict[str, list[dict[str, str]]] = {}
+    for row in read_tiktok_schedule():
+        grouped.setdefault(row.get("stats_date", ""), []).append(row)
+    for rows in grouped.values():
+        rows.sort(key=lambda row: row.get("scheduled_time", ""))
+    return grouped
+
+
+def create_tiktok_schedule_for_date(stats_date: str) -> int:
+    """Queue top candidates from a stats date for TikTok posting."""
+    existing = read_tiktok_schedule_by_date()
+    if existing.get(stats_date):
+        return 0
+
+    candidates = tiktok_candidates_for_date(stats_date)
+    if not candidates:
+        return 0
+
+    schedule_date = next_tiktok_schedule_date(stats_date)
+    created_at = datetime.now().astimezone().isoformat()
+    rows = []
+    for index, candidate in enumerate(candidates[:5]):
+        scheduled_time = datetime.combine(schedule_date, datetime.min.time()).replace(hour=10 + index).isoformat()
+        rows.append(
+            {
+                "stats_date": stats_date,
+                "rank": str(index + 1),
+                "clip_filename": str(candidate["clip_filename"]),
+                "youtube_video_id": str(candidate["youtube_video_id"]),
+                "title": str(candidate["title"]),
+                "score": str(candidate["score"]),
+                "views": str(candidate["views"]),
+                "likes": str(candidate["likes"]),
+                "scheduled_time": scheduled_time,
+                "status": "queued",
+                "created_at": created_at,
+            }
+        )
+
+    append_tiktok_schedule_rows(rows)
+    return len(rows)
+
+
+def append_tiktok_schedule_rows(rows: list[dict[str, str]]) -> None:
+    """Append rows to the local TikTok schedule file."""
+    if not rows:
+        return
+    config.LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    file_exists = config.TIKTOK_SCHEDULE_FILE.exists()
+    fieldnames = [
+        "stats_date",
+        "rank",
+        "clip_filename",
+        "youtube_video_id",
+        "title",
+        "score",
+        "views",
+        "likes",
+        "scheduled_time",
+        "status",
+        "created_at",
+    ]
+    with config.TIKTOK_SCHEDULE_FILE.open("a", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        if not file_exists:
+            writer.writeheader()
+        writer.writerows(rows)
+
+
+def next_tiktok_schedule_date(stats_date: str) -> datetime.date:
+    """Return the planned TikTok posting date for a completed stats day."""
+    try:
+        return datetime.fromisoformat(stats_date).date() + timedelta(days=1)
+    except ValueError:
+        return datetime.now().date() + timedelta(days=1)
+
+
+def tiktok_schedule_labels(schedule_date: datetime.date, count: int) -> list[str]:
+    """Return human labels for TikTok schedule slots."""
+    return [
+        datetime.combine(schedule_date, datetime.min.time()).replace(hour=10 + index).strftime("%b %-d, %-I %p")
+        for index in range(count)
+    ]
+
+
+def format_tiktok_schedule_time(value: str) -> str:
+    """Format a queued TikTok schedule timestamp."""
+    try:
+        return datetime.fromisoformat(value).strftime("%b %-d, %-I %p")
+    except ValueError:
+        return value
+
+
+def format_stats_date(value: str) -> str:
+    """Format a stats date for display."""
+    try:
+        return datetime.fromisoformat(value).strftime("%B %-d, %Y")
+    except ValueError:
+        return value
 
 
 STATS_RANGES = {
