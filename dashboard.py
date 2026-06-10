@@ -8,6 +8,7 @@ import html
 import json
 import logging
 import mimetypes
+import os
 import subprocess
 import threading
 import time
@@ -629,6 +630,14 @@ def render_dashboard() -> str:
       white-space: nowrap;
     }}
     .pill.warn {{ background: var(--warn); }}
+    .run-meta {{
+      margin-top: 12px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 12px;
+    }}
     pre {{
       white-space: pre-wrap;
       overflow-wrap: anywhere;
@@ -896,7 +905,7 @@ def render_dashboard() -> str:
       <div class="brand"><span class="brand-mark">♪</span><span>Piano Shorts</span></div>
       <div class="status-line">
         <span>{html.escape(str(config.INPUT_DIR))}</span>
-        <span class="pill {'warn' if upload_running else ''}">{'Running' if upload_running else 'Ready'}</span>
+        <span class="pill {'warn' if upload_running else ''}" data-run-pill>{'Running' if upload_running else 'Ready'}</span>
       </div>
     </div>
   </header>
@@ -956,7 +965,11 @@ def render_dashboard() -> str:
             <div class="stat"><strong>{status['uploaded_sources']}</strong><span>processed videos</span></div>
             <div class="stat"><strong>{status['upload_records']}</strong><span>upload records</span></div>
           </div>
-          <pre>{html.escape(str(status['run']['last_output'] or status['run']['last_error'] or 'No dashboard run yet.'))}</pre>
+          <div class="run-meta">
+            <span data-run-started>{'Started ' + html.escape(str(status['run']['started_at'])) if status['run']['started_at'] else 'Not started'}</span>
+            <span data-run-finished>{'Finished ' + html.escape(str(status['run']['finished_at'])) if status['run']['finished_at'] else ''}</span>
+          </div>
+          <pre data-live-log>{html.escape(str(status['run']['last_output'] or status['run']['last_error'] or 'No dashboard run yet.'))}</pre>
         </section>
       </div>
       <section id="clips">
@@ -971,6 +984,36 @@ def render_dashboard() -> str:
       </div>
     </div>
   </main>
+  <script>
+    async function refreshStatus() {{
+      try {{
+        const response = await fetch('/api/status', {{ cache: 'no-store' }});
+        if (!response.ok) return;
+        const status = await response.json();
+        const run = status.run || {{}};
+        const pill = document.querySelector('[data-run-pill]');
+        const log = document.querySelector('[data-live-log]');
+        const started = document.querySelector('[data-run-started]');
+        const finished = document.querySelector('[data-run-finished]');
+        const message = run.last_output || run.last_error || 'No dashboard run yet.';
+
+        if (pill) {{
+          pill.textContent = run.running ? 'Running' : 'Ready';
+          pill.classList.toggle('warn', Boolean(run.running));
+        }}
+        if (started) started.textContent = run.started_at ? `Started ${{run.started_at}}` : 'Not started';
+        if (finished) finished.textContent = run.finished_at ? `Finished ${{run.finished_at}}` : '';
+        if (log && log.textContent !== message) {{
+          log.textContent = message;
+          log.scrollTop = log.scrollHeight;
+        }}
+      }} catch (error) {{
+        console.error(error);
+      }}
+    }}
+    refreshStatus();
+    window.setInterval(refreshStatus, 2000);
+  </script>
 </body>
 </html>"""
 
@@ -2837,19 +2880,36 @@ def run_main_process() -> None:
             "last_error": "",
         }
     )
+    output_lines: list[str] = []
     try:
-        result = subprocess.run(
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+        process = subprocess.Popen(
             [str(Path(__file__).resolve().parent / ".venv" / "bin" / "python"), "main.py"],
             cwd=config.BASE_DIR,
-            capture_output=True,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            timeout=60 * 60 * 4,
+            bufsize=1,
         )
-        RUN_STATE["last_output"] = (result.stdout + "\n" + result.stderr).strip()
-        if result.returncode != 0:
+        assert process.stdout is not None
+        deadline = time.monotonic() + (60 * 60 * 4)
+        for line in process.stdout:
+            output_lines.append(line.rstrip())
+            RUN_STATE["last_output"] = "\n".join(output_lines[-80:]).strip()
+            if time.monotonic() > deadline:
+                process.kill()
+                raise TimeoutError("Dashboard run timed out after 4 hours")
+
+        return_code = process.wait()
+        RUN_STATE["last_output"] = "\n".join(output_lines[-120:]).strip()
+        if return_code != 0:
             RUN_STATE["last_error"] = RUN_STATE["last_output"]
     except Exception as exc:
         logger.exception("Dashboard run failed: %s", exc)
+        output_lines.append(str(exc))
+        RUN_STATE["last_output"] = "\n".join(output_lines[-120:]).strip()
         RUN_STATE["last_error"] = str(exc)
     finally:
         RUN_STATE["running"] = False
