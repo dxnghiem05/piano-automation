@@ -951,7 +951,7 @@ def render_dashboard() -> str:
         <p class="subtitle">Clip, schedule, track, and study your YouTube Shorts from one quiet studio interface.</p>
         <div class="hero-actions">
           <form action="/run" method="post">
-            <button type="submit" {run_disabled}>{run_label}</button>
+            <button type="submit" data-run-primary {run_disabled}>{run_label}</button>
           </form>
           <a class="button ghost" href="/stats">View Stats</a>
           <a class="button ghost" href="#clips">Browse Clips</a>
@@ -975,7 +975,7 @@ def render_dashboard() -> str:
             </label>
             <div class="upload-buttons">
               <button type="submit" name="upload_action" value="input_only">Add To Input</button>
-              <button type="submit" name="upload_action" value="upload_and_clip" {run_disabled}>Add + Clip Only</button>
+              <button type="submit" name="upload_action" value="upload_and_clip" data-run-lock {run_disabled}>Add + Clip Only</button>
             </div>
           </form>
         </section>
@@ -983,17 +983,17 @@ def render_dashboard() -> str:
           <h2>Automation</h2>
           <div class="automation-wide">
             <form action="/run" method="post">
-              <button class="album-action cover-run" type="submit" {run_disabled}><span>{run_label}</span></button>
+              <button class="album-action cover-run" type="submit" data-run-primary {run_disabled}><span>{run_label}</span></button>
             </form>
             <form action="/clip-only" method="post">
-              <button class="album-action cover-run" type="submit" {run_disabled}><span>Clip Input Only</span></button>
+              <button class="album-action cover-run" type="submit" data-run-lock {run_disabled}><span>Clip Input Only</span></button>
             </form>
             <a class="album-action cover-stats" href="/stats"><span>YouTube Stats</span></a>
             <a class="album-action cover-queue" href="/queue"><span>Queue</span></a>
             <a class="album-action cover-tiktok" href="/tiktok-candidates"><span>TikTok Candidates</span></a>
             <form action="/refresh-stats" method="post" class="refresh-form">
               <input type="hidden" name="redirect_to" value="/">
-              <button class="album-action cover-refresh" type="submit" {run_disabled}><span>Refresh Stats</span></button>
+              <button class="album-action cover-refresh" type="submit" data-run-lock {run_disabled}><span>Refresh Stats</span></button>
             </form>
           </div>
         </section>
@@ -1041,6 +1041,16 @@ def render_dashboard() -> str:
           pill.textContent = run.running ? 'Running' : 'Ready';
           pill.classList.toggle('warn', Boolean(run.running));
         }}
+        document.querySelectorAll('[data-run-primary]').forEach((button) => {{
+          button.disabled = Boolean(run.running);
+          const label = run.running ? 'Running...' : 'Run Now';
+          const span = button.querySelector('span');
+          if (span) span.textContent = label;
+          else button.textContent = label;
+        }});
+        document.querySelectorAll('[data-run-lock]').forEach((button) => {{
+          button.disabled = Boolean(run.running);
+        }});
         if (started) started.textContent = run.started_at ? `Started ${{run.started_at}}` : 'Not started';
         if (finished) finished.textContent = run.finished_at ? `Finished ${{run.finished_at}}` : '';
         if (log && log.textContent !== message) {{
