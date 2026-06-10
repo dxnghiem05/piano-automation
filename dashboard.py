@@ -1283,7 +1283,7 @@ def render_queue_page() -> str:
     table_rows = "".join(render_queue_row(row) for row in rows)
     if not table_rows:
         table_rows = '<tr><td colspan="7" class="muted">No queue items yet.</td></tr>'
-    message = render_queue_message()
+    message = render_queue_message(deferred_count)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -1550,7 +1550,7 @@ def render_queue_page() -> str:
 </html>"""
 
 
-def render_queue_message() -> str:
+def render_queue_message(deferred_count: int = 0) -> str:
     """Render queue action feedback."""
     error = str(RUN_STATE.get("last_error") or "")
     output = str(RUN_STATE.get("last_output") or "")
@@ -1558,6 +1558,18 @@ def render_queue_message() -> str:
         friendly = (
             "Privacy update needs a fresh Google login. I reset the saved token when possible; "
             "click Save again and approve the YouTube permissions if Google asks."
+        )
+        return f'<div class="message error">{html.escape(friendly)}</div>'
+    if "YOUTUBE DAILY UPLOAD LIMIT HIT" in output or "uploadLimitExceeded" in output or "exceeded the number of videos" in output:
+        friendly = (
+            "YouTube daily upload limit hit. Stop uploading for today; tomorrow, press Run Now "
+            "to continue uploading the waiting clips."
+        )
+        return f'<div class="message error">{html.escape(friendly)}</div>'
+    if deferred_count:
+        friendly = (
+            f"YouTube stopped accepting uploads before. {deferred_count} clip(s) are deferred; "
+            "press Run Now tomorrow to retry them and continue the queue."
         )
         return f'<div class="message error">{html.escape(friendly)}</div>'
     if output.startswith("Updated "):
@@ -1602,7 +1614,10 @@ def build_queue_rows() -> list[dict[str, str]]:
     latest_by_id = {row.get("youtube_video_id", ""): row for row in latest_video_stats()}
     privacy_overrides = read_privacy_overrides()
     metadata_by_filename = read_metadata()
-    records = list(read_upload_records())
+    latest_records_by_clip: dict[str, object] = {}
+    for record in read_upload_records():
+        latest_records_by_clip[record.clip_filename] = record
+    records = list(latest_records_by_clip.values())
     rows: list[dict[str, str]] = []
     seen_clips = set()
 

@@ -15,7 +15,7 @@ from generate_metadata import ClipMetadata, generate_metadata_for_clips
 from logging_setup import configure_logging
 from scheduler import generate_schedule
 from tracker import update_tracker
-from youtube_upload import read_upload_attempted_filenames, upload_clips
+from youtube_upload import is_youtube_quota_error, read_upload_attempted_filenames, upload_clips
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def main() -> None:
 
     clip_paths_to_consider = sorted({clip.clip_path for clip in generated_clips} | set(config.CLIPS_DIR.glob("clip_*.mp4")))
     pending_clip_paths = filter_not_attempted(clip_paths_to_consider)
-    not_attempted = [] if args.clip_only else pending_clip_paths[: config.MAX_UPLOADS_PER_RUN]
+    not_attempted = [] if args.clip_only else pending_clip_paths
     metadata_targets = sorted({clip.clip_path for clip in generated_clips}) if args.clip_only else pending_clip_paths
     metadata = generate_metadata_for_clips(metadata_targets)
     metadata_by_filename: dict[str, ClipMetadata] = {record.filename: record for record in metadata}
@@ -73,6 +73,13 @@ def main() -> None:
     )
 
     logger.info("Finished run: %s", summary)
+    if any(result.error and is_youtube_quota_error(Exception(result.error)) for result in upload_results):
+        logger.error("YouTube daily upload limit hit; stop uploading for today and try again tomorrow")
+        print("")
+        print("YOUTUBE DAILY UPLOAD LIMIT HIT")
+        print("--------------------------------")
+        print("YouTube rejected more uploads for today.")
+        print("Stop uploading for the day, then press Run Now tomorrow to continue with the waiting clips.")
     print_summary(summary)
 
 

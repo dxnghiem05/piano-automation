@@ -149,10 +149,11 @@ POST_START_HOUR = 9
 POST_END_HOUR = 19
 POST_INTERVAL_HOURS = 1
 SCHEDULE_AFTER_EXISTING_UPLOADS = True
-MAX_UPLOADS_PER_RUN = 11
 TIMEZONE = "America/Los_Angeles"
 YOUTUBE_CATEGORY = "10"
 ```
+
+`Run Now` keeps uploading waiting clips until YouTube accepts everything or YouTube returns a daily upload/quota limit. If the limit is hit, the dashboard shows a warning and the remaining clips stay waiting for the next day.
 
 Titles are generated from `MOOD_WORDS` and formatted like:
 
@@ -329,7 +330,7 @@ python main.py
 
 ### YouTube API Quota Errors
 
-YouTube uploads consume API quota. If quota is exhausted, wait for quota reset or request additional quota from Google Cloud.
+YouTube uploads consume API quota and can also hit an account daily upload limit. If the dashboard says the daily upload limit was hit, stop uploading for the day and press `Run Now` tomorrow to continue with the waiting clips.
 
 ### Corrupted Video
 
