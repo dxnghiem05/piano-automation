@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,11 +34,12 @@ class RunSummary:
 
 def main() -> None:
     """Run the full Shorts automation workflow."""
+    args = parse_args()
     load_dotenv()
     ensure_directories()
     configure_logging()
 
-    logger.info("Starting YouTube Shorts automation")
+    logger.info("Starting YouTube Shorts automation%s", " in clip-only mode" if args.clip_only else "")
 
     try:
         verify_ffmpeg_tools()
@@ -50,13 +52,15 @@ def main() -> None:
     generated_clips = generate_clips_for_videos(videos)
 
     clip_paths_to_consider = sorted({clip.clip_path for clip in generated_clips} | set(config.CLIPS_DIR.glob("clip_*.mp4")))
-    not_attempted = filter_not_attempted(clip_paths_to_consider)[: config.MAX_UPLOADS_PER_RUN]
-    metadata = generate_metadata_for_clips(not_attempted)
+    not_attempted = [] if args.clip_only else filter_not_attempted(clip_paths_to_consider)[: config.MAX_UPLOADS_PER_RUN]
+    metadata_targets = sorted({clip.clip_path for clip in generated_clips}) if args.clip_only else not_attempted
+    metadata = generate_metadata_for_clips(metadata_targets)
     metadata_by_filename: dict[str, ClipMetadata] = {record.filename: record for record in metadata}
     schedule_times = generate_schedule(len(not_attempted))
 
     upload_results = upload_clips(not_attempted, metadata_by_filename, schedule_times) if not_attempted else []
-    update_tracker(videos, generated_clips)
+    if not args.clip_only:
+        update_tracker(videos, generated_clips)
 
     summary = RunSummary(
         videos_found=len(videos),
@@ -69,6 +73,17 @@ def main() -> None:
 
     logger.info("Finished run: %s", summary)
     print_summary(summary)
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command-line options."""
+    parser = argparse.ArgumentParser(description="Run the Shorts automation workflow.")
+    parser.add_argument(
+        "--clip-only",
+        action="store_true",
+        help="Only move input videos into generated clips; do not upload anything to YouTube.",
+    )
+    return parser.parse_args()
 
 
 def filter_not_attempted(clip_paths: list[Path]) -> list[Path]:

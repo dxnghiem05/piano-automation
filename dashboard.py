@@ -119,6 +119,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.redirect(self.redirect_back_path(default="/"))
             return
 
+        if parsed.path == "/clip-only":
+            start_clip_only()
+            self.redirect(self.redirect_back_path(default="/"))
+            return
+
         if parsed.path == "/refresh-stats":
             redirect_target = self.form_redirect_target(default=self.redirect_back_path(default="/stats"))
             start_stats_refresh()
@@ -151,6 +156,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "CONTENT_LENGTH": str(content_length),
             },
         )
+        upload_action = form.getfirst("upload_action", "input_only")
 
         files = form["videos"] if "videos" in form else []
         if not isinstance(files, list):
@@ -175,6 +181,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             logger.info("Uploaded video through dashboard: %s", destination)
 
         logger.info("Dashboard upload complete; saved %d file(s)", saved)
+        if saved and upload_action == "upload_and_clip":
+            start_clip_only()
         self.redirect("/")
 
     def handle_privacy_update(self) -> None:
@@ -860,6 +868,11 @@ def render_dashboard() -> str:
     }}
     .upload-drop input {{ width: 100%; max-width: 220px; }}
     .upload-title {{ font-size: 16px; font-weight: 560; }}
+    .upload-buttons {{
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }}
     .clips {{ grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }}
     .clip-card {{
       border-radius: 10px;
@@ -917,7 +930,7 @@ def render_dashboard() -> str:
     }}
     @media (max-width: 760px) {{
       .control-row,
-      .automation-wide {{ grid-template-columns: 1fr; }}
+      .automation-wide, .upload-buttons {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
@@ -961,7 +974,10 @@ def render_dashboard() -> str:
               <span class="upload-title">Add Videos</span>
               <input type="file" name="videos" accept=".mp4,.mov,video/mp4,video/quicktime" multiple>
             </label>
-            <button type="submit">Add To Input</button>
+            <div class="upload-buttons">
+              <button type="submit" name="upload_action" value="input_only">Add To Input</button>
+              <button type="submit" name="upload_action" value="upload_and_clip" {run_disabled}>Add + Clip Only</button>
+            </div>
           </form>
         </section>
         <section>
@@ -969,6 +985,9 @@ def render_dashboard() -> str:
           <div class="automation-wide">
             <form action="/run" method="post">
               <button class="album-action cover-run" type="submit" {run_disabled}><span>{run_label}</span></button>
+            </form>
+            <form action="/clip-only" method="post">
+              <button class="album-action cover-run" type="submit" {run_disabled}><span>Clip Input Only</span></button>
             </form>
             <a class="album-action cover-tracker" href="/tracker"><span>Preview Tracker</span></a>
             <a class="album-action cover-stats" href="/stats"><span>YouTube Stats</span></a>
@@ -2910,6 +2929,15 @@ def start_run() -> None:
     thread.start()
 
 
+def start_clip_only() -> None:
+    """Run clipping only in a background thread unless already running."""
+    if RUN_STATE["running"]:
+        return
+
+    thread = threading.Thread(target=run_main_process, kwargs={"clip_only": True}, daemon=True)
+    thread.start()
+
+
 def start_stats_refresh() -> None:
     """Refresh tracker stats in a background thread."""
     if RUN_STATE["running"]:
@@ -2975,7 +3003,7 @@ def update_youtube_privacy_with_service(service, video_id: str, privacy_status: 
     ).execute()
 
 
-def run_main_process() -> None:
+def run_main_process(clip_only: bool = False) -> None:
     """Execute the automation in a subprocess."""
     RUN_STATE.update(
         {
@@ -2991,7 +3019,11 @@ def run_main_process() -> None:
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
         process = subprocess.Popen(
-            [str(Path(__file__).resolve().parent / ".venv" / "bin" / "python"), "main.py"],
+            [
+                str(Path(__file__).resolve().parent / ".venv" / "bin" / "python"),
+                "main.py",
+                *(["--clip-only"] if clip_only else []),
+            ],
             cwd=config.BASE_DIR,
             env=env,
             stdout=subprocess.PIPE,
