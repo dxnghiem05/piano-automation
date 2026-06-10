@@ -121,6 +121,10 @@ def generate_clips_for_videos(videos: Iterable[SourceVideo]) -> list[GeneratedCl
 def generate_clips_for_video(video: SourceVideo) -> list[GeneratedClip]:
     """Split one source video into varied Shorts clips after skipping the intro."""
     logger.info("Generating clips from %s", video.path)
+
+    if video.duration_seconds < config.CLIP_SOURCE_MIN_SECONDS:
+        return generate_single_upload_clip(video)
+
     clips: list[GeneratedClip] = []
     start = min(float(config.SKIP_INTRO_SECONDS), video.duration_seconds)
 
@@ -152,6 +156,28 @@ def generate_clips_for_video(video: SourceVideo) -> list[GeneratedClip]:
         start += clip_duration
 
     return clips
+
+
+def generate_single_upload_clip(video: SourceVideo) -> list[GeneratedClip]:
+    """Create one upload-ready clip from a short source video without chopping it."""
+    clip_number = next_clip_number()
+    output_path = config.CLIPS_DIR / f"clip_{clip_number:06d}.mp4"
+    logger.info(
+        "Source video %s is %.2f seconds, under %.2f seconds; keeping it as one clip",
+        video.path,
+        video.duration_seconds,
+        config.CLIP_SOURCE_MIN_SECONDS,
+    )
+    run_ffmpeg_clip(video.path, output_path, 0, video.duration_seconds)
+    logger.info("Generated single short-video clip %s", output_path)
+    return [
+        GeneratedClip(
+            source_path=video.path,
+            clip_path=output_path,
+            start_seconds=0,
+            duration_seconds=video.duration_seconds,
+        )
+    ]
 
 
 def choose_clip_duration(remaining_seconds: float) -> float:
