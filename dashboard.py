@@ -844,7 +844,6 @@ def render_dashboard() -> str:
     .album-action span {{ position: relative; z-index: 1; max-width: 120px; }}
     .cover-run {{ --cover: linear-gradient(135deg, #1ed760, #137b43); }}
     .cover-stats {{ --cover: linear-gradient(135deg, #00d4ff, #2554ff); }}
-    .cover-tracker {{ --cover: linear-gradient(135deg, #ff7a18, #af002d); }}
     .cover-refresh {{ --cover: linear-gradient(135deg, #f43f5e, #7c3aed); }}
     .cover-queue {{ --cover: linear-gradient(135deg, #1ed760, #0ea5e9); }}
     .cover-tiktok {{ --cover: linear-gradient(135deg, #1ed760, #ff0050); }}
@@ -989,7 +988,6 @@ def render_dashboard() -> str:
             <form action="/clip-only" method="post">
               <button class="album-action cover-run" type="submit" {run_disabled}><span>Clip Input Only</span></button>
             </form>
-            <a class="album-action cover-tracker" href="/tracker"><span>Preview Tracker</span></a>
             <a class="album-action cover-stats" href="/stats"><span>YouTube Stats</span></a>
             <a class="album-action cover-queue" href="/queue"><span>Queue</span></a>
             <a class="album-action cover-tiktok" href="/tiktok-candidates"><span>TikTok Candidates</span></a>
@@ -1467,7 +1465,6 @@ def render_queue_page() -> str:
         <a href="/">Dashboard</a>
         <a href="/stats">YouTube Stats</a>
         <a href="/tiktok-candidates">TikTok Candidates</a>
-        <a href="/tracker">Tracker</a>
         <form action="/run" method="post">
           <button type="submit" {retry_disabled}>{html.escape('Running...' if run_running else retry_label)}</button>
         </form>
@@ -2541,7 +2538,6 @@ def render_stats_page(selected_range: str = "1d") -> str:
         <a href="/">Dashboard</a>
         <a href="/queue">Queue</a>
         <a href="/tiktok-candidates">TikTok Candidates</a>
-        <a href="/tracker">Tracker</a>
         <form action="/refresh-stats" method="post" class="stats-refresh-form">
           <input type="hidden" name="redirect_to" value="/stats?range={html.escape(selected_range)}">
           <button type="submit">Refresh YouTube Stats</button>
