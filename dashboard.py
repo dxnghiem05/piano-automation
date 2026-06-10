@@ -105,7 +105,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/run":
             start_run()
-            self.redirect("/")
+            self.redirect(self.redirect_back_path(default="/"))
             return
 
         if parsed.path == "/refresh-stats":
@@ -300,7 +300,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return default
 
         path = parsed.path or default
-        if path not in {"/", "/stats", "/queue", "/tracker"}:
+        if path not in {"/", "/stats", "/queue", "/tracker", "/tiktok-candidates"}:
             return default
 
         return path + (f"?{parsed.query}" if parsed.query else "")
@@ -1156,6 +1156,10 @@ def render_tracker_page() -> str:
 def render_queue_page() -> str:
     """Render uploaded and pending video queue."""
     rows = build_queue_rows()
+    deferred_count = sum(1 for row in rows if row.get("status") == "deferred")
+    run_running = bool(RUN_STATE["running"])
+    retry_label = f"Retry Deferred ({deferred_count})" if deferred_count else "Run Uploads"
+    retry_disabled = "disabled" if run_running else ""
     table_rows = "".join(render_queue_row(row) for row in rows)
     if not table_rows:
         table_rows = '<tr><td colspan="7" class="muted">No queue items yet.</td></tr>'
@@ -1216,7 +1220,8 @@ def render_queue_page() -> str:
       background: rgba(255,255,255,.08);
       border: 1px solid rgba(255,255,255,.08);
     }}
-    .links a {{
+    .links form {{ margin: 0; }}
+    .links a, .links button {{
       min-height: 38px;
       display: inline-flex;
       align-items: center;
@@ -1227,7 +1232,15 @@ def render_queue_page() -> str:
       font-weight: 560;
       text-decoration: none;
     }}
-    .links a:hover {{ background: #303030; transform: translateY(-1px); }}
+    .links button {{
+      border: 0;
+      background: var(--accent);
+      color: #050505;
+      cursor: pointer;
+    }}
+    .links a:hover, .links button:hover {{ background: #303030; transform: translateY(-1px); }}
+    .links button:hover {{ background: #3be477; }}
+    .links button:disabled {{ cursor: wait; opacity: .72; transform: none; }}
     .queue-panel {{
       overflow: auto;
       border: 1px solid var(--line);
@@ -1344,6 +1357,9 @@ def render_queue_page() -> str:
         <a href="/stats">YouTube Stats</a>
         <a href="/tiktok-candidates">TikTok Candidates</a>
         <a href="/tracker">Tracker</a>
+        <form action="/run" method="post">
+          <button type="submit" {retry_disabled}>{html.escape('Running...' if run_running else retry_label)}</button>
+        </form>
       </div>
     </div>
     {message}
