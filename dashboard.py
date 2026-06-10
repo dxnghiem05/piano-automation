@@ -33,6 +33,7 @@ HOST = "127.0.0.1"
 PORT = 8000
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024 * 1024
 HOME_RECENT_CLIP_LIMIT = 10
+QUEUE_PAGE_SIZE = 20
 APP_FONT_STACK = (
     '"CircularSp", "Circular Std", "Avenir Next", "Helvetica Neue", '
     'Helvetica, Arial, sans-serif'
@@ -77,7 +78,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/queue":
-            self.send_html(render_queue_page())
+            query = parse_qs(parsed.query)
+            self.send_html(render_queue_page(parse_page(query.get("page", ["1"])[0])))
             return
 
         if path == "/tiktok-candidates":
@@ -1273,17 +1275,24 @@ def render_tracker_page() -> str:
 </html>"""
 
 
-def render_queue_page() -> str:
+def render_queue_page(page: int = 1) -> str:
     """Render uploaded and pending video queue."""
     rows = build_queue_rows()
+    total_rows = len(rows)
+    total_pages = max(1, (total_rows + QUEUE_PAGE_SIZE - 1) // QUEUE_PAGE_SIZE)
+    page = max(1, min(page, total_pages))
+    start_index = (page - 1) * QUEUE_PAGE_SIZE
+    end_index = min(start_index + QUEUE_PAGE_SIZE, total_rows)
+    visible_rows = rows[start_index:end_index]
     deferred_count = sum(1 for row in rows if row.get("status") == "deferred")
     run_running = bool(RUN_STATE["running"])
     retry_label = f"Retry Deferred ({deferred_count})" if deferred_count else "Run Uploads"
     retry_disabled = "disabled" if run_running else ""
-    table_rows = "".join(render_queue_row(row) for row in rows)
+    table_rows = "".join(render_queue_row(row) for row in visible_rows)
     if not table_rows:
         table_rows = '<tr><td colspan="7" class="muted">No queue items yet.</td></tr>'
     message = render_queue_message(deferred_count)
+    pagination = render_queue_pagination(page, total_pages, start_index, end_index, total_rows)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -1458,9 +1467,51 @@ def render_queue_page() -> str:
       background: rgba(255,164,43,.14);
       color: #ffd9a0;
     }}
+    .queue-meta {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 14px;
+    }}
+    .pagination {{
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }}
+    .page-link {{
+      min-width: 36px;
+      min-height: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.1);
+      background: #242424;
+      color: var(--ink);
+      text-decoration: none;
+      font-weight: 560;
+    }}
+    .page-link:hover {{ border-color: rgba(30,215,96,.45); color: var(--accent); }}
+    .page-link.active {{
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #050505;
+    }}
+    .page-link.disabled {{
+      pointer-events: none;
+      opacity: .42;
+    }}
     .muted {{ color: var(--muted); }}
     @media (max-width: 820px) {{
       .top {{ align-items: flex-start; flex-direction: column; }}
+      .queue-meta {{ align-items: flex-start; flex-direction: column; }}
+      .pagination {{ justify-content: flex-start; }}
       .shell {{ padding-top: 36px; }}
     }}
   </style>
@@ -1482,6 +1533,7 @@ def render_queue_page() -> str:
       </div>
     </div>
     {message}
+    {pagination}
     <div class="queue-panel">
       <table>
         <thead>
@@ -1498,6 +1550,7 @@ def render_queue_page() -> str:
         <tbody>{table_rows}</tbody>
       </table>
     </div>
+    {pagination}
   </div>
   <script>
     document.querySelectorAll('.privacy-form').forEach((form) => {{
@@ -1548,6 +1601,70 @@ def render_queue_page() -> str:
   </script>
 </body>
 </html>"""
+
+
+def parse_page(value: str) -> int:
+    """Parse a positive page number from a query value."""
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return 1
+
+
+def render_queue_pagination(
+    page: int,
+    total_pages: int,
+    start_index: int,
+    end_index: int,
+    total_rows: int,
+) -> str:
+    """Render queue pagination controls."""
+    if not total_rows:
+        summary = "Showing 0 clips"
+    else:
+        summary = f"Showing {start_index + 1}-{end_index} of {total_rows} clips"
+
+    page_numbers = queue_page_numbers(page, total_pages)
+    links = [
+        page_link("Previous", page - 1, disabled=page <= 1),
+        *[page_link(str(number), number, active=number == page) for number in page_numbers],
+        page_link("Next", page + 1, disabled=page >= total_pages),
+    ]
+
+    return f"""
+      <div class="queue-meta">
+        <span>{html.escape(summary)}</span>
+        <nav class="pagination" aria-label="Queue pages">
+          {''.join(links)}
+        </nav>
+      </div>
+    """
+
+
+def queue_page_numbers(page: int, total_pages: int) -> list[int]:
+    """Return compact page numbers around the current queue page."""
+    if total_pages <= 7:
+        return list(range(1, total_pages + 1))
+
+    candidates = {1, total_pages, page - 1, page, page + 1}
+    if page <= 3:
+        candidates.update({2, 3, 4})
+    if page >= total_pages - 2:
+        candidates.update({total_pages - 3, total_pages - 2, total_pages - 1})
+
+    return [number for number in sorted(candidates) if 1 <= number <= total_pages]
+
+
+def page_link(label: str, page: int, active: bool = False, disabled: bool = False) -> str:
+    """Render one queue pagination link."""
+    classes = ["page-link"]
+    if active:
+        classes.append("active")
+    if disabled:
+        classes.append("disabled")
+    href = "#" if disabled else f"/queue?page={page}"
+    aria_current = ' aria-current="page"' if active else ""
+    return f'<a class="{" ".join(classes)}" href="{html.escape(href)}"{aria_current}>{html.escape(label)}</a>'
 
 
 def render_queue_message(deferred_count: int = 0) -> str:
