@@ -192,7 +192,7 @@ def choose_clip_duration(remaining_seconds: float) -> float:
 
 
 def run_ffmpeg_clip(source: Path, output: Path, start_seconds: float, duration_seconds: float) -> None:
-    """Create a YouTube Shorts-compatible MP4 clip while preserving orientation and aspect ratio."""
+    """Create a vertical YouTube Shorts-compatible MP4 from any source orientation."""
     temp_output = config.PROCESSING_DIR / f"{output.stem}.partial{output.suffix}"
     if temp_output.exists():
         temp_output.unlink()
@@ -207,8 +207,10 @@ def run_ffmpeg_clip(source: Path, output: Path, start_seconds: float, duration_s
         str(source),
         "-t",
         _format_seconds(duration_seconds),
+        "-filter_complex",
+        vertical_shorts_filter(),
         "-map",
-        "0:v:0",
+        "[v]",
         "-map",
         "0:a?",
         "-c:v",
@@ -238,6 +240,19 @@ def run_ffmpeg_clip(source: Path, output: Path, start_seconds: float, duration_s
         if temp_output.exists():
             temp_output.unlink()
         raise
+
+
+def vertical_shorts_filter() -> str:
+    """Build an ffmpeg filter that fits vertical and horizontal videos into 9:16."""
+    width = int(config.OUTPUT_WIDTH)
+    height = int(config.OUTPUT_HEIGHT)
+    return (
+        f"[0:v]split=2[bg][fg];"
+        f"[bg]scale={width}:{height}:force_original_aspect_ratio=increase,"
+        f"crop={width}:{height},gblur=sigma=28,eq=brightness=-0.08[bg];"
+        f"[fg]scale={width}:{height}:force_original_aspect_ratio=decrease[fg];"
+        f"[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p[v]"
+    )
 
 
 def next_clip_number() -> int:
