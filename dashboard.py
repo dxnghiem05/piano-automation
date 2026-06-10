@@ -2001,8 +2001,31 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
 
 
 def stats_history_dates() -> list[str]:
-    """Return available YouTube stats snapshot dates."""
-    return sorted({row.get("checked_date", "") for row in read_stats_history() if row.get("checked_date", "")})
+    """Return available YouTube posting dates for TikTok candidate rows."""
+    return sorted({date for row in latest_tiktok_stats_rows() if (date := posted_date_for_stats_row(row))})
+
+
+def latest_tiktok_stats_rows() -> list[dict[str, str]]:
+    """Return the newest stats row for each tracked YouTube video."""
+    latest_by_video: dict[str, dict[str, str]] = {}
+    for row in read_stats_history():
+        video_id = row.get("youtube_video_id", "")
+        if not video_id:
+            continue
+        if video_id not in latest_by_video or row.get("checked_at", "") > latest_by_video[video_id].get("checked_at", ""):
+            latest_by_video[video_id] = row
+    return list(latest_by_video.values())
+
+
+def posted_date_for_stats_row(row: dict[str, str]) -> str:
+    """Return local posting date when the video should already be published."""
+    scheduled = parse_iso_datetime(row.get("scheduled_publish_time", ""))
+    if not scheduled:
+        return ""
+    now = datetime.now(scheduled.tzinfo) if scheduled.tzinfo else datetime.now()
+    if scheduled > now:
+        return ""
+    return scheduled.date().isoformat()
 
 
 def tiktok_candidate_days() -> list[dict[str, object]]:
@@ -2061,19 +2084,12 @@ def render_tiktok_day_row(day: dict[str, object], scheduled_rows: list[dict[str,
 
 
 def tiktok_candidates_for_date(selected_date: str) -> list[dict[str, str | int | float]]:
-    """Return top TikTok candidates for one stats day."""
-    latest_by_video: dict[str, dict[str, str]] = {}
-    for row in read_stats_history():
-        if row.get("checked_date", "") != selected_date:
-            continue
-        video_id = row.get("youtube_video_id", "")
-        if not video_id:
-            continue
-        if video_id not in latest_by_video or row.get("checked_at", "") > latest_by_video[video_id].get("checked_at", ""):
-            latest_by_video[video_id] = row
-
+    """Return top TikTok candidates from videos posted on one YouTube date."""
     candidates = []
-    for row in latest_by_video.values():
+    for row in latest_tiktok_stats_rows():
+        if posted_date_for_stats_row(row) != selected_date:
+            continue
+
         views = parse_stat_int(row.get("view_count", ""))
         likes = parse_stat_int(row.get("like_count", ""))
         comments = parse_stat_int(row.get("comment_count", ""))
