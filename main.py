@@ -1,0 +1,95 @@
+"""Application entry point."""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+import config
+from generate_clips import discover_videos, ensure_directories, generate_clips_for_videos, verify_ffmpeg_tools
+from generate_metadata import ClipMetadata, generate_metadata_for_clips
+from logging_setup import configure_logging
+from scheduler import generate_schedule
+from tracker import update_tracker
+from youtube_upload import read_upload_attempted_filenames, upload_clips
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class RunSummary:
+    """End-of-run summary."""
+
+    videos_found: int
+    clips_generated: int
+    clips_considered_for_upload: int
+    uploads_completed: int
+    uploads_skipped: int
+    upload_failures: int
+
+
+def main() -> None:
+    """Run the full Shorts automation workflow."""
+    load_dotenv()
+    ensure_directories()
+    configure_logging()
+
+    logger.info("Starting YouTube Shorts automation")
+
+    try:
+        verify_ffmpeg_tools()
+    except RuntimeError as exc:
+        logger.exception("Startup check failed: %s", exc)
+        print(f"Startup check failed: {exc}")
+        return
+
+    videos = discover_videos()
+    generated_clips = generate_clips_for_videos(videos)
+
+    clip_paths_to_consider = sorted({clip.clip_path for clip in generated_clips} | set(config.CLIPS_DIR.glob("clip_*.mp4")))
+    not_attempted = filter_not_attempted(clip_paths_to_consider)[: config.MAX_UPLOADS_PER_RUN]
+    metadata = generate_metadata_for_clips(not_attempted)
+    metadata_by_filename: dict[str, ClipMetadata] = {record.filename: record for record in metadata}
+    schedule_times = generate_schedule(len(not_attempted))
+
+    upload_results = upload_clips(not_attempted, metadata_by_filename, schedule_times) if not_attempted else []
+    update_tracker(videos, generated_clips)
+
+    summary = RunSummary(
+        videos_found=len(videos),
+        clips_generated=len(generated_clips),
+        clips_considered_for_upload=len(not_attempted),
+        uploads_completed=sum(1 for result in upload_results if result.uploaded),
+        uploads_skipped=sum(1 for result in upload_results if result.skipped),
+        upload_failures=sum(1 for result in upload_results if result.error),
+    )
+
+    logger.info("Finished run: %s", summary)
+    print_summary(summary)
+
+
+def filter_not_attempted(clip_paths: list[Path]) -> list[Path]:
+    """Return current-run clips that have not already had an upload attempt."""
+    attempted = read_upload_attempted_filenames()
+    return [clip_path for clip_path in clip_paths if clip_path.name not in attempted]
+
+
+def print_summary(summary: RunSummary) -> None:
+    """Print a concise final summary."""
+    print("")
+    print("YouTube Shorts automation complete")
+    print("----------------------------------")
+    print(f"Videos found:              {summary.videos_found}")
+    print(f"Clips generated:           {summary.clips_generated}")
+    print(f"Clips queued for upload:   {summary.clips_considered_for_upload}")
+    print(f"Uploads completed:         {summary.uploads_completed}")
+    print(f"Uploads skipped:           {summary.uploads_skipped}")
+    print(f"Upload failures:           {summary.upload_failures}")
+    print(f"Log file:                  {config.APP_LOG_FILE}")
+
+
+if __name__ == "__main__":
+    main()
