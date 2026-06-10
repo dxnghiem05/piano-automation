@@ -45,6 +45,16 @@ RUN_STATE = {
 }
 
 
+def is_safe_dashboard_path(value: str) -> bool:
+    """Return True for local dashboard paths that are safe redirect targets."""
+    if not value.startswith("/"):
+        return False
+    parsed = urlparse(value)
+    if parsed.netloc or parsed.scheme:
+        return False
+    return parsed.path in {"/", "/stats", "/queue", "/tracker", "/tiktok-candidates"}
+
+
 class DashboardHandler(BaseHTTPRequestHandler):
     """HTTP handler for the local dashboard."""
 
@@ -110,8 +120,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/refresh-stats":
+            redirect_target = self.form_redirect_target(default=self.redirect_back_path(default="/stats"))
             start_stats_refresh()
-            self.redirect(self.redirect_back_path(default="/stats"))
+            self.redirect(redirect_target)
             return
 
         if parsed.path == "/queue/privacy":
@@ -305,6 +316,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return default
 
         return path + (f"?{parsed.query}" if parsed.query else "")
+
+    def form_redirect_target(self, default: str = "/") -> str:
+        """Read a safe redirect_to value from a small urlencoded form."""
+        content_length = int(self.headers.get("Content-Length", "0"))
+        if content_length <= 0:
+            return default
+
+        raw_body = self.rfile.read(content_length).decode("utf-8")
+        form = parse_qs(raw_body)
+        target = (form.get("redirect_to", [""])[0] or "").strip()
+        return target if is_safe_dashboard_path(target) else default
 
     def log_message(self, format: str, *args: object) -> None:
         """Route default HTTP logs into app logging."""
@@ -952,7 +974,8 @@ def render_dashboard() -> str:
             <a class="album-action cover-stats" href="/stats"><span>YouTube Stats</span></a>
             <a class="album-action cover-queue" href="/queue"><span>Queue</span></a>
             <a class="album-action cover-tiktok" href="/tiktok-candidates"><span>TikTok Candidates</span></a>
-            <form action="/refresh-stats" method="post">
+            <form action="/refresh-stats" method="post" class="refresh-form">
+              <input type="hidden" name="redirect_to" value="/">
               <button class="album-action cover-refresh" type="submit" {run_disabled}><span>Refresh Stats</span></button>
             </form>
           </div>
@@ -1013,6 +1036,32 @@ def render_dashboard() -> str:
     }}
     refreshStatus();
     window.setInterval(refreshStatus, 2000);
+    document.querySelectorAll('.refresh-form').forEach((form) => {{
+      form.addEventListener('submit', async (event) => {{
+        event.preventDefault();
+        const button = form.querySelector('button');
+        const label = button ? button.textContent : '';
+        if (button) {{
+          button.disabled = true;
+          button.textContent = 'Refreshing...';
+        }}
+        try {{
+          await fetch(form.action, {{
+            method: 'POST',
+            body: new URLSearchParams(new FormData(form)),
+            headers: {{ 'X-Requested-With': 'fetch' }},
+          }});
+          await refreshStatus();
+        }} catch (error) {{
+          console.error(error);
+        }} finally {{
+          if (button) {{
+            button.disabled = false;
+            button.textContent = label;
+          }}
+        }}
+      }});
+    }});
   </script>
 </body>
 </html>"""
@@ -2458,7 +2507,8 @@ def render_stats_page(selected_range: str = "1d") -> str:
         <a href="/queue">Queue</a>
         <a href="/tiktok-candidates">TikTok Candidates</a>
         <a href="/tracker">Tracker</a>
-        <form action="/refresh-stats" method="post">
+        <form action="/refresh-stats" method="post" class="stats-refresh-form">
+          <input type="hidden" name="redirect_to" value="/stats?range={html.escape(selected_range)}">
           <button type="submit">Refresh YouTube Stats</button>
         </form>
       </div>
@@ -2514,6 +2564,46 @@ def render_stats_page(selected_range: str = "1d") -> str:
       </section>
     </div>
   </div>
+  <script>
+    async function getRunStatus() {{
+      const response = await fetch('/api/status', {{ cache: 'no-store' }});
+      if (!response.ok) return null;
+      return response.json();
+    }}
+    async function waitForStatsRefresh() {{
+      for (let index = 0; index < 180; index += 1) {{
+        const status = await getRunStatus();
+        if (status && status.run && !status.run.running) return;
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      }}
+    }}
+    document.querySelectorAll('.stats-refresh-form').forEach((form) => {{
+      form.addEventListener('submit', async (event) => {{
+        event.preventDefault();
+        const button = form.querySelector('button');
+        const label = button ? button.textContent : '';
+        if (button) {{
+          button.disabled = true;
+          button.textContent = 'Refreshing...';
+        }}
+        try {{
+          await fetch(form.action, {{
+            method: 'POST',
+            body: new URLSearchParams(new FormData(form)),
+            headers: {{ 'X-Requested-With': 'fetch' }},
+          }});
+          await waitForStatsRefresh();
+          window.location.reload();
+        }} catch (error) {{
+          console.error(error);
+          if (button) {{
+            button.disabled = false;
+            button.textContent = label;
+          }}
+        }}
+      }});
+    }});
+  </script>
 </body>
 </html>"""
 
