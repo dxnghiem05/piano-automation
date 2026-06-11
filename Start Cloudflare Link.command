@@ -34,9 +34,17 @@ fi
 echo "Starting Cloudflare tunnel for:"
 echo "http://localhost:$PORT"
 echo ""
-echo "Cloudflare will print a public trycloudflare.com link below."
+echo "Cloudflare will print a public link below."
+echo "Look for the line that starts with:"
+echo "https://"
+echo ""
+echo "That link changes each time you restart this tunnel."
 echo "Keep this Terminal window open while using that link."
 echo "Press Control+C here when you want to stop it."
 echo ""
 
-cloudflared tunnel --url "http://localhost:$PORT"
+cloudflared tunnel \
+  --url "http://localhost:$PORT" \
+  --edge-ip-version 4 \
+  --transport-loglevel warn \
+  --retries 10

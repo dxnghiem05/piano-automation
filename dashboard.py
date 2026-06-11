@@ -79,7 +79,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         if path == "/queue":
             query = parse_qs(parsed.query)
-            self.send_html(render_queue_page(parse_page(query.get("page", ["1"])[0])))
+            self.send_html(
+                render_queue_page(
+                    parse_page(query.get("page", ["1"])[0]),
+                    parse_queue_sort(query.get("sort", ["oldest"])[0]),
+                )
+            )
             return
 
         if path == "/tiktok-candidates":
@@ -1275,9 +1280,10 @@ def render_tracker_page() -> str:
 </html>"""
 
 
-def render_queue_page(page: int = 1) -> str:
+def render_queue_page(page: int = 1, sort_order: str = "oldest") -> str:
     """Render uploaded and pending video queue."""
-    rows = build_queue_rows()
+    sort_order = parse_queue_sort(sort_order)
+    rows = sort_queue_rows(build_queue_rows(), sort_order)
     total_rows = len(rows)
     total_pages = max(1, (total_rows + QUEUE_PAGE_SIZE - 1) // QUEUE_PAGE_SIZE)
     page = max(1, min(page, total_pages))
@@ -1292,7 +1298,7 @@ def render_queue_page(page: int = 1) -> str:
     if not table_rows:
         table_rows = '<tr><td colspan="7" class="muted">No queue items yet.</td></tr>'
     message = render_queue_message(deferred_count)
-    pagination = render_queue_pagination(page, total_pages, start_index, end_index, total_rows)
+    pagination = render_queue_pagination(page, total_pages, start_index, end_index, total_rows, sort_order)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -1476,6 +1482,23 @@ def render_queue_page(page: int = 1) -> str:
       color: var(--muted);
       font-size: 14px;
     }}
+    .queue-tools {{
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+      flex-wrap: wrap;
+    }}
+    .sort-form {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0;
+    }}
+    .sort-form label {{
+      color: var(--muted);
+      font-size: 13px;
+    }}
     .pagination {{
       display: flex;
       align-items: center;
@@ -1511,6 +1534,7 @@ def render_queue_page(page: int = 1) -> str:
     @media (max-width: 820px) {{
       .top {{ align-items: flex-start; flex-direction: column; }}
       .queue-meta {{ align-items: flex-start; flex-direction: column; }}
+      .queue-tools {{ justify-content: flex-start; }}
       .pagination {{ justify-content: flex-start; }}
       .shell {{ padding-top: 36px; }}
     }}
@@ -1611,12 +1635,21 @@ def parse_page(value: str) -> int:
         return 1
 
 
+def parse_queue_sort(value: str) -> str:
+    """Return a supported queue sort mode."""
+    normalized = str(value or "").strip().lower()
+    if normalized in {"recent", "latest", "oldest"}:
+        return normalized
+    return "oldest"
+
+
 def render_queue_pagination(
     page: int,
     total_pages: int,
     start_index: int,
     end_index: int,
     total_rows: int,
+    sort_order: str,
 ) -> str:
     """Render queue pagination controls."""
     if not total_rows:
@@ -1626,17 +1659,21 @@ def render_queue_pagination(
 
     page_numbers = queue_page_numbers(page, total_pages)
     links = [
-        page_link("Previous", page - 1, disabled=page <= 1),
-        *[page_link(str(number), number, active=number == page) for number in page_numbers],
-        page_link("Next", page + 1, disabled=page >= total_pages),
+        page_link("Previous", page - 1, sort_order, disabled=page <= 1),
+        *[page_link(str(number), number, sort_order, active=number == page) for number in page_numbers],
+        page_link("Next", page + 1, sort_order, disabled=page >= total_pages),
     ]
+    sort_form = render_queue_sort_form(sort_order)
 
     return f"""
       <div class="queue-meta">
         <span>{html.escape(summary)}</span>
-        <nav class="pagination" aria-label="Queue pages">
-          {''.join(links)}
-        </nav>
+        <div class="queue-tools">
+          {sort_form}
+          <nav class="pagination" aria-label="Queue pages">
+            {''.join(links)}
+          </nav>
+        </div>
       </div>
     """
 
@@ -1655,16 +1692,63 @@ def queue_page_numbers(page: int, total_pages: int) -> list[int]:
     return [number for number in sorted(candidates) if 1 <= number <= total_pages]
 
 
-def page_link(label: str, page: int, active: bool = False, disabled: bool = False) -> str:
+def render_queue_sort_form(sort_order: str) -> str:
+    """Render the queue sort selector."""
+    options = [
+        ("recent", "Most recent"),
+        ("latest", "Latest scheduled"),
+        ("oldest", "Oldest"),
+    ]
+    rendered_options = []
+    for value, label in options:
+        selected = " selected" if value == sort_order else ""
+        rendered_options.append(f'<option value="{value}"{selected}>{html.escape(label)}</option>')
+
+    return f"""
+      <form class="sort-form" action="/queue" method="get">
+        <input type="hidden" name="page" value="1">
+        <label for="queue-sort">Sort</label>
+        <select id="queue-sort" name="sort" onchange="this.form.submit()">
+          {''.join(rendered_options)}
+        </select>
+      </form>
+    """
+
+
+def page_link(label: str, page: int, sort_order: str, active: bool = False, disabled: bool = False) -> str:
     """Render one queue pagination link."""
     classes = ["page-link"]
     if active:
         classes.append("active")
     if disabled:
         classes.append("disabled")
-    href = "#" if disabled else f"/queue?page={page}"
+    href = "#" if disabled else f"/queue?sort={html.escape(sort_order)}&page={page}"
     aria_current = ' aria-current="page"' if active else ""
     return f'<a class="{" ".join(classes)}" href="{html.escape(href)}"{aria_current}>{html.escape(label)}</a>'
+
+
+def sort_queue_rows(rows: list[dict[str, str]], sort_order: str) -> list[dict[str, str]]:
+    """Sort queue rows for the selected view."""
+    if sort_order == "recent":
+        return sorted(rows, key=queue_clip_number, reverse=True)
+    if sort_order == "latest":
+        return sorted(rows, key=queue_latest_key, reverse=True)
+    return sorted(rows, key=lambda row: row["sort_key"])
+
+
+def queue_clip_number(row: dict[str, str]) -> int:
+    """Return numeric clip id for newest-created sorting."""
+    filename = row.get("clip_filename", "")
+    digits = "".join(char for char in filename if char.isdigit())
+    return int(digits) if digits else -1
+
+
+def queue_latest_key(row: dict[str, str]) -> tuple[int, str, int]:
+    """Return latest scheduled/upload key while keeping unscheduled clips after dated clips."""
+    dated_value = row.get("scheduled_publish_time") or row.get("upload_time") or ""
+    if dated_value:
+        return (1, dated_value, queue_clip_number(row))
+    return (0, "", queue_clip_number(row))
 
 
 def render_queue_message(deferred_count: int = 0) -> str:
@@ -1747,6 +1831,7 @@ def build_queue_rows() -> list[dict[str, str]]:
                 "clip_filename": record.clip_filename,
                 "youtube_video_id": record.youtube_video_id,
                 "title": record.title,
+                "upload_time": record.upload_time,
                 "scheduled_publish_time": record.scheduled_publish_time,
                 "display_time": format_queue_time(record.scheduled_publish_time),
                 "status": queue_status(record.status, record.scheduled_publish_time),
@@ -1764,6 +1849,7 @@ def build_queue_rows() -> list[dict[str, str]]:
                 "clip_filename": clip_path.name,
                 "youtube_video_id": "",
                 "title": metadata.title if metadata else "",
+                "upload_time": "",
                 "scheduled_publish_time": "",
                 "display_time": "Not scheduled",
                 "status": "waiting",
