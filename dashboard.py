@@ -17,6 +17,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
+from zoneinfo import ZoneInfo
 
 import config
 from generate_clips import ensure_directories
@@ -3292,7 +3293,10 @@ def normalize_project_week(rows: list[dict[str, str]], selected_week: str) -> st
     weeks = project_weeks(rows)
     if not weeks:
         return ""
-    return selected_week if selected_week in weeks else weeks[-1]
+    if selected_week in weeks:
+        return selected_week
+    current_week = current_project_week_label()
+    return current_week if current_week in weeks else weeks[-1]
 
 
 def normalize_project_sort(value: str) -> str:
@@ -3337,15 +3341,35 @@ def sort_project_rows(rows: list[dict[str, str]], sort_order: str) -> list[dict[
 
 
 def project_weeks(rows: list[dict[str, str]]) -> list[str]:
-    """Return project weeks in natural Week 0, Week 1 order."""
-    weeks = {row.get("project_week", "") for row in rows if row.get("project_week", "")}
+    """Return planned project weeks plus any extra saved dataset weeks."""
+    weeks = set(planned_project_weeks())
+    weeks.update(row.get("project_week", "") for row in rows if row.get("project_week", ""))
     return sorted(weeks, key=project_week_sort_key)
 
 
 def project_week_sort_key(value: str) -> int:
     """Sort Week labels by number."""
+    if value.startswith("After Week"):
+        return config.PROJECT_TOTAL_WEEKS + 1
     digits = "".join(char for char in value if char.isdigit())
     return int(digits) if digits else 9999
+
+
+def planned_project_weeks() -> list[str]:
+    """Return the fixed Week 0 through Week 12 project timeline."""
+    return ["Week 0"] + [f"Week {week}" for week in range(1, config.PROJECT_TOTAL_WEEKS + 1)]
+
+
+def current_project_week_label() -> str:
+    """Return the current planned project week for the default filter."""
+    start = datetime.fromisoformat(config.PROJECT_WEEK_1_START_DATE).date()
+    today = datetime.now(ZoneInfo(config.TIMEZONE)).date()
+    if today < start:
+        return "Week 0"
+    week_number = ((today - start).days // 7) + 1
+    if week_number > config.PROJECT_TOTAL_WEEKS:
+        return f"Week {config.PROJECT_TOTAL_WEEKS}"
+    return f"Week {week_number}"
 
 
 def render_project_week_filter(

@@ -363,7 +363,10 @@ def project_week_label(timestamp: datetime | None) -> str:
     date = timestamp.astimezone(ZoneInfo(config.TIMEZONE)).date() if timestamp.tzinfo else timestamp.date()
     if date < start:
         return "Week 0"
-    return f"Week {((date - start).days // 7) + 1}"
+    week_number = ((date - start).days // 7) + 1
+    if week_number > config.PROJECT_TOTAL_WEEKS:
+        return f"After Week {config.PROJECT_TOTAL_WEEKS}"
+    return f"Week {week_number}"
 
 
 def project_phase(timestamp: datetime | None) -> str:
