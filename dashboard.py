@@ -3701,6 +3701,8 @@ def start_stats_refresh() -> None:
     """Refresh tracker stats in a background thread."""
     if RUN_STATE["running"]:
         return
+    if STATS_REFRESH_LOCK.locked():
+        return
 
     thread = threading.Thread(target=refresh_stats_process, daemon=True)
     thread.start()
@@ -3714,7 +3716,7 @@ def refresh_stats_files() -> None:
 
 
 def auto_refresh_youtube_stats_if_stale() -> None:
-    """Refresh YouTube stats on page load when saved stats are stale."""
+    """Start a background stats refresh when saved stats are stale."""
     global LAST_AUTO_STATS_REFRESH_ATTEMPT
 
     if RUN_STATE["running"]:
@@ -3725,10 +3727,19 @@ def auto_refresh_youtube_stats_if_stale() -> None:
         now = datetime.now(LAST_AUTO_STATS_REFRESH_ATTEMPT.tzinfo)
         if now - LAST_AUTO_STATS_REFRESH_ATTEMPT < timedelta(minutes=AUTO_STATS_REFRESH_MINUTES):
             return
+    if STATS_REFRESH_LOCK.locked():
+        return
+
+    LAST_AUTO_STATS_REFRESH_ATTEMPT = datetime.now().astimezone()
+    thread = threading.Thread(target=auto_refresh_stats_process, daemon=True)
+    thread.start()
+
+
+def auto_refresh_stats_process() -> None:
+    """Refresh stats without blocking the page request that triggered it."""
     if not STATS_REFRESH_LOCK.acquire(blocking=False):
         return
     try:
-        LAST_AUTO_STATS_REFRESH_ATTEMPT = datetime.now().astimezone()
         RUN_STATE["last_output"] = "Auto-refreshing YouTube stats for the Stats page..."
         RUN_STATE["last_error"] = ""
         refresh_stats_files()
@@ -3761,6 +3772,9 @@ def latest_stats_checked_at() -> datetime | None:
 
 def refresh_stats_process() -> None:
     """Refresh YouTube stats without clipping/uploading."""
+    if not STATS_REFRESH_LOCK.acquire(blocking=False):
+        return
+
     RUN_STATE.update(
         {
             "running": True,
@@ -3777,6 +3791,7 @@ def refresh_stats_process() -> None:
         logger.exception("Stats refresh failed: %s", exc)
         RUN_STATE["last_error"] = str(exc)
     finally:
+        STATS_REFRESH_LOCK.release()
         RUN_STATE["running"] = False
         RUN_STATE["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
 

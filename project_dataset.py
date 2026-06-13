@@ -79,6 +79,7 @@ def build_project_dataset() -> list[ProjectDatasetRow]:
     """Join uploads, stats snapshots, and local clip metadata into project rows."""
     stats_by_video = group_stats_by_video(read_stats_history())
     tracker_by_clip = read_existing_tracker_rows()
+    previous_project_rows = read_existing_project_rows()
     clip_info_by_name: dict[str, dict[str, str]] = {}
 
     rows: list[ProjectDatasetRow] = []
@@ -95,7 +96,7 @@ def build_project_dataset() -> list[ProjectDatasetRow]:
         views_24h = int_or_zero(twenty_four_hours.get("view_count", ""))
         likes_24h = int_or_zero(twenty_four_hours.get("like_count", ""))
         comments_24h = int_or_zero(twenty_four_hours.get("comment_count", ""))
-        clip_info = clip_info_for(record.clip_filename, tracker_by_clip, clip_info_by_name)
+        clip_info = clip_info_for(record.clip_filename, tracker_by_clip, previous_project_rows, clip_info_by_name)
         caption_word = parse_caption_word(record.title)
 
         rows.append(
@@ -226,9 +227,18 @@ def read_existing_tracker_rows() -> dict[str, dict[str, str]]:
         return {row.get("clip_filename", ""): row for row in csv.DictReader(file) if row.get("clip_filename")}
 
 
+def read_existing_project_rows() -> dict[str, dict[str, str]]:
+    """Read prior project dataset rows so expensive local clip probes can be reused."""
+    if not config.PROJECT_DATASET_CSV_FILE.exists():
+        return {}
+    with config.PROJECT_DATASET_CSV_FILE.open("r", newline="", encoding="utf-8") as file:
+        return {row.get("clip_id", ""): row for row in csv.DictReader(file) if row.get("clip_id")}
+
+
 def clip_info_for(
     clip_filename: str,
     tracker_by_clip: dict[str, dict[str, str]],
+    previous_project_rows: dict[str, dict[str, str]],
     cache: dict[str, dict[str, str]],
 ) -> dict[str, str]:
     """Return local clip features for project analysis."""
@@ -236,20 +246,23 @@ def clip_info_for(
         return cache[clip_filename]
 
     tracker_row = tracker_by_clip.get(clip_filename, {})
+    previous_row = previous_project_rows.get(clip_filename, {})
     info = {
-        "source_video": tracker_row.get("source_filename", ""),
-        "clip_length_seconds": tracker_row.get("clip_duration_seconds", ""),
-        "video_orientation": "",
-        "content_type": "unlabeled",
+        "source_video": tracker_row.get("source_filename", "") or previous_row.get("source_video", ""),
+        "clip_length_seconds": tracker_row.get("clip_duration_seconds", "") or previous_row.get("clip_length_seconds", ""),
+        "video_orientation": previous_row.get("video_orientation", ""),
+        "content_type": previous_row.get("content_type", "") or "unlabeled",
     }
 
-    clip_path = config.CLIPS_DIR / clip_filename
-    probe = probe_video(clip_path)
-    if probe:
-        duration, width, height = probe
-        if not info["clip_length_seconds"]:
-            info["clip_length_seconds"] = f"{duration:.1f}"
-        info["video_orientation"] = orientation_label(width, height)
+    if not info["clip_length_seconds"] or not info["video_orientation"]:
+        clip_path = config.CLIPS_DIR / clip_filename
+        probe = probe_video(clip_path)
+        if probe:
+            duration, width, height = probe
+            if not info["clip_length_seconds"]:
+                info["clip_length_seconds"] = f"{duration:.1f}"
+            if not info["video_orientation"]:
+                info["video_orientation"] = orientation_label(width, height)
 
     cache[clip_filename] = info
     return info
