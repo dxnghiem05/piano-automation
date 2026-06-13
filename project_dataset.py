@@ -89,10 +89,10 @@ def build_project_dataset() -> list[ProjectDatasetRow]:
 
         snapshots = stats_by_video.get(record.youtube_video_id, [])
         latest = snapshots[-1] if snapshots else {}
-        scheduled_at = parse_datetime(record.scheduled_publish_time)
-        one_hour = checkpoint_stats(snapshots, scheduled_at, hours=1)
-        six_hours = checkpoint_stats(snapshots, scheduled_at, hours=6)
-        twenty_four_hours = checkpoint_stats(snapshots, scheduled_at, hours=24)
+        publish_at = project_publish_datetime(record)
+        one_hour = checkpoint_stats(snapshots, publish_at, hours=1)
+        six_hours = checkpoint_stats(snapshots, publish_at, hours=6)
+        twenty_four_hours = checkpoint_stats(snapshots, publish_at, hours=24)
         views_24h = int_or_zero(twenty_four_hours.get("view_count", ""))
         likes_24h = int_or_zero(twenty_four_hours.get("like_count", ""))
         comments_24h = int_or_zero(twenty_four_hours.get("comment_count", ""))
@@ -101,8 +101,8 @@ def build_project_dataset() -> list[ProjectDatasetRow]:
 
         rows.append(
             ProjectDatasetRow(
-                project_week=project_week_label(scheduled_at),
-                project_phase=project_phase(scheduled_at),
+                project_week=project_week_label(publish_at),
+                project_phase=project_phase(publish_at),
                 clip_id=record.clip_filename,
                 source_video=clip_info.get("source_video", ""),
                 platform="YouTube Shorts",
@@ -111,10 +111,10 @@ def build_project_dataset() -> list[ProjectDatasetRow]:
                 hashtags=parse_hashtags(record.title),
                 clip_length_seconds=clip_info.get("clip_length_seconds", ""),
                 scheduled_time=record.scheduled_publish_time,
-                actual_publish_time=record.scheduled_publish_time,
-                posting_hour=scheduled_at.strftime("%-I %p") if scheduled_at else "",
-                posting_time_group=posting_time_group(scheduled_at),
-                day_of_week=scheduled_at.strftime("%A") if scheduled_at else "",
+                actual_publish_time=record.scheduled_publish_time or record.upload_time,
+                posting_hour=publish_at.strftime("%-I %p") if publish_at else "",
+                posting_time_group=posting_time_group(publish_at),
+                day_of_week=publish_at.strftime("%A") if publish_at else "",
                 views_1h=str(int_or_zero(one_hour.get("view_count", ""))) if one_hour else "",
                 views_6h=str(int_or_zero(six_hours.get("view_count", ""))) if six_hours else "",
                 views_24h=str(views_24h) if twenty_four_hours else "",
@@ -145,6 +145,11 @@ def dedupe_upload_records():
         if previous is None or record.upload_time > previous.upload_time:
             latest[record.clip_filename] = record
     return sorted(latest.values(), key=lambda item: item.scheduled_publish_time or item.upload_time)
+
+
+def project_publish_datetime(record) -> datetime | None:
+    """Return the timestamp used for project week and posting-time analysis."""
+    return parse_datetime(record.scheduled_publish_time) or parse_datetime(record.upload_time)
 
 
 def group_stats_by_video(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
