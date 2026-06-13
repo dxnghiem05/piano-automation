@@ -36,6 +36,7 @@ MAX_UPLOAD_BYTES = 8 * 1024 * 1024 * 1024
 HOME_RECENT_CLIP_LIMIT = 10
 QUEUE_PAGE_SIZE = 20
 STATS_TABLE_PAGE_SIZE = 25
+AUTO_STATS_REFRESH_MINUTES = 15
 APP_FONT_STACK = (
     '"CircularSp", "Circular Std", "Avenir Next", "Helvetica Neue", '
     'Helvetica, Arial, sans-serif'
@@ -47,6 +48,8 @@ RUN_STATE = {
     "last_output": "",
     "last_error": "",
 }
+STATS_REFRESH_LOCK = threading.Lock()
+LAST_AUTO_STATS_REFRESH_ATTEMPT: datetime | None = None
 
 
 def is_safe_dashboard_path(value: str) -> bool:
@@ -101,6 +104,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             selected_project_week = query.get("project_week", [""])[0]
             selected_project_sort = query.get("project_sort", ["recent"])[0]
             selected_stats_page = parse_page(query.get("stats_page", ["1"])[0])
+            auto_refresh_youtube_stats_if_stale()
             self.send_html(
                 render_stats_page(
                     selected_range,
@@ -3359,7 +3363,12 @@ def render_project_week_filter(
     for week in weeks:
         count = sum(1 for row in rows if row.get("project_week") == week)
         active = " active" if week == selected_week else ""
-        href = f"/stats?range={html.escape(selected_range)}&project_week={html.escape(week)}&project_sort={html.escape(selected_sort)}"
+        href = (
+            f"/stats?range={html.escape(selected_range)}"
+            f"&project_week={html.escape(week)}"
+            f"&project_sort={html.escape(selected_sort)}"
+            "#project-foundation"
+        )
         links.append(f'<a class="{active.strip()}" href="{href}">{html.escape(week)} <span>&nbsp;{count}</span></a>')
 
     return f"""
@@ -3384,7 +3393,12 @@ def project_sort_header(
 ) -> str:
     """Render a sortable project table header."""
     active = normalize_project_sort(selected_sort) == sort_value
-    href = f"/stats?range={html.escape(selected_range)}&project_week={html.escape(selected_week)}&project_sort={sort_value}"
+    href = (
+        f"/stats?range={html.escape(selected_range)}"
+        f"&project_week={html.escape(selected_week)}"
+        f"&project_sort={sort_value}"
+        "#project-foundation"
+    )
     arrow = "↓" if active else "↕"
     active_class = " active" if active else ""
     return (
@@ -3401,7 +3415,12 @@ def project_views_sort_header(selected_sort: str, selected_week: str, selected_r
     active = selected_sort in {"highest_views", "lowest_views"}
     next_sort = "lowest_views" if selected_sort == "highest_views" else "highest_views"
     arrow = "↑" if selected_sort == "lowest_views" else ("↓" if selected_sort == "highest_views" else "↕")
-    href = f"/stats?range={html.escape(selected_range)}&project_week={html.escape(selected_week)}&project_sort={next_sort}"
+    href = (
+        f"/stats?range={html.escape(selected_range)}"
+        f"&project_week={html.escape(selected_week)}"
+        f"&project_sort={next_sort}"
+        "#project-foundation"
+    )
     active_class = " active" if active else ""
     return (
         f'<a class="sort-head{active_class}" href="{href}">'
@@ -3430,7 +3449,7 @@ def render_project_tracker_section(
     high_performer_header = project_sort_header("High Performer", "high_performer", selected_sort, selected_week, selected_range)
 
     return f"""
-      <section class="wide">
+      <section class="wide" id="project-foundation">
         <div class="project-grid">
           <div>
             <p class="eyebrow">12-week data science tracker</p>
@@ -3687,6 +3706,59 @@ def start_stats_refresh() -> None:
     thread.start()
 
 
+def refresh_stats_files() -> None:
+    """Refresh YouTube stats and all local tracker outputs."""
+    refresh_youtube_stats_history()
+    update_tracker([], [])
+    refresh_project_dataset()
+
+
+def auto_refresh_youtube_stats_if_stale() -> None:
+    """Refresh YouTube stats on page load when saved stats are stale."""
+    global LAST_AUTO_STATS_REFRESH_ATTEMPT
+
+    if RUN_STATE["running"]:
+        return
+    if not youtube_stats_are_stale():
+        return
+    if LAST_AUTO_STATS_REFRESH_ATTEMPT:
+        now = datetime.now(LAST_AUTO_STATS_REFRESH_ATTEMPT.tzinfo)
+        if now - LAST_AUTO_STATS_REFRESH_ATTEMPT < timedelta(minutes=AUTO_STATS_REFRESH_MINUTES):
+            return
+    if not STATS_REFRESH_LOCK.acquire(blocking=False):
+        return
+    try:
+        LAST_AUTO_STATS_REFRESH_ATTEMPT = datetime.now().astimezone()
+        RUN_STATE["last_output"] = "Auto-refreshing YouTube stats for the Stats page..."
+        RUN_STATE["last_error"] = ""
+        refresh_stats_files()
+        RUN_STATE["last_output"] = "YouTube stats auto-refreshed for the Stats page."
+    except Exception as exc:
+        logger.exception("Automatic stats refresh failed: %s", exc)
+        RUN_STATE["last_error"] = f"Automatic YouTube stats refresh failed: {exc}"
+    finally:
+        STATS_REFRESH_LOCK.release()
+
+
+def youtube_stats_are_stale() -> bool:
+    """Return True when local YouTube stats are missing or older than the freshness window."""
+    latest = latest_stats_checked_at()
+    if latest is None:
+        return True
+    now = datetime.now(latest.tzinfo) if latest.tzinfo else datetime.now()
+    return now - latest >= timedelta(minutes=AUTO_STATS_REFRESH_MINUTES)
+
+
+def latest_stats_checked_at() -> datetime | None:
+    """Return the newest saved YouTube stats timestamp."""
+    timestamps = []
+    for row in read_stats_history():
+        checked_at = parse_iso_datetime(row.get("checked_at", ""))
+        if checked_at:
+            timestamps.append(checked_at)
+    return max(timestamps, default=None)
+
+
 def refresh_stats_process() -> None:
     """Refresh YouTube stats without clipping/uploading."""
     RUN_STATE.update(
@@ -3699,9 +3771,7 @@ def refresh_stats_process() -> None:
         }
     )
     try:
-        refresh_youtube_stats_history()
-        update_tracker([], [])
-        refresh_project_dataset()
+        refresh_stats_files()
         RUN_STATE["last_output"] = "YouTube stats refreshed into tracker and project dataset files."
     except Exception as exc:
         logger.exception("Stats refresh failed: %s", exc)
