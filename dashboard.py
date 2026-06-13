@@ -35,6 +35,7 @@ PORT = 8000
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024 * 1024
 HOME_RECENT_CLIP_LIMIT = 10
 QUEUE_PAGE_SIZE = 20
+STATS_TABLE_PAGE_SIZE = 25
 APP_FONT_STACK = (
     '"CircularSp", "Circular Std", "Avenir Next", "Helvetica Neue", '
     'Helvetica, Arial, sans-serif'
@@ -98,7 +99,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             selected_range = query.get("range", ["1d"])[0]
             selected_project_week = query.get("project_week", [""])[0]
-            self.send_html(render_stats_page(selected_range, selected_project_week))
+            selected_project_sort = query.get("project_sort", ["recent"])[0]
+            selected_stats_page = parse_page(query.get("stats_page", ["1"])[0])
+            self.send_html(
+                render_stats_page(
+                    selected_range,
+                    selected_project_week,
+                    selected_project_sort,
+                    selected_stats_page,
+                )
+            )
             return
 
         if path == "/tracker.csv":
@@ -2511,7 +2521,12 @@ STATS_RANGES = {
 }
 
 
-def render_stats_page(selected_range: str = "1d", selected_project_week: str = "") -> str:
+def render_stats_page(
+    selected_range: str = "1d",
+    selected_project_week: str = "",
+    selected_project_sort: str = "recent",
+    selected_stats_page: int = 1,
+) -> str:
     """Render YouTube stats dashboard."""
     latest_rows = latest_video_stats()
     hour_rows = best_posting_hours()
@@ -2526,24 +2541,42 @@ def render_stats_page(selected_range: str = "1d", selected_project_week: str = "
     top_video_markup = render_top_video_list(latest_rows)
     project_rows = read_project_dataset()
     selected_project_week = normalize_project_week(project_rows, selected_project_week)
+    selected_project_sort = normalize_project_sort(selected_project_sort)
     project_summary = summarize_project_dataset(project_rows)
     project_tracker_markup = render_project_tracker_section(
         project_rows,
         project_summary,
         selected_project_week,
         selected_range,
+        selected_project_sort,
     )
 
-    table_rows = "".join(render_stats_table_row(row) for row in latest_rows[:200])
+    total_stats_rows = len(latest_rows)
+    total_stats_pages = max(1, (total_stats_rows + STATS_TABLE_PAGE_SIZE - 1) // STATS_TABLE_PAGE_SIZE)
+    selected_stats_page = max(1, min(selected_stats_page, total_stats_pages))
+    stats_start = (selected_stats_page - 1) * STATS_TABLE_PAGE_SIZE
+    stats_end = min(stats_start + STATS_TABLE_PAGE_SIZE, total_stats_rows)
+    visible_stats_rows = latest_rows[stats_start:stats_end]
+    table_rows = "".join(render_stats_table_row(row) for row in visible_stats_rows)
     if not table_rows:
         table_rows = '<tr><td colspan="9" class="muted">No YouTube stats yet. Upload videos, then click Refresh YouTube Stats.</td></tr>'
+    stats_pagination = render_stats_table_pagination(
+        selected_stats_page,
+        total_stats_pages,
+        stats_start,
+        stats_end,
+        total_stats_rows,
+        selected_range,
+        selected_project_week,
+        selected_project_sort,
+    )
 
     hour_markup = "".join(render_hour_bar(row) for row in hour_rows)
     if not hour_markup:
         hour_markup = '<p class="muted">No posting-hour data yet.</p>'
 
     chart_svg = render_hourly_views_chart(hourly_rows)
-    range_tabs = render_range_tabs(selected_range, selected_project_week)
+    range_tabs = render_range_tabs(selected_range, selected_project_week, selected_project_sort)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -2746,6 +2779,15 @@ def render_stats_page(selected_range: str = "1d", selected_project_week: str = "
       box-shadow: none;
     }}
     .wide {{ grid-column: 1 / -1; }}
+    .section-head {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }}
+    .section-head h2 {{ margin: 0; }}
     .table-wrap {{
       overflow: auto;
       border: 1px solid var(--line);
@@ -2864,6 +2906,36 @@ def render_stats_page(selected_range: str = "1d", selected_project_week: str = "
       max-height: 520px;
       overflow: auto;
     }}
+    .table-pagination {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 12px;
+    }}
+    .table-pagination a {{
+      min-height: 32px;
+      min-width: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: #242424;
+      border: 1px solid rgba(255,255,255,.08);
+      color: #d7d7d7;
+      font-size: 12px;
+    }}
+    .table-pagination a.active {{
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #050505;
+    }}
+    .table-pagination a.disabled {{
+      opacity: .45;
+      pointer-events: none;
+    }}
     @media (max-width: 980px) {{
       .market, .lower-grid {{ grid-template-columns: 1fr; }}
       .project-grid {{ grid-template-columns: 1fr; }}
@@ -2886,7 +2958,7 @@ def render_stats_page(selected_range: str = "1d", selected_project_week: str = "
         <a href="/queue">Queue</a>
         <a href="/tiktok-candidates">TikTok Candidates</a>
         <form action="/refresh-stats" method="post" class="stats-refresh-form">
-          <input type="hidden" name="redirect_to" value="/stats?range={html.escape(selected_range)}&project_week={html.escape(selected_project_week)}">
+          <input type="hidden" name="redirect_to" value="/stats?range={html.escape(selected_range)}&project_week={html.escape(selected_project_week)}&project_sort={html.escape(selected_project_sort)}&stats_page={selected_stats_page}">
           <button type="submit">Refresh YouTube Stats</button>
         </form>
       </div>
@@ -2920,8 +2992,11 @@ def render_stats_page(selected_range: str = "1d", selected_project_week: str = "
         <h2>Best Posting Hours</h2>
         <div class="hours-grid">{hour_markup}</div>
       </section>
-      <section>
-        <h2>Video Stats</h2>
+      <section id="video-stats">
+        <div class="section-head">
+          <h2>Video Stats</h2>
+          {stats_pagination}
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -2998,15 +3073,69 @@ def stats_range_label(value: str) -> str:
     return STATS_RANGES.get(value, STATS_RANGES["1d"])[0]
 
 
-def render_range_tabs(selected_range: str, selected_project_week: str = "") -> str:
+def render_range_tabs(
+    selected_range: str,
+    selected_project_week: str = "",
+    selected_project_sort: str = "recent",
+) -> str:
     """Render clickable chart range tabs."""
     tabs = []
     for value, (label, _delta) in STATS_RANGES.items():
         active = " active" if value == selected_range else ""
         tabs.append(
-            f'<a class="{active.strip()}" href="/stats?range={value}&project_week={html.escape(selected_project_week)}">{label}</a>'
+            f'<a class="{active.strip()}" href="/stats?range={value}&project_week={html.escape(selected_project_week)}&project_sort={html.escape(selected_project_sort)}">{label}</a>'
         )
     return f'<nav class="range-tabs" aria-label="Chart ranges">{"".join(tabs)}</nav>'
+
+
+def render_stats_table_pagination(
+    page: int,
+    total_pages: int,
+    start_index: int,
+    end_index: int,
+    total_rows: int,
+    selected_range: str,
+    selected_project_week: str,
+    selected_project_sort: str,
+) -> str:
+    """Render pagination controls for the Video Stats table."""
+    if not total_rows:
+        return '<div class="table-pagination">No videos</div>'
+
+    summary = f"Showing {start_index + 1}-{end_index} of {total_rows}"
+    page_numbers = queue_page_numbers(page, total_pages)
+    links = [
+        stats_page_link("Previous", page - 1, selected_range, selected_project_week, selected_project_sort, disabled=page <= 1),
+        *[
+            stats_page_link(str(number), number, selected_range, selected_project_week, selected_project_sort, active=number == page)
+            for number in page_numbers
+        ],
+        stats_page_link("Next", page + 1, selected_range, selected_project_week, selected_project_sort, disabled=page >= total_pages),
+    ]
+    return f'<nav class="table-pagination" aria-label="Video Stats pages"><span>{html.escape(summary)}</span>{"".join(links)}</nav>'
+
+
+def stats_page_link(
+    label: str,
+    page: int,
+    selected_range: str,
+    selected_project_week: str,
+    selected_project_sort: str,
+    active: bool = False,
+    disabled: bool = False,
+) -> str:
+    """Render one Video Stats pagination link."""
+    classes = ["active" if active else "", "disabled" if disabled else ""]
+    href = "#"
+    if not disabled:
+        href = (
+            f"/stats?range={html.escape(selected_range)}"
+            f"&project_week={html.escape(selected_project_week)}"
+            f"&project_sort={html.escape(selected_project_sort)}"
+            f"&stats_page={page}"
+            "#video-stats"
+        )
+    return f'<a class="{" ".join(cls for cls in classes if cls)}" href="{href}">{html.escape(label)}</a>'
 
 
 def hourly_total_views(selected_range: str) -> list[dict[str, int | str]]:
@@ -3073,6 +3202,14 @@ def parse_stat_int(value: str) -> int:
         return 0
 
 
+def parse_float(value: str) -> float:
+    """Parse decimal strings defensively."""
+    try:
+        return float(str(value).strip() or "0")
+    except ValueError:
+        return 0.0
+
+
 def render_top_video_list(rows: list[dict[str, str]]) -> str:
     """Render compact top-video list for the stats sidebar."""
     ranked = sorted(rows, key=lambda row: parse_stat_int(row.get("view_count", "")), reverse=True)[:5]
@@ -3130,6 +3267,47 @@ def normalize_project_week(rows: list[dict[str, str]], selected_week: str) -> st
     return selected_week if selected_week in weeks else weeks[-1]
 
 
+def normalize_project_sort(value: str) -> str:
+    """Return a supported project dataset sort mode."""
+    normalized = str(value or "").strip().lower()
+    if normalized in {"recent", "highest_views", "lowest_views", "like_rate", "high_performer"}:
+        return normalized
+    return "recent"
+
+
+def project_sort_label(value: str) -> str:
+    """Return a readable project sort label."""
+    labels = {
+        "recent": "Most Recent",
+        "highest_views": "Highest Views",
+        "lowest_views": "Lowest Views",
+        "like_rate": "Best Like Rate",
+        "high_performer": "High Performers",
+    }
+    return labels.get(normalize_project_sort(value), "Most Recent")
+
+
+def sort_project_rows(rows: list[dict[str, str]], sort_order: str) -> list[dict[str, str]]:
+    """Sort project rows for the selected analytical view."""
+    sort_order = normalize_project_sort(sort_order)
+    if sort_order == "highest_views":
+        return sorted(rows, key=lambda row: parse_stat_int(row.get("views_24h", "")), reverse=True)
+    if sort_order == "lowest_views":
+        return sorted(rows, key=lambda row: parse_stat_int(row.get("views_24h", "")))
+    if sort_order == "like_rate":
+        return sorted(rows, key=lambda row: parse_float(row.get("like_rate_24h", "")), reverse=True)
+    if sort_order == "high_performer":
+        return sorted(
+            rows,
+            key=lambda row: (
+                row.get("high_performing", "") == "1",
+                parse_stat_int(row.get("views_24h", "")),
+            ),
+            reverse=True,
+        )
+    return sorted(rows, key=lambda row: row.get("scheduled_time", ""), reverse=True)
+
+
 def project_weeks(rows: list[dict[str, str]]) -> list[str]:
     """Return project weeks in natural Week 0, Week 1 order."""
     weeks = {row.get("project_week", "") for row in rows if row.get("project_week", "")}
@@ -3146,6 +3324,7 @@ def render_project_week_filter(
     rows: list[dict[str, str]],
     selected_week: str,
     selected_range: str,
+    selected_sort: str,
 ) -> str:
     """Render week filter pills for the project dataset."""
     weeks = project_weeks(rows)
@@ -3156,7 +3335,7 @@ def render_project_week_filter(
     for week in weeks:
         count = sum(1 for row in rows if row.get("project_week") == week)
         active = " active" if week == selected_week else ""
-        href = f"/stats?range={html.escape(selected_range)}&project_week={html.escape(week)}"
+        href = f"/stats?range={html.escape(selected_range)}&project_week={html.escape(week)}&project_sort={html.escape(selected_sort)}"
         links.append(f'<a class="{active.strip()}" href="{href}">{html.escape(week)} <span>&nbsp;{count}</span></a>')
 
     return f"""
@@ -3172,18 +3351,49 @@ def render_project_week_filter(
     """
 
 
+def render_project_sort_filter(selected_week: str, selected_range: str, selected_sort: str) -> str:
+    """Render project dataset sort/filter pills."""
+    options = [
+        ("recent", "Most Recent"),
+        ("highest_views", "Highest Views"),
+        ("lowest_views", "Lowest Views"),
+        ("like_rate", "Best Like Rate"),
+        ("high_performer", "High Performers"),
+    ]
+    links = []
+    for value, label in options:
+        active = " active" if value == selected_sort else ""
+        href = f"/stats?range={html.escape(selected_range)}&project_week={html.escape(selected_week)}&project_sort={value}"
+        links.append(f'<a class="{active.strip()}" href="{href}">{html.escape(label)}</a>')
+
+    return f"""
+      <div class="week-filter" style="margin-top:10px;">
+        <div>
+          <h2 style="margin:0;">Dataset Filters</h2>
+          <p class="muted" style="margin:6px 0 0;">Sort the selected week by views, like rate, or high performer label.</p>
+        </div>
+        <nav class="week-pills" aria-label="Project dataset filters">
+          {''.join(links)}
+        </nav>
+      </div>
+    """
+
+
 def render_project_tracker_section(
     rows: list[dict[str, str]],
     summary: dict[str, int | str],
     selected_week: str,
     selected_range: str,
+    selected_sort: str,
 ) -> str:
     """Render the data science project foundation inside YouTube Stats."""
     filtered_rows = [row for row in rows if row.get("project_week") == selected_week]
-    preview_rows = "".join(render_project_dataset_row(row) for row in filtered_rows[::-1])
+    sorted_rows = sort_project_rows(filtered_rows, selected_sort)
+    preview_rows = "".join(render_project_dataset_row(row) for row in sorted_rows)
     if not preview_rows:
         preview_rows = '<tr><td colspan="12" class="muted">No project dataset rows yet. Refresh YouTube Stats to build the tracker.</td></tr>'
-    week_filter = render_project_week_filter(rows, selected_week, selected_range)
+    week_filter = render_project_week_filter(rows, selected_week, selected_range, selected_sort)
+    sort_filter = render_project_sort_filter(selected_week, selected_range, selected_sort)
 
     return f"""
       <section class="wide">
@@ -3212,7 +3422,8 @@ def render_project_tracker_section(
           </div>
         </div>
         {week_filter}
-        <p class="muted" style="margin:0 0 10px;">{html.escape(selected_week or 'No week selected')} • {len(filtered_rows)} clips shown</p>
+        {sort_filter}
+        <p class="muted" style="margin:0 0 10px;">{html.escape(selected_week or 'No week selected')} • {len(sorted_rows)} clips shown • {html.escape(project_sort_label(selected_sort))}</p>
         <div class="table-wrap project-table">
           <table>
             <thead>
