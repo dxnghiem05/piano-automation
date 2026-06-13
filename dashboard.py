@@ -37,7 +37,7 @@ MAX_UPLOAD_BYTES = 8 * 1024 * 1024 * 1024
 HOME_RECENT_CLIP_LIMIT = 10
 QUEUE_PAGE_SIZE = 20
 STATS_TABLE_PAGE_SIZE = 25
-AUTO_STATS_REFRESH_MINUTES = 15
+AUTO_STATS_REFRESH_MINUTES = 2
 APP_FONT_STACK = (
     '"CircularSp", "Circular Std", "Avenir Next", "Helvetica Neue", '
     'Helvetica, Arial, sans-serif'
@@ -105,13 +105,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             selected_project_week = query.get("project_week", [""])[0]
             selected_project_sort = query.get("project_sort", ["recent"])[0]
             selected_stats_page = parse_page(query.get("stats_page", ["1"])[0])
-            auto_refresh_youtube_stats_if_stale()
+            auto_refresh_started = auto_refresh_youtube_stats_if_stale()
             self.send_html(
                 render_stats_page(
                     selected_range,
                     selected_project_week,
                     selected_project_sort,
                     selected_stats_page,
+                    auto_refresh_started,
                 )
             )
             return
@@ -2531,6 +2532,7 @@ def render_stats_page(
     selected_project_week: str = "",
     selected_project_sort: str = "recent",
     selected_stats_page: int = 1,
+    auto_refresh_started: bool = False,
 ) -> str:
     """Render YouTube stats dashboard."""
     latest_rows = latest_video_stats()
@@ -3048,6 +3050,7 @@ def render_stats_page(
     </div>
   </div>
   <script>
+    const AUTO_STATS_REFRESH_STARTED = {json.dumps(auto_refresh_started)};
     async function getRunStatus() {{
       const response = await fetch('/api/status', {{ cache: 'no-store' }});
       if (!response.ok) return null;
@@ -3086,6 +3089,9 @@ def render_stats_page(
         }}
       }});
     }});
+    if (AUTO_STATS_REFRESH_STARTED) {{
+      waitForStatsRefresh().then(() => window.location.reload());
+    }}
   </script>
 </body>
 </html>"""
@@ -3739,39 +3745,47 @@ def refresh_stats_files() -> None:
     refresh_project_dataset()
 
 
-def auto_refresh_youtube_stats_if_stale() -> None:
+def auto_refresh_youtube_stats_if_stale() -> bool:
     """Start a background stats refresh when saved stats are stale."""
     global LAST_AUTO_STATS_REFRESH_ATTEMPT
 
     if RUN_STATE["running"]:
-        return
+        return False
     if not youtube_stats_are_stale():
-        return
+        return False
     if LAST_AUTO_STATS_REFRESH_ATTEMPT:
         now = datetime.now(LAST_AUTO_STATS_REFRESH_ATTEMPT.tzinfo)
         if now - LAST_AUTO_STATS_REFRESH_ATTEMPT < timedelta(minutes=AUTO_STATS_REFRESH_MINUTES):
-            return
-    if STATS_REFRESH_LOCK.locked():
-        return
+            return False
+    if not STATS_REFRESH_LOCK.acquire(blocking=False):
+        return False
 
     LAST_AUTO_STATS_REFRESH_ATTEMPT = datetime.now().astimezone()
+    RUN_STATE.update(
+        {
+            "running": True,
+            "started_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "finished_at": "",
+            "last_output": "Auto-refreshing YouTube stats for the Stats page...",
+            "last_error": "",
+        }
+    )
     thread = threading.Thread(target=auto_refresh_stats_process, daemon=True)
     thread.start()
+    return True
 
 
 def auto_refresh_stats_process() -> None:
     """Refresh stats without blocking the page request that triggered it."""
-    if not STATS_REFRESH_LOCK.acquire(blocking=False):
-        return
     try:
-        RUN_STATE["last_output"] = "Auto-refreshing YouTube stats for the Stats page..."
-        RUN_STATE["last_error"] = ""
         refresh_stats_files()
         RUN_STATE["last_output"] = "YouTube stats auto-refreshed for the Stats page."
     except Exception as exc:
         logger.exception("Automatic stats refresh failed: %s", exc)
         RUN_STATE["last_error"] = f"Automatic YouTube stats refresh failed: {exc}"
     finally:
+        RUN_STATE["running"] = False
+        RUN_STATE["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
         STATS_REFRESH_LOCK.release()
 
 
