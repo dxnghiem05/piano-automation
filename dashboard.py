@@ -97,7 +97,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if path == "/stats":
             query = parse_qs(parsed.query)
             selected_range = query.get("range", ["1d"])[0]
-            self.send_html(render_stats_page(selected_range))
+            selected_project_week = query.get("project_week", [""])[0]
+            self.send_html(render_stats_page(selected_range, selected_project_week))
             return
 
         if path == "/tracker.csv":
@@ -2510,7 +2511,7 @@ STATS_RANGES = {
 }
 
 
-def render_stats_page(selected_range: str = "1d") -> str:
+def render_stats_page(selected_range: str = "1d", selected_project_week: str = "") -> str:
     """Render YouTube stats dashboard."""
     latest_rows = latest_video_stats()
     hour_rows = best_posting_hours()
@@ -2524,8 +2525,14 @@ def render_stats_page(selected_range: str = "1d") -> str:
     best_hour = str(hour_rows[0]["hour"]) if hour_rows else "No data"
     top_video_markup = render_top_video_list(latest_rows)
     project_rows = read_project_dataset()
+    selected_project_week = normalize_project_week(project_rows, selected_project_week)
     project_summary = summarize_project_dataset(project_rows)
-    project_tracker_markup = render_project_tracker_section(project_rows, project_summary)
+    project_tracker_markup = render_project_tracker_section(
+        project_rows,
+        project_summary,
+        selected_project_week,
+        selected_range,
+    )
 
     table_rows = "".join(render_stats_table_row(row) for row in latest_rows[:200])
     if not table_rows:
@@ -2536,7 +2543,7 @@ def render_stats_page(selected_range: str = "1d") -> str:
         hour_markup = '<p class="muted">No posting-hour data yet.</p>'
 
     chart_svg = render_hourly_views_chart(hourly_rows)
-    range_tabs = render_range_tabs(selected_range)
+    range_tabs = render_range_tabs(selected_range, selected_project_week)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -2823,6 +2830,40 @@ def render_stats_page(selected_range: str = "1d") -> str:
       background: var(--accent);
       color: #050505;
     }}
+    .week-filter {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-top: 20px;
+      margin-bottom: 12px;
+    }}
+    .week-pills {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }}
+    .week-pills a {{
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: #242424;
+      color: #d7d7d7;
+      border: 1px solid rgba(255,255,255,.08);
+      font-size: 12px;
+    }}
+    .week-pills a.active {{
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #050505;
+    }}
+    .project-table {{
+      max-height: 520px;
+      overflow: auto;
+    }}
     @media (max-width: 980px) {{
       .market, .lower-grid {{ grid-template-columns: 1fr; }}
       .project-grid {{ grid-template-columns: 1fr; }}
@@ -2845,7 +2886,7 @@ def render_stats_page(selected_range: str = "1d") -> str:
         <a href="/queue">Queue</a>
         <a href="/tiktok-candidates">TikTok Candidates</a>
         <form action="/refresh-stats" method="post" class="stats-refresh-form">
-          <input type="hidden" name="redirect_to" value="/stats?range={html.escape(selected_range)}">
+          <input type="hidden" name="redirect_to" value="/stats?range={html.escape(selected_range)}&project_week={html.escape(selected_project_week)}">
           <button type="submit">Refresh YouTube Stats</button>
         </form>
       </div>
@@ -2957,12 +2998,14 @@ def stats_range_label(value: str) -> str:
     return STATS_RANGES.get(value, STATS_RANGES["1d"])[0]
 
 
-def render_range_tabs(selected_range: str) -> str:
+def render_range_tabs(selected_range: str, selected_project_week: str = "") -> str:
     """Render clickable chart range tabs."""
     tabs = []
     for value, (label, _delta) in STATS_RANGES.items():
         active = " active" if value == selected_range else ""
-        tabs.append(f'<a class="{active.strip()}" href="/stats?range={value}">{label}</a>')
+        tabs.append(
+            f'<a class="{active.strip()}" href="/stats?range={value}&project_week={html.escape(selected_project_week)}">{label}</a>'
+        )
     return f'<nav class="range-tabs" aria-label="Chart ranges">{"".join(tabs)}</nav>'
 
 
@@ -3079,11 +3122,68 @@ def summarize_project_dataset(rows: list[dict[str, str]]) -> dict[str, int | str
     }
 
 
-def render_project_tracker_section(rows: list[dict[str, str]], summary: dict[str, int | str]) -> str:
+def normalize_project_week(rows: list[dict[str, str]], selected_week: str) -> str:
+    """Return a valid selected project week."""
+    weeks = project_weeks(rows)
+    if not weeks:
+        return ""
+    return selected_week if selected_week in weeks else weeks[-1]
+
+
+def project_weeks(rows: list[dict[str, str]]) -> list[str]:
+    """Return project weeks in natural Week 0, Week 1 order."""
+    weeks = {row.get("project_week", "") for row in rows if row.get("project_week", "")}
+    return sorted(weeks, key=project_week_sort_key)
+
+
+def project_week_sort_key(value: str) -> int:
+    """Sort Week labels by number."""
+    digits = "".join(char for char in value if char.isdigit())
+    return int(digits) if digits else 9999
+
+
+def render_project_week_filter(
+    rows: list[dict[str, str]],
+    selected_week: str,
+    selected_range: str,
+) -> str:
+    """Render week filter pills for the project dataset."""
+    weeks = project_weeks(rows)
+    if not weeks:
+        return ""
+
+    links = []
+    for week in weeks:
+        count = sum(1 for row in rows if row.get("project_week") == week)
+        active = " active" if week == selected_week else ""
+        href = f"/stats?range={html.escape(selected_range)}&project_week={html.escape(week)}"
+        links.append(f'<a class="{active.strip()}" href="{href}">{html.escape(week)} <span>&nbsp;{count}</span></a>')
+
+    return f"""
+      <div class="week-filter">
+        <div>
+          <h2 style="margin:0;">Weekly Dataset View</h2>
+          <p class="muted" style="margin:6px 0 0;">Showing one project week at a time, not one continuous table.</p>
+        </div>
+        <nav class="week-pills" aria-label="Project week filter">
+          {''.join(links)}
+        </nav>
+      </div>
+    """
+
+
+def render_project_tracker_section(
+    rows: list[dict[str, str]],
+    summary: dict[str, int | str],
+    selected_week: str,
+    selected_range: str,
+) -> str:
     """Render the data science project foundation inside YouTube Stats."""
-    preview_rows = "".join(render_project_dataset_row(row) for row in rows[-12:][::-1])
+    filtered_rows = [row for row in rows if row.get("project_week") == selected_week]
+    preview_rows = "".join(render_project_dataset_row(row) for row in filtered_rows[::-1])
     if not preview_rows:
         preview_rows = '<tr><td colspan="12" class="muted">No project dataset rows yet. Refresh YouTube Stats to build the tracker.</td></tr>'
+    week_filter = render_project_week_filter(rows, selected_week, selected_range)
 
     return f"""
       <section class="wide">
@@ -3111,7 +3211,9 @@ def render_project_tracker_section(rows: list[dict[str, str]], summary: dict[str
             <div class="project-card"><strong>{html.escape(str(summary['week_1_start']))}</strong><span>Week 1 starts</span></div>
           </div>
         </div>
-        <div class="table-wrap" style="margin-top:18px;">
+        {week_filter}
+        <p class="muted" style="margin:0 0 10px;">{html.escape(selected_week or 'No week selected')} • {len(filtered_rows)} clips shown</p>
+        <div class="table-wrap project-table">
           <table>
             <thead>
               <tr>
