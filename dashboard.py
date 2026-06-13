@@ -2906,6 +2906,30 @@ def render_stats_page(
       max-height: 520px;
       overflow: auto;
     }}
+    .sort-head {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: inherit;
+      font-weight: 560;
+    }}
+    .sort-arrow {{
+      width: 18px;
+      height: 18px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: rgba(255,255,255,.08);
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1;
+    }}
+    .sort-head.active {{ color: var(--accent); }}
+    .sort-head.active .sort-arrow {{
+      background: var(--accent);
+      color: #050505;
+    }}
     .table-pagination {{
       display: flex;
       align-items: center;
@@ -3351,32 +3375,40 @@ def render_project_week_filter(
     """
 
 
-def render_project_sort_filter(selected_week: str, selected_range: str, selected_sort: str) -> str:
-    """Render project dataset sort/filter pills."""
-    options = [
-        ("recent", "Most Recent"),
-        ("highest_views", "Highest Views"),
-        ("lowest_views", "Lowest Views"),
-        ("like_rate", "Best Like Rate"),
-        ("high_performer", "High Performers"),
-    ]
-    links = []
-    for value, label in options:
-        active = " active" if value == selected_sort else ""
-        href = f"/stats?range={html.escape(selected_range)}&project_week={html.escape(selected_week)}&project_sort={value}"
-        links.append(f'<a class="{active.strip()}" href="{href}">{html.escape(label)}</a>')
+def project_sort_header(
+    label: str,
+    sort_value: str,
+    selected_sort: str,
+    selected_week: str,
+    selected_range: str,
+) -> str:
+    """Render a sortable project table header."""
+    active = normalize_project_sort(selected_sort) == sort_value
+    href = f"/stats?range={html.escape(selected_range)}&project_week={html.escape(selected_week)}&project_sort={sort_value}"
+    arrow = "↓" if active else "↕"
+    active_class = " active" if active else ""
+    return (
+        f'<a class="sort-head{active_class}" href="{href}">'
+        f"{html.escape(label)}"
+        f'<span class="sort-arrow">{html.escape(arrow)}</span>'
+        "</a>"
+    )
 
-    return f"""
-      <div class="week-filter" style="margin-top:10px;">
-        <div>
-          <h2 style="margin:0;">Dataset Filters</h2>
-          <p class="muted" style="margin:6px 0 0;">Sort the selected week by views, like rate, or high performer label.</p>
-        </div>
-        <nav class="week-pills" aria-label="Project dataset filters">
-          {''.join(links)}
-        </nav>
-      </div>
-    """
+
+def project_views_sort_header(selected_sort: str, selected_week: str, selected_range: str) -> str:
+    """Render the 24-hour views header with high/low toggle behavior."""
+    selected_sort = normalize_project_sort(selected_sort)
+    active = selected_sort in {"highest_views", "lowest_views"}
+    next_sort = "lowest_views" if selected_sort == "highest_views" else "highest_views"
+    arrow = "↑" if selected_sort == "lowest_views" else ("↓" if selected_sort == "highest_views" else "↕")
+    href = f"/stats?range={html.escape(selected_range)}&project_week={html.escape(selected_week)}&project_sort={next_sort}"
+    active_class = " active" if active else ""
+    return (
+        f'<a class="sort-head{active_class}" href="{href}">'
+        "24h Views"
+        f'<span class="sort-arrow">{html.escape(arrow)}</span>'
+        "</a>"
+    )
 
 
 def render_project_tracker_section(
@@ -3393,7 +3425,9 @@ def render_project_tracker_section(
     if not preview_rows:
         preview_rows = '<tr><td colspan="12" class="muted">No project dataset rows yet. Refresh YouTube Stats to build the tracker.</td></tr>'
     week_filter = render_project_week_filter(rows, selected_week, selected_range, selected_sort)
-    sort_filter = render_project_sort_filter(selected_week, selected_range, selected_sort)
+    views_header = project_views_sort_header(selected_sort, selected_week, selected_range)
+    like_rate_header = project_sort_header("Like Rate", "like_rate", selected_sort, selected_week, selected_range)
+    high_performer_header = project_sort_header("High Performer", "high_performer", selected_sort, selected_week, selected_range)
 
     return f"""
       <section class="wide">
@@ -3422,7 +3456,6 @@ def render_project_tracker_section(
           </div>
         </div>
         {week_filter}
-        {sort_filter}
         <p class="muted" style="margin:0 0 10px;">{html.escape(selected_week or 'No week selected')} • {len(sorted_rows)} clips shown • {html.escape(project_sort_label(selected_sort))}</p>
         <div class="table-wrap project-table">
           <table>
@@ -3437,9 +3470,9 @@ def render_project_tracker_section(
                 <th>Length</th>
                 <th>Orientation</th>
                 <th>Content Type</th>
-                <th>24h Views</th>
-                <th>Like Rate</th>
-                <th>High Performer</th>
+                <th>{views_header}</th>
+                <th>{like_rate_header}</th>
+                <th>{high_performer_header}</th>
               </tr>
             </thead>
             <tbody>{preview_rows}</tbody>
