@@ -286,6 +286,35 @@ Open `metadata/video_tracker.xlsx` in Excel or Numbers.
 
 The dashboard also has a `Refresh YouTube Stats` button. Because this reads YouTube video data, Google may ask you to sign in again after the app adds the YouTube read-only permission.
 
+## Data Science Project Tracker
+
+The YouTube Stats page also builds a 12-week project dataset for analysis:
+
+```text
+metadata/data_science_tracker.csv
+metadata/data_science_tracker.xlsx
+```
+
+The dataset treats anything before `2026-06-15` as Week 0 baseline data. Week 1 starts on Monday, June 15, 2026.
+
+It includes fields for:
+
+- clip ID and platform
+- caption word and caption style
+- hashtags
+- clip length
+- scheduled and actual publish time
+- posting hour group
+- 1-hour, 6-hour, and 24-hour views
+- 24-hour likes and comments
+- like rate and engagement rate
+- privacy/upload status
+- video orientation
+- content type placeholder
+- high performer label
+
+Use this file for Power BI, Jupyter notebooks, A/B testing, and prediction modeling.
+
 ## TikTok Posting
 
 TikTok posting is possible through TikTok's official Content Posting API, but it requires a TikTok developer app, OAuth, and Content Posting API access. Direct posting clients must pass TikTok audit before public posting is allowed. Until the client is audited, TikTok restricts direct posts from that app to private visibility.

@@ -21,6 +21,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 import config
 from generate_clips import ensure_directories
 from logging_setup import configure_logging
+from project_dataset import read_project_dataset, refresh_project_dataset
 from stats_tracker import best_posting_hours, latest_video_stats, read_stats_history, refresh_youtube_stats_history
 from tracker import update_tracker
 from youtube_upload import get_youtube_service, read_upload_records
@@ -105,6 +106,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         if path == "/tracker.xlsx":
             self.send_file(config.METADATA_DIR / "video_tracker.xlsx", download=True)
+            return
+
+        if path == "/project-data.csv":
+            refresh_project_dataset()
+            self.send_file(config.PROJECT_DATASET_CSV_FILE, download=True)
+            return
+
+        if path == "/project-data.xlsx":
+            refresh_project_dataset()
+            self.send_file(config.PROJECT_DATASET_EXCEL_FILE, download=True)
             return
 
         if path.startswith("/clips/"):
@@ -2512,6 +2523,9 @@ def render_stats_page(selected_range: str = "1d") -> str:
     public_count = sum(1 for row in latest_rows if row.get("privacy_status", "") == "public")
     best_hour = str(hour_rows[0]["hour"]) if hour_rows else "No data"
     top_video_markup = render_top_video_list(latest_rows)
+    project_rows = read_project_dataset()
+    project_summary = summarize_project_dataset(project_rows)
+    project_tracker_markup = render_project_tracker_section(project_rows, project_summary)
 
     table_rows = "".join(render_stats_table_row(row) for row in latest_rows[:200])
     if not table_rows:
@@ -2749,8 +2763,69 @@ def render_stats_page(selected_range: str = "1d") -> str:
     .hour-label span {{ color: var(--muted); }}
     .track {{ height: 12px; background: #242424; border-radius: 999px; overflow: hidden; }}
     .fill {{ height: 100%; background: linear-gradient(90deg, #1ed760, #b6f23c); }}
+    .project-grid {{
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(320px, .8fr);
+      gap: 18px;
+      align-items: start;
+    }}
+    .question {{
+      color: #fff;
+      font-size: 22px;
+      line-height: 1.25;
+      margin: 0 0 16px;
+      max-width: 860px;
+    }}
+    .metric-tags {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }}
+    .metric-tag {{
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: #242424;
+      color: #d7d7d7;
+      font-size: 12px;
+      font-weight: 560;
+    }}
+    .project-card-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }}
+    .project-card {{
+      min-height: 82px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255,255,255,.045);
+    }}
+    .project-card strong {{ display: block; font-size: 24px; line-height: 1; }}
+    .project-card span {{ display: block; color: var(--muted); font-size: 12px; margin-top: 7px; }}
+    .download-row {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }}
+    .download-row a {{
+      min-height: 38px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 14px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #050505;
+    }}
     @media (max-width: 980px) {{
       .market, .lower-grid {{ grid-template-columns: 1fr; }}
+      .project-grid {{ grid-template-columns: 1fr; }}
       .top {{ align-items: flex-start; flex-direction: column; }}
       .metric-header {{ flex-direction: column; }}
       .summary-pills {{ justify-content: flex-start; }}
@@ -2799,6 +2874,7 @@ def render_stats_page(selected_range: str = "1d") -> str:
       </aside>
     </div>
     <div class="lower-grid">
+      {project_tracker_markup}
       <section>
         <h2>Best Posting Hours</h2>
         <div class="hours-grid">{hour_markup}</div>
@@ -2986,6 +3062,97 @@ def render_top_video_row(row: dict[str, str], index: int, max_views: int) -> str
         </div>
       </div>
     """
+
+
+def summarize_project_dataset(rows: list[dict[str, str]]) -> dict[str, int | str]:
+    """Summarize project dataset rows for the stats page."""
+    week_zero = sum(1 for row in rows if row.get("project_week") == "Week 0")
+    official = sum(1 for row in rows if row.get("project_phase") == "official")
+    completed_24h = sum(1 for row in rows if row.get("views_24h", "").strip())
+    youtube_rows = sum(1 for row in rows if row.get("platform") == "YouTube Shorts")
+    return {
+        "week_zero": week_zero,
+        "official": official,
+        "completed_24h": completed_24h,
+        "youtube_rows": youtube_rows,
+        "week_1_start": config.PROJECT_WEEK_1_START_DATE,
+    }
+
+
+def render_project_tracker_section(rows: list[dict[str, str]], summary: dict[str, int | str]) -> str:
+    """Render the data science project foundation inside YouTube Stats."""
+    preview_rows = "".join(render_project_dataset_row(row) for row in rows[-12:][::-1])
+    if not preview_rows:
+        preview_rows = '<tr><td colspan="12" class="muted">No project dataset rows yet. Refresh YouTube Stats to build the tracker.</td></tr>'
+
+    return f"""
+      <section class="wide">
+        <div class="project-grid">
+          <div>
+            <p class="eyebrow">12-week data science tracker</p>
+            <h2>Project Foundation</h2>
+            <p class="question">What posting times, captions, content types, and platform strategies produce the strongest audience growth for short-form piano/music videos?</p>
+            <div class="metric-tags">
+              <span class="metric-tag">Primary metric: 24h views</span>
+              <span class="metric-tag">Secondary: like rate</span>
+              <span class="metric-tag">Secondary: engagement rate</span>
+              <span class="metric-tag">A/B 1: 9 AM-3 PM vs 4 PM-9 PM</span>
+              <span class="metric-tag">A/B 2: emotional vs energy captions</span>
+            </div>
+            <div class="download-row">
+              <a href="/project-data.xlsx">Download Project Excel</a>
+              <a href="/project-data.csv">Download Project CSV</a>
+            </div>
+          </div>
+          <div class="project-card-grid">
+            <div class="project-card"><strong>{summary['week_zero']}</strong><span>Week 0 baseline clips</span></div>
+            <div class="project-card"><strong>{summary['official']}</strong><span>official Week 1+ clips</span></div>
+            <div class="project-card"><strong>{summary['completed_24h']}</strong><span>clips with 24h metrics</span></div>
+            <div class="project-card"><strong>{html.escape(str(summary['week_1_start']))}</strong><span>Week 1 starts</span></div>
+          </div>
+        </div>
+        <div class="table-wrap" style="margin-top:18px;">
+          <table>
+            <thead>
+              <tr>
+                <th>Week</th>
+                <th>Clip</th>
+                <th>Platform</th>
+                <th>Caption</th>
+                <th>Style</th>
+                <th>Group</th>
+                <th>Length</th>
+                <th>Orientation</th>
+                <th>Content Type</th>
+                <th>24h Views</th>
+                <th>Like Rate</th>
+                <th>High Performer</th>
+              </tr>
+            </thead>
+            <tbody>{preview_rows}</tbody>
+          </table>
+        </div>
+      </section>
+    """
+
+
+def render_project_dataset_row(row: dict[str, str]) -> str:
+    """Render a project dataset preview row."""
+    cells = [
+        row.get("project_week", ""),
+        row.get("clip_id", ""),
+        row.get("platform", ""),
+        row.get("caption_word", ""),
+        row.get("caption_style", ""),
+        row.get("posting_time_group", ""),
+        row.get("clip_length_seconds", ""),
+        row.get("video_orientation", ""),
+        row.get("content_type", ""),
+        row.get("views_24h", ""),
+        row.get("like_rate_24h", ""),
+        row.get("high_performing", ""),
+    ]
+    return "<tr>" + "".join(f"<td>{html.escape(value)}</td>" for value in cells) + "</tr>"
 
 
 def render_mini_sparkline(seed: str, color: str) -> str:
@@ -3188,7 +3355,8 @@ def refresh_stats_process() -> None:
     try:
         refresh_youtube_stats_history()
         update_tracker([], [])
-        RUN_STATE["last_output"] = "YouTube stats refreshed into tracker files."
+        refresh_project_dataset()
+        RUN_STATE["last_output"] = "YouTube stats refreshed into tracker and project dataset files."
     except Exception as exc:
         logger.exception("Stats refresh failed: %s", exc)
         RUN_STATE["last_error"] = str(exc)
@@ -3268,6 +3436,7 @@ def run_main_process(clip_only: bool = False) -> None:
                 raise TimeoutError("Dashboard run timed out after 4 hours")
 
         return_code = process.wait()
+        refresh_project_dataset()
         RUN_STATE["last_output"] = "\n".join(output_lines[-120:]).strip()
         if return_code != 0:
             RUN_STATE["last_error"] = RUN_STATE["last_output"]

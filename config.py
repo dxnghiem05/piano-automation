@@ -20,6 +20,8 @@ TOKEN_FILE = CREDENTIALS_DIR / "token.json"
 METADATA_FILE = METADATA_DIR / "metadata.csv"
 UPLOAD_LOG_FILE = LOGS_DIR / "uploads_log.csv"
 YOUTUBE_STATS_HISTORY_FILE = LOGS_DIR / "youtube_stats_history.csv"
+PROJECT_DATASET_CSV_FILE = METADATA_DIR / "data_science_tracker.csv"
+PROJECT_DATASET_EXCEL_FILE = METADATA_DIR / "data_science_tracker.xlsx"
 PRIVACY_OVERRIDES_FILE = LOGS_DIR / "privacy_overrides.csv"
 TIKTOK_SCHEDULE_FILE = LOGS_DIR / "tiktok_schedule.csv"
 APP_LOG_FILE = LOGS_DIR / "app.log"
@@ -41,6 +43,7 @@ POST_END_HOUR = 21
 POST_INTERVAL_HOURS = 1
 SCHEDULE_AFTER_EXISTING_UPLOADS = True
 TIMEZONE = "America/Los_Angeles"
+PROJECT_WEEK_1_START_DATE = "2026-06-15"
 
 YOUTUBE_CATEGORY = "10"
 YOUTUBE_PRIVACY_STATUS = "private"
