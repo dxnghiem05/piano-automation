@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 HOST = "127.0.0.1"
 PORT = 8000
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024 * 1024
-HOME_RECENT_CLIP_LIMIT = 10
+HOME_PREVIEW_CLIP_LIMIT = 3
 QUEUE_PAGE_SIZE = 20
 STATS_TABLE_PAGE_SIZE = 25
 AUTO_STATS_REFRESH_MINUTES = 2
@@ -400,16 +400,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
 def render_dashboard() -> str:
     """Render the dashboard HTML."""
     status = build_status()
-    all_clips = list_clip_files()
-    clips = all_clips[:HOME_RECENT_CLIP_LIMIT]
+    clips = list_clip_files()[:HOME_PREVIEW_CLIP_LIMIT]
     upload_running = bool(status["run"]["running"])
     run_label = "Clipping..." if upload_running else "Clip Input Videos"
     run_disabled = "disabled" if upload_running else ""
 
-    clip_markup = "\n".join(render_clip_card(path) for path in clips)
-    if not clip_markup:
-        clip_markup = '<p class="muted">No clips yet.</p>'
-    hero_preview = render_hero_preview(clips[:3])
+    hero_preview = render_hero_preview(clips)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -1037,7 +1033,7 @@ def render_dashboard() -> str:
             <button type="submit" data-run-primary {run_disabled}>{run_label}</button>
           </form>
           <a class="button ghost" href="/stats">View Stats</a>
-          <a class="button ghost" href="#clips">Browse Clips</a>
+          <a class="button ghost" href="/queue">Browse Queue</a>
         </div>
       </div>
       <div class="hero-preview">
@@ -1094,15 +1090,6 @@ def render_dashboard() -> str:
           <pre data-live-log>{html.escape(live_dashboard_log_text())}</pre>
         </section>
       </div>
-      <section id="clips">
-        <div class="section-heading">
-          <h2>Recent Clips</h2>
-          <span>Showing latest {len(clips)} of {len(all_clips)}</span>
-        </div>
-        <div class="clips">
-          {clip_markup}
-        </div>
-      </section>
       </div>
     </div>
   </main>
