@@ -2807,6 +2807,28 @@ def render_stats_page(
     td {{ color: #d7d7d7; }}
     .muted {{ color: var(--muted); }}
     .chart {{ width: 100%; min-height: 360px; display: block; }}
+    .chart-point .point-hit {{
+      cursor: crosshair;
+      fill: transparent;
+      pointer-events: all;
+    }}
+    .chart-point .point-dot {{
+      transition: r .16s ease, fill .16s ease;
+    }}
+    .chart-point .point-tooltip {{
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .14s ease;
+    }}
+    .chart-point:hover .point-tooltip,
+    .chart-point:focus .point-tooltip {{
+      opacity: 1;
+    }}
+    .chart-point:hover .point-dot,
+    .chart-point:focus .point-dot {{
+      r: 5.5;
+      fill: #7bf58d;
+    }}
     .hour {{ margin: 0 0 16px; }}
     .hours-grid {{
       display: grid;
@@ -3687,7 +3709,7 @@ def render_views_chart(rows: list[dict[str, int | str]], selected_range: str) ->
 
     polyline = " ".join(f"{x:.1f},{y:.1f}" for x, y, _label, _tooltip, _views in points)
     circles = "".join(
-        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3.5"><title>{html.escape(tooltip)}: {views} views gained</title></circle>'
+        render_chart_point(x, y, tooltip, views, padding, width)
         for x, y, _label, tooltip, views in points
     )
     label_points = chart_label_points(points)
@@ -3715,6 +3737,34 @@ def render_views_chart(rows: list[dict[str, int | str]], selected_range: str) ->
         <g fill="#1ed760">{circles}</g>
         <g fill="#b3b3b3" font-size="11">{labels}</g>
       </svg>
+    """
+
+
+def render_chart_point(x: float, y: float, tooltip: str, views: int, padding: int, width: int) -> str:
+    """Render one hoverable chart point with a visible exact-value tooltip."""
+    label = f"{views:,} views"
+    tooltip_text = f"{tooltip} • {label}"
+    tooltip_width = max(112, min(260, 7 * len(tooltip_text) + 28))
+    tooltip_x = x - tooltip_width / 2
+    tooltip_y = max(4, y - 44)
+    if tooltip_x < padding:
+        tooltip_x = padding
+    if tooltip_x + tooltip_width > width - padding:
+        tooltip_x = width - padding - tooltip_width
+    text_x = tooltip_x + tooltip_width / 2
+    text_y = tooltip_y + 20
+
+    return f"""
+          <g class="chart-point" tabindex="0" aria-label="{html.escape(tooltip_text)}">
+            <circle class="point-hit" cx="{x:.1f}" cy="{y:.1f}" r="14"></circle>
+            <circle class="point-dot" cx="{x:.1f}" cy="{y:.1f}" r="3.5">
+              <title>{html.escape(tooltip_text)}</title>
+            </circle>
+            <g class="point-tooltip">
+              <rect x="{tooltip_x:.1f}" y="{tooltip_y:.1f}" width="{tooltip_width:.1f}" height="28" rx="8" fill="#121212" stroke="rgba(255,255,255,.18)"></rect>
+              <text x="{text_x:.1f}" y="{text_y:.1f}" fill="#f5f5f5" text-anchor="middle" font-size="11" font-weight="560">{html.escape(tooltip_text)}</text>
+            </g>
+          </g>
     """
 
 
