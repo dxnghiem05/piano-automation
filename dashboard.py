@@ -2538,7 +2538,7 @@ def render_stats_page(
     latest_rows = latest_video_stats()
     hour_rows = best_posting_hours()
     selected_range = normalize_stats_range(selected_range)
-    hourly_rows = hourly_total_views(selected_range)
+    chart_rows = chart_view_gains(selected_range)
 
     total_views = sum(parse_stat_int(row.get("view_count", "")) for row in latest_rows)
     total_likes = sum(parse_stat_int(row.get("like_count", "")) for row in latest_rows)
@@ -2582,7 +2582,7 @@ def render_stats_page(
     if not hour_markup:
         hour_markup = '<p class="muted">No posting-hour data yet.</p>'
 
-    chart_svg = render_hourly_views_chart(hourly_rows)
+    chart_svg = render_views_chart(chart_rows, selected_range)
     range_tabs = render_range_tabs(selected_range, selected_project_week, selected_project_sort)
 
     return f"""<!doctype html>
@@ -3173,8 +3173,8 @@ def stats_page_link(
     return f'<a class="{" ".join(cls for cls in classes if cls)}" href="{href}">{html.escape(label)}</a>'
 
 
-def hourly_total_views(selected_range: str) -> list[dict[str, int | str]]:
-    """Return total latest-per-hour views for all videos in a selected range."""
+def chart_view_gains(selected_range: str) -> list[dict[str, int | str]]:
+    """Return period view gains for the selected chart range."""
     history = read_stats_history()
     if not history:
         return []
@@ -3192,31 +3192,108 @@ def hourly_total_views(selected_range: str) -> list[dict[str, int | str]]:
 
     newest = max(checked_at for checked_at, _video_id, _row in parsed_rows)
     selected_range = normalize_stats_range(selected_range)
+
+    if selected_range == "1d":
+        return hourly_view_gains(parsed_rows, newest)
+
+    return daily_view_gains(parsed_rows, newest, selected_range)
+
+
+def hourly_view_gains(
+    parsed_rows: list[tuple[datetime, str, dict[str, str]]],
+    newest: datetime,
+) -> list[dict[str, int | str]]:
+    """Return view gains per hour for the newest local day."""
+    local_zone = ZoneInfo(config.TIMEZONE)
+    newest_local = newest.astimezone(local_zone) if newest.tzinfo else newest.replace(tzinfo=local_zone)
+    day_start = newest_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    current_hour = newest_local.replace(minute=0, second=0, microsecond=0)
+
+    rows = []
+    previous_total = channel_total_at(parsed_rows, day_start)
+    hour = day_start
+    while hour <= current_hour:
+        bucket_end = min(hour + timedelta(hours=1) - timedelta(microseconds=1), newest_local)
+        total = channel_total_at(parsed_rows, bucket_end)
+        views = max(0, total - previous_total)
+        rows.append(
+            {
+                "label": hour.strftime("%-I %p"),
+                "tooltip": hour.strftime("%m-%d %-I %p"),
+                "views": views,
+            }
+        )
+        previous_total = total
+        hour += timedelta(hours=1)
+
+    return rows
+
+
+def daily_view_gains(
+    parsed_rows: list[tuple[datetime, str, dict[str, str]]],
+    newest: datetime,
+    selected_range: str,
+) -> list[dict[str, int | str]]:
+    """Return view gains per day for weekly and longer chart ranges."""
+    local_zone = ZoneInfo(config.TIMEZONE)
+    newest_local = newest.astimezone(local_zone) if newest.tzinfo else newest.replace(tzinfo=local_zone)
+    newest_day = newest_local.date()
+    selected_range = normalize_stats_range(selected_range)
+
     if selected_range == "all":
-        cutoff = None
+        oldest = min(checked_at for checked_at, _video_id, _row in parsed_rows)
+        oldest_local = oldest.astimezone(local_zone) if oldest.tzinfo else oldest.replace(tzinfo=local_zone)
+        start_day = oldest_local.date()
     elif selected_range == "ytd":
-        cutoff = newest.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        start_day = newest_day.replace(month=1, day=1)
     else:
-        cutoff = newest - (STATS_RANGES[selected_range][1] or timedelta(days=1))
+        days = max(1, int((STATS_RANGES[selected_range][1] or timedelta(days=1)).days))
+        start_day = newest_day - timedelta(days=days - 1)
 
-    latest_by_hour_video: dict[tuple[datetime, str], tuple[datetime, int]] = {}
+    rows = []
+    previous_boundary = datetime.combine(start_day, datetime.min.time(), tzinfo=local_zone)
+    previous_total = channel_total_at(parsed_rows, previous_boundary)
+    current_day = start_day
+    while current_day <= newest_day:
+        day_end = datetime.combine(current_day, datetime.max.time(), tzinfo=local_zone)
+        if current_day == newest_day:
+            day_end = newest_local
+        total = channel_total_at(parsed_rows, day_end)
+        views = max(0, total - previous_total)
+        rows.append(
+            {
+                "label": current_day.strftime("%m-%d"),
+                "tooltip": current_day.strftime("%b %-d"),
+                "views": views,
+            }
+        )
+        previous_total = total
+        current_day += timedelta(days=1)
+
+    return rows
+
+
+def channel_total_at(
+    parsed_rows: list[tuple[datetime, str, dict[str, str]]],
+    cutoff: datetime,
+) -> int:
+    """Return total channel views using the latest snapshot per video at a cutoff."""
+    latest_by_video: dict[str, tuple[datetime, int]] = {}
     for checked_at, video_id, row in parsed_rows:
-        if cutoff and checked_at < cutoff:
+        comparable_checked_at = checked_at
+        comparable_cutoff = cutoff
+        if comparable_checked_at.tzinfo is None and comparable_cutoff.tzinfo:
+            comparable_checked_at = comparable_checked_at.replace(tzinfo=comparable_cutoff.tzinfo)
+        if comparable_checked_at.tzinfo and comparable_cutoff.tzinfo is None:
+            comparable_cutoff = comparable_cutoff.replace(tzinfo=comparable_checked_at.tzinfo)
+        if comparable_checked_at.tzinfo and comparable_cutoff.tzinfo:
+            comparable_checked_at = comparable_checked_at.astimezone(comparable_cutoff.tzinfo)
+        if comparable_checked_at > comparable_cutoff:
             continue
-        hour = checked_at.replace(minute=0, second=0, microsecond=0)
-        key = (hour, video_id)
-        previous = latest_by_hour_video.get(key)
-        if previous is None or checked_at > previous[0]:
-            latest_by_hour_video[key] = (checked_at, parse_stat_int(row.get("view_count", "")))
-
-    totals: dict[datetime, int] = {}
-    for (hour, _video_id), (_checked_at, views) in latest_by_hour_video.items():
-        totals[hour] = totals.get(hour, 0) + views
-
-    return [
-        {"hour": hour.isoformat(), "label": hour.strftime("%m-%d %I %p").replace(" 0", " "), "views": totals[hour]}
-        for hour in sorted(totals)
-    ]
+        previous = latest_by_video.get(video_id)
+        if previous is None or comparable_checked_at > previous[0]:
+            latest_by_video[video_id] = (comparable_checked_at, parse_stat_int(row.get("view_count", "")))
+    return sum(views for _checked_at, views in latest_by_video.values())
 
 
 def parse_iso_datetime(value: str) -> datetime | None:
@@ -3593,10 +3670,10 @@ def render_stats_table_row(row: dict[str, str]) -> str:
     return "<tr>" + "".join(f"<td>{html.escape(value)}</td>" for value in cells) + "</tr>"
 
 
-def render_hourly_views_chart(rows: list[dict[str, int | str]]) -> str:
-    """Render a Robinhood-style SVG chart for total views by hour."""
+def render_views_chart(rows: list[dict[str, int | str]], selected_range: str) -> str:
+    """Render a Robinhood-style SVG chart for view gains."""
     if not rows:
-        return '<p class="muted">No hourly view history yet. Click Refresh YouTube Stats over time to build the graph.</p>'
+        return '<p class="muted">No view history yet. Click Refresh YouTube Stats over time to build the graph.</p>'
 
     width = 980
     height = 360
@@ -3606,31 +3683,32 @@ def render_hourly_views_chart(rows: list[dict[str, int | str]]) -> str:
     for index, row in enumerate(rows):
         x = width / 2 if len(rows) == 1 else padding + index * ((width - padding * 2) / (len(rows) - 1))
         y = height - padding - (int(row["views"]) / max_views) * (height - padding * 2)
-        points.append((x, y, str(row["label"]), int(row["views"])))
+        points.append((x, y, str(row["label"]), str(row.get("tooltip", row["label"])), int(row["views"])))
 
-    polyline = " ".join(f"{x:.1f},{y:.1f}" for x, y, _date, _views in points)
+    polyline = " ".join(f"{x:.1f},{y:.1f}" for x, y, _label, _tooltip, _views in points)
     circles = "".join(
-        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3.5"><title>{html.escape(date)}: {views} views</title></circle>'
-        for x, y, date, views in points
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3.5"><title>{html.escape(tooltip)}: {views} views gained</title></circle>'
+        for x, y, _label, tooltip, views in points
     )
-    label_points = points if len(points) <= 4 else [points[0], points[len(points) // 2], points[-1]]
+    label_points = chart_label_points(points)
     labels = "".join(
-        f'<text x="{x:.1f}" y="{height - 10}" text-anchor="middle">{html.escape(date)}</text>'
-        for x, _y, date, _views in label_points
+        f'<text x="{x:.1f}" y="{height - 10}" text-anchor="middle">{html.escape(label)}</text>'
+        for x, _y, label, _tooltip, _views in label_points
     )
 
-    marker_x, marker_y, marker_date, marker_views = points[-1]
+    marker_x, marker_y, _marker_label_text, marker_tooltip, marker_views = points[-1]
     marker_label = "" if len(points) == 1 else (
-        f'<text x="{marker_x:.1f}" y="{padding - 12}" fill="#b3b3b3" text-anchor="middle">{html.escape(marker_date)}</text>'
+        f'<text x="{marker_x:.1f}" y="{padding - 12}" fill="#b3b3b3" text-anchor="middle">{html.escape(marker_tooltip)}</text>'
     )
     value_y = marker_y + 26 if marker_y < padding + 28 else marker_y - 14
+    chart_title = "Hourly views gained today" if normalize_stats_range(selected_range) == "1d" else "Daily views gained"
 
     return f"""
-      <svg class="chart" viewBox="0 0 {width} {height}" role="img" aria-label="Views by day chart">
+      <svg class="chart" viewBox="0 0 {width} {height}" role="img" aria-label="{html.escape(chart_title)}">
         <line x1="{padding}" y1="{height / 2:.1f}" x2="{width - padding}" y2="{height / 2:.1f}" stroke="rgba(255,255,255,.22)" stroke-dasharray="1 7"/>
         <line x1="{padding}" y1="{height - padding}" x2="{width - padding}" y2="{height - padding}" stroke="rgba(255,255,255,.14)"/>
         <line x1="{marker_x:.1f}" y1="{padding}" x2="{marker_x:.1f}" y2="{height - padding}" stroke="rgba(255,255,255,.54)"/>
-        <text x="{padding}" y="20" fill="#b3b3b3">{max_views:,} views</text>
+        <text x="{padding}" y="20" fill="#b3b3b3">{max_views:,} max views gained</text>
         {marker_label}
         <text x="{marker_x:.1f}" y="{value_y:.1f}" fill="#f5f5f5" text-anchor="middle">{marker_views:,}</text>
         <polyline points="{polyline}" fill="none" stroke="#1ed760" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3638,6 +3716,19 @@ def render_hourly_views_chart(rows: list[dict[str, int | str]]) -> str:
         <g fill="#b3b3b3" font-size="11">{labels}</g>
       </svg>
     """
+
+
+def chart_label_points(points: list[tuple[float, float, str, str, int]]) -> list[tuple[float, float, str, str, int]]:
+    """Return a readable subset of x-axis labels."""
+    if len(points) <= 4:
+        return points
+    if len(points) <= 12:
+        return [points[0], points[len(points) // 2], points[-1]]
+    step = max(1, len(points) // 4)
+    labels = [points[index] for index in range(0, len(points), step)]
+    if labels[-1] != points[-1]:
+        labels.append(points[-1])
+    return labels
 
 
 def render_hour_bar(row: dict[str, int | float | str]) -> str:
