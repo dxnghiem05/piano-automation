@@ -219,6 +219,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         logger.info("Dashboard upload complete; saved %d file(s)", saved)
         if saved and upload_action == "upload_and_clip":
             start_clip_only()
+        if self.is_ajax_request():
+            self.send_json(
+                {
+                    "ok": True,
+                    "saved": saved,
+                    "input_count": len(list_input_videos()),
+                    "message": upload_message(saved, upload_action),
+                }
+            )
+            return
         self.redirect("/")
 
     def handle_privacy_update(self) -> None:
@@ -908,6 +918,15 @@ def render_dashboard() -> str:
       grid-template-columns: 1fr;
       gap: 10px;
     }}
+    .upload-status {{
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }}
+    .upload-status.ok {{ color: #1ed760; }}
+    .upload-status.warn {{ color: #ffa42b; }}
+    .upload-status.error {{ color: #ff6b6b; }}
     .clips {{ grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }}
     .clip-card {{
       border-radius: 10px;
@@ -1013,6 +1032,7 @@ def render_dashboard() -> str:
               <button type="submit" name="upload_action" value="input_only">Add To Input</button>
               <button type="submit" name="upload_action" value="upload_and_clip" data-run-lock {run_disabled}>Add + Clip Only</button>
             </div>
+            <div class="upload-status" data-upload-status></div>
           </form>
         </section>
         <section>
@@ -1122,6 +1142,84 @@ def render_dashboard() -> str:
             button.disabled = false;
             button.textContent = label;
           }}
+        }}
+      }});
+    }});
+    document.querySelectorAll('.upload-album').forEach((form) => {{
+      const input = form.querySelector('input[type="file"]');
+      const status = form.querySelector('[data-upload-status]');
+      const buttons = Array.from(form.querySelectorAll('button[type="submit"]'));
+      let clickedButton = null;
+      buttons.forEach((button) => {{
+        button.addEventListener('click', () => {{
+          clickedButton = button;
+        }});
+      }});
+      const setUploadStatus = (message, tone = '') => {{
+        if (!status) return;
+        status.textContent = message;
+        status.className = `upload-status ${{tone}}`.trim();
+      }};
+      input?.addEventListener('change', () => {{
+        const files = Array.from(input.files || []);
+        if (!files.length) {{
+          setUploadStatus('');
+          return;
+        }}
+        const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+        const totalMb = totalBytes / 1024 / 1024;
+        const cloudflareHost = location.hostname.includes('trycloudflare.com');
+        if (cloudflareHost && totalMb > 95) {{
+          setUploadStatus(`Selected ${{files.length}} file(s), ${{totalMb.toFixed(1)}} MB. Large Cloudflare uploads may fail; localhost is safer for big phone videos.`, 'warn');
+        }} else {{
+          setUploadStatus(`Selected ${{files.length}} file(s), ${{totalMb.toFixed(1)}} MB.`, '');
+        }}
+      }});
+      form.addEventListener('submit', async (event) => {{
+        event.preventDefault();
+        const files = Array.from(input?.files || []);
+        if (!files.length) {{
+          setUploadStatus('Choose at least one .mp4 or .mov first.', 'error');
+          return;
+        }}
+        const submitter = event.submitter || clickedButton || buttons[0];
+        const originalLabels = new Map(buttons.map((button) => [button, button.textContent]));
+        const formData = new FormData(form);
+        if (submitter?.name) {{
+          formData.set(submitter.name, submitter.value || '');
+        }}
+        buttons.forEach((button) => {{
+          button.disabled = true;
+        }});
+        if (submitter) submitter.textContent = 'Uploading...';
+        setUploadStatus('Uploading to input folder. Keep this page open until it finishes.', 'warn');
+        try {{
+          const response = await fetch(form.action, {{
+            method: 'POST',
+            body: formData,
+            headers: {{ 'X-Requested-With': 'fetch' }},
+          }});
+          let payload = null;
+          try {{
+            payload = await response.json();
+          }} catch (_error) {{
+            payload = null;
+          }}
+          if (!response.ok || !payload?.ok) {{
+            throw new Error(payload?.error || `Upload failed with status ${{response.status}}`);
+          }}
+          setUploadStatus(payload.message || `Saved ${{payload.saved}} file(s) to input.`, payload.saved ? 'ok' : 'error');
+          form.reset();
+          await refreshStatus();
+        }} catch (error) {{
+          console.error(error);
+          setUploadStatus(`${{error.message}}. If this is a large iPhone video through Cloudflare, try localhost or add it directly to the input folder.`, 'error');
+        }} finally {{
+          buttons.forEach((button) => {{
+            button.disabled = false;
+            button.textContent = originalLabels.get(button) || button.textContent;
+          }});
+          clickedButton = null;
         }}
       }});
     }});
@@ -4062,6 +4160,16 @@ def unique_input_destination(path: Path) -> Path:
         if not candidate.exists():
             return candidate
     raise RuntimeError(f"Could not find a unique destination for {path}")
+
+
+def upload_message(saved: int, upload_action: str) -> str:
+    """Return a clear user-facing upload result."""
+    if saved <= 0:
+        return "No .mp4 or .mov files were saved."
+    noun = "file" if saved == 1 else "files"
+    if upload_action == "upload_and_clip":
+        return f"Saved {saved} {noun} to input and started clipping."
+    return f"Saved {saved} {noun} to input."
 
 
 def run_server() -> None:
