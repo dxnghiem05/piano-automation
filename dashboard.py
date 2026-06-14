@@ -3709,7 +3709,7 @@ def render_views_chart(rows: list[dict[str, int | str]], selected_range: str) ->
 
     polyline = " ".join(f"{x:.1f},{y:.1f}" for x, y, _label, _tooltip, _views in points)
     circles = "".join(
-        render_chart_point(x, y, tooltip, views, padding, width)
+        render_chart_point(x, y, tooltip, views, padding, width, height)
         for x, y, _label, tooltip, views in points
     )
     label_points = chart_label_points(points)
@@ -3718,21 +3718,13 @@ def render_views_chart(rows: list[dict[str, int | str]], selected_range: str) ->
         for x, _y, label, _tooltip, _views in label_points
     )
 
-    marker_x, marker_y, _marker_label_text, marker_tooltip, marker_views = points[-1]
-    marker_label = "" if len(points) == 1 else (
-        f'<text x="{marker_x:.1f}" y="{padding - 12}" fill="#b3b3b3" text-anchor="middle">{html.escape(marker_tooltip)}</text>'
-    )
-    value_y = marker_y + 26 if marker_y < padding + 28 else marker_y - 14
     chart_title = "Hourly views gained today" if normalize_stats_range(selected_range) == "1d" else "Daily views gained"
 
     return f"""
       <svg class="chart" viewBox="0 0 {width} {height}" role="img" aria-label="{html.escape(chart_title)}">
         <line x1="{padding}" y1="{height / 2:.1f}" x2="{width - padding}" y2="{height / 2:.1f}" stroke="rgba(255,255,255,.22)" stroke-dasharray="1 7"/>
         <line x1="{padding}" y1="{height - padding}" x2="{width - padding}" y2="{height - padding}" stroke="rgba(255,255,255,.14)"/>
-        <line x1="{marker_x:.1f}" y1="{padding}" x2="{marker_x:.1f}" y2="{height - padding}" stroke="rgba(255,255,255,.54)"/>
         <text x="{padding}" y="20" fill="#b3b3b3">{max_views:,} max views gained</text>
-        {marker_label}
-        <text x="{marker_x:.1f}" y="{value_y:.1f}" fill="#f5f5f5" text-anchor="middle">{marker_views:,}</text>
         <polyline points="{polyline}" fill="none" stroke="#1ed760" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
         <g fill="#1ed760">{circles}</g>
         <g fill="#b3b3b3" font-size="11">{labels}</g>
@@ -3740,7 +3732,7 @@ def render_views_chart(rows: list[dict[str, int | str]], selected_range: str) ->
     """
 
 
-def render_chart_point(x: float, y: float, tooltip: str, views: int, padding: int, width: int) -> str:
+def render_chart_point(x: float, y: float, tooltip: str, views: int, padding: int, width: int, height: int) -> str:
     """Render one hoverable chart point with a visible exact-value tooltip."""
     label = f"{views:,} views"
     tooltip_text = f"{tooltip} • {label}"
@@ -3761,6 +3753,7 @@ def render_chart_point(x: float, y: float, tooltip: str, views: int, padding: in
               <title>{html.escape(tooltip_text)}</title>
             </circle>
             <g class="point-tooltip">
+              <line x1="{x:.1f}" y1="{padding}" x2="{x:.1f}" y2="{height - padding}" stroke="rgba(255,255,255,.54)"></line>
               <rect x="{tooltip_x:.1f}" y="{tooltip_y:.1f}" width="{tooltip_width:.1f}" height="28" rx="8" fill="#121212" stroke="rgba(255,255,255,.18)"></rect>
               <text x="{text_x:.1f}" y="{text_y:.1f}" fill="#f5f5f5" text-anchor="middle" font-size="11" font-weight="560">{html.escape(tooltip_text)}</text>
             </g>
