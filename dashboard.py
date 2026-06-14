@@ -79,6 +79,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_json(build_status())
             return
 
+        if path == "/api/logs":
+            self.send_json({"lines": live_dashboard_log_lines(), "text": live_dashboard_log_text()})
+            return
+
         if path == "/tracker":
             self.send_html(render_tracker_page())
             return
@@ -152,11 +156,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/run":
             start_run()
+            if self.is_ajax_request():
+                self.send_json({"ok": True, "message": "Started full run."})
+                return
             self.redirect(self.redirect_back_path(default="/"))
             return
 
         if parsed.path == "/clip-only":
             start_clip_only()
+            if self.is_ajax_request():
+                self.send_json({"ok": True, "message": "Started clipping input videos."})
+                return
             self.redirect(self.redirect_back_path(default="/"))
             return
 
@@ -393,7 +403,7 @@ def render_dashboard() -> str:
     all_clips = list_clip_files()
     clips = all_clips[:HOME_RECENT_CLIP_LIMIT]
     upload_running = bool(status["run"]["running"])
-    run_label = "Running..." if upload_running else "Run Now"
+    run_label = "Clipping..." if upload_running else "Clip Input Videos"
     run_disabled = "disabled" if upload_running else ""
 
     clip_markup = "\n".join(render_clip_card(path) for path in clips)
@@ -911,8 +921,19 @@ def render_dashboard() -> str:
       text-align: center;
       padding: 14px;
     }}
+    .upload-drop.is-dragging {{
+      outline: 2px solid #1ed760;
+      outline-offset: 4px;
+      filter: brightness(1.08);
+    }}
     .upload-drop input {{ width: 100%; max-width: 220px; }}
     .upload-title {{ font-size: 16px; font-weight: 560; }}
+    .upload-copy {{
+      max-width: 260px;
+      color: #d7d7d7;
+      font-size: 12px;
+      line-height: 1.35;
+    }}
     .upload-buttons {{
       display: grid;
       grid-template-columns: 1fr;
@@ -978,6 +999,13 @@ def render_dashboard() -> str:
       margin-top: 14px;
       background: rgba(0,0,0,.18);
     }}
+    .live-heading {{
+      margin-top: 14px;
+      color: #1ed760;
+      font-size: 12px;
+      font-weight: 560;
+      text-transform: uppercase;
+    }}
     @media (max-width: 1120px) {{
       .control-row {{ grid-template-columns: 1fr 1fr; }}
       .status-card {{ grid-column: 1 / -1; }}
@@ -1005,7 +1033,7 @@ def render_dashboard() -> str:
         <h1>Piano Shorts Dashboard</h1>
         <p class="subtitle">Clip, schedule, track, and study your YouTube Shorts from one quiet studio interface.</p>
         <div class="hero-actions">
-          <form action="/run" method="post">
+          <form action="/clip-only" method="post" class="run-form">
             <button type="submit" data-run-primary {run_disabled}>{run_label}</button>
           </form>
           <a class="button ghost" href="/stats">View Stats</a>
@@ -1022,15 +1050,15 @@ def render_dashboard() -> str:
       <div class="dashboard-grid">
       <div class="control-row">
         <section>
-          <h2>Upload Videos</h2>
+          <h2>Input Folder</h2>
           <form action="/upload" method="post" enctype="multipart/form-data" class="upload-album">
             <label class="upload-drop">
-              <span class="upload-title">Add Videos</span>
+              <span class="upload-title">Drop videos into input</span>
+              <span class="upload-copy">Drag files here or choose .mp4/.mov videos. They are saved into the input folder only.</span>
               <input type="file" name="videos" accept=".mp4,.mov,video/mp4,video/quicktime" multiple>
             </label>
             <div class="upload-buttons">
-              <button type="submit" name="upload_action" value="input_only">Add To Input</button>
-              <button type="submit" name="upload_action" value="upload_and_clip" data-run-lock {run_disabled}>Add + Clip Only</button>
+              <button type="submit" name="upload_action" value="input_only">Save To Input</button>
             </div>
             <div class="upload-status" data-upload-status></div>
           </form>
@@ -1038,11 +1066,8 @@ def render_dashboard() -> str:
         <section>
           <h2>Automation</h2>
           <div class="automation-wide">
-            <form action="/run" method="post">
+            <form action="/clip-only" method="post" class="run-form">
               <button class="album-action cover-run" type="submit" data-run-primary {run_disabled}><span>{run_label}</span></button>
-            </form>
-            <form action="/clip-only" method="post">
-              <button class="album-action cover-run" type="submit" data-run-lock {run_disabled}><span>Clip Input Only</span></button>
             </form>
             <a class="album-action cover-stats" href="/stats"><span>YouTube Stats</span></a>
             <a class="album-action cover-queue" href="/queue"><span>Queue</span></a>
@@ -1056,16 +1081,17 @@ def render_dashboard() -> str:
         <section class="status-card">
           <h2>Status</h2>
           <div class="stats">
-            <div class="stat"><strong>{status['input_count']}</strong><span>input videos</span></div>
-            <div class="stat"><strong>{status['clip_count']}</strong><span>clips</span></div>
-            <div class="stat"><strong>{status['uploaded_sources']}</strong><span>processed videos</span></div>
-            <div class="stat"><strong>{status['upload_records']}</strong><span>upload records</span></div>
+            <div class="stat"><strong data-status-count="input_count">{status['input_count']}</strong><span>input videos</span></div>
+            <div class="stat"><strong data-status-count="clip_count">{status['clip_count']}</strong><span>clips</span></div>
+            <div class="stat"><strong data-status-count="uploaded_sources">{status['uploaded_sources']}</strong><span>processed videos</span></div>
+            <div class="stat"><strong data-status-count="upload_records">{status['upload_records']}</strong><span>upload records</span></div>
           </div>
           <div class="run-meta">
             <span data-run-started>{'Started ' + html.escape(str(status['run']['started_at'])) if status['run']['started_at'] else 'Not started'}</span>
             <span data-run-finished>{'Finished ' + html.escape(str(status['run']['finished_at'])) if status['run']['finished_at'] else ''}</span>
           </div>
-          <pre data-live-log>{html.escape(str(status['run']['last_output'] or status['run']['last_error'] or 'No dashboard run yet.'))}</pre>
+          <div class="live-heading">Live activity</div>
+          <pre data-live-log>{html.escape(live_dashboard_log_text())}</pre>
         </section>
       </div>
       <section id="clips">
@@ -1097,9 +1123,15 @@ def render_dashboard() -> str:
           pill.textContent = run.running ? 'Running' : 'Ready';
           pill.classList.toggle('warn', Boolean(run.running));
         }}
+        document.querySelectorAll('[data-status-count]').forEach((element) => {{
+          const key = element.getAttribute('data-status-count');
+          if (key && Object.prototype.hasOwnProperty.call(status, key)) {{
+            element.textContent = status[key];
+          }}
+        }});
         document.querySelectorAll('[data-run-primary]').forEach((button) => {{
           button.disabled = Boolean(run.running);
-          const label = run.running ? 'Running...' : 'Run Now';
+          const label = run.running ? 'Clipping...' : 'Clip Input Videos';
           const span = button.querySelector('span');
           if (span) span.textContent = label;
           else button.textContent = label;
@@ -1109,7 +1141,7 @@ def render_dashboard() -> str:
         }});
         if (started) started.textContent = run.started_at ? `Started ${{run.started_at}}` : 'Not started';
         if (finished) finished.textContent = run.finished_at ? `Finished ${{run.finished_at}}` : '';
-        if (log && log.textContent !== message) {{
+        if (log && !log.dataset.liveFeedReady && log.textContent !== message) {{
           log.textContent = message;
           log.scrollTop = log.scrollHeight;
         }}
@@ -1117,8 +1149,51 @@ def render_dashboard() -> str:
         console.error(error);
       }}
     }}
+    async function refreshLiveLog() {{
+      try {{
+        const response = await fetch('/api/logs', {{ cache: 'no-store' }});
+        if (!response.ok) return;
+        const payload = await response.json();
+        const log = document.querySelector('[data-live-log]');
+        const text = payload.text || 'No dashboard activity yet.';
+        if (log && log.textContent !== text) {{
+          log.dataset.liveFeedReady = '1';
+          log.textContent = text;
+          log.scrollTop = log.scrollHeight;
+        }}
+      }} catch (error) {{
+        console.error(error);
+      }}
+    }}
     refreshStatus();
+    refreshLiveLog();
     window.setInterval(refreshStatus, 2000);
+    window.setInterval(refreshLiveLog, 1000);
+    document.querySelectorAll('.run-form').forEach((form) => {{
+      form.addEventListener('submit', async (event) => {{
+        event.preventDefault();
+        const button = form.querySelector('button');
+        const previousLabel = button ? button.textContent : '';
+        if (button) {{
+          button.disabled = true;
+          button.textContent = 'Starting...';
+        }}
+        try {{
+          await fetch(form.action, {{
+            method: 'POST',
+            headers: {{ 'X-Requested-With': 'fetch' }},
+          }});
+          await refreshStatus();
+          await refreshLiveLog();
+        }} catch (error) {{
+          console.error(error);
+        }} finally {{
+          if (button) {{
+            button.textContent = previousLabel || 'Clip Input Videos';
+          }}
+        }}
+      }});
+    }});
     document.querySelectorAll('.refresh-form').forEach((form) => {{
       form.addEventListener('submit', async (event) => {{
         event.preventDefault();
@@ -1174,6 +1249,29 @@ def render_dashboard() -> str:
         }} else {{
           setUploadStatus(`Selected ${{files.length}} file(s), ${{totalMb.toFixed(1)}} MB.`, '');
         }}
+      }});
+      const drop = form.querySelector('.upload-drop');
+      ['dragenter', 'dragover'].forEach((eventName) => {{
+        drop?.addEventListener(eventName, (event) => {{
+          event.preventDefault();
+          drop.classList.add('is-dragging');
+        }});
+      }});
+      drop?.addEventListener('dragleave', () => {{
+        drop.classList.remove('is-dragging');
+      }});
+      drop?.addEventListener('drop', (event) => {{
+        event.preventDefault();
+        drop.classList.remove('is-dragging');
+        if (input && event.dataTransfer?.files?.length) {{
+          input.files = event.dataTransfer.files;
+          input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+        }}
+      }});
+      ['dragend'].forEach((eventName) => {{
+        drop?.addEventListener(eventName, () => {{
+          drop.classList.remove('is-dragging');
+        }});
       }});
       form.addEventListener('submit', async (event) => {{
         event.preventDefault();
@@ -3939,6 +4037,38 @@ def build_status() -> dict[str, object]:
         "upload_records": count_upload_records(),
         "run": RUN_STATE.copy(),
     }
+
+
+def live_dashboard_log_lines(limit: int = 90) -> list[str]:
+    """Return recent useful app log lines for the live dashboard feed."""
+    if not config.APP_LOG_FILE.exists():
+        return []
+
+    with config.APP_LOG_FILE.open("r", encoding="utf-8", errors="replace") as file:
+        lines = file.readlines()[-600:]
+
+    useful_lines = []
+    skipped_patterns = (
+        'dashboard: "GET /api/status',
+        'dashboard: "GET /api/logs',
+        'dashboard: "GET /clips/',
+        'dashboard: "GET /favicon.ico',
+    )
+    for line in lines:
+        clean = line.rstrip()
+        if not clean:
+            continue
+        if any(pattern in clean for pattern in skipped_patterns):
+            continue
+        useful_lines.append(clean)
+
+    return useful_lines[-limit:]
+
+
+def live_dashboard_log_text(limit: int = 90) -> str:
+    """Return recent useful app log lines as one text block."""
+    lines = live_dashboard_log_lines(limit)
+    return "\n".join(lines) if lines else "No dashboard activity yet."
 
 
 def list_input_videos() -> list[Path]:
