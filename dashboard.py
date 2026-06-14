@@ -1188,20 +1188,38 @@ def render_dashboard() -> str:
         if (submitter?.name) {{
           formData.set(submitter.name, submitter.value || '');
         }}
+        const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+        const totalMb = totalBytes / 1024 / 1024;
         buttons.forEach((button) => {{
           button.disabled = true;
         }});
         if (submitter) submitter.textContent = 'Uploading...';
         setUploadStatus('Uploading to input folder. Keep this page open until it finishes.', 'warn');
+        const startedAt = Date.now();
+        let sawProgress = false;
+        let lastProgressText = '';
+        const uploadTimer = window.setInterval(() => {{
+          const elapsed = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+          if (sawProgress && lastProgressText) {{
+            setUploadStatus(`${{lastProgressText}} · ${{elapsed}}s elapsed`, 'warn');
+          }} else {{
+            setUploadStatus(`Uploading ${{totalMb.toFixed(1)}} MB file(s)... ${{elapsed}}s elapsed. Keep this page open.`, 'warn');
+          }}
+        }}, 1000);
         try {{
           const payload = await new Promise((resolve, reject) => {{
             const request = new XMLHttpRequest();
             request.open('POST', form.action);
             request.setRequestHeader('X-Requested-With', 'fetch');
             request.upload.addEventListener('progress', (progress) => {{
-              if (!progress.lengthComputable) return;
-              const percent = Math.max(1, Math.min(99, Math.round((progress.loaded / progress.total) * 100)));
-              setUploadStatus(`Uploading ${{percent}}%... Keep this page open.`, 'warn');
+              sawProgress = true;
+              if (progress.lengthComputable) {{
+                const percent = Math.max(1, Math.min(99, Math.round((progress.loaded / progress.total) * 100)));
+                lastProgressText = `Uploading ${{percent}}%`;
+              }} else {{
+                lastProgressText = `Uploading ${{(progress.loaded / 1024 / 1024).toFixed(1)}} MB`;
+              }}
+              setUploadStatus(`${{lastProgressText}}... Keep this page open.`, 'warn');
             }});
             request.addEventListener('load', () => {{
               let payload = null;
@@ -1227,6 +1245,7 @@ def render_dashboard() -> str:
           console.error(error);
           setUploadStatus(`${{error.message}}. If this is a large iPhone video through Cloudflare, try localhost or add it directly to the input folder.`, 'error');
         }} finally {{
+          window.clearInterval(uploadTimer);
           buttons.forEach((button) => {{
             button.disabled = false;
             button.textContent = originalLabels.get(button) || button.textContent;
