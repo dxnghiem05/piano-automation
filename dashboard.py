@@ -1194,20 +1194,32 @@ def render_dashboard() -> str:
         if (submitter) submitter.textContent = 'Uploading...';
         setUploadStatus('Uploading to input folder. Keep this page open until it finishes.', 'warn');
         try {{
-          const response = await fetch(form.action, {{
-            method: 'POST',
-            body: formData,
-            headers: {{ 'X-Requested-With': 'fetch' }},
+          const payload = await new Promise((resolve, reject) => {{
+            const request = new XMLHttpRequest();
+            request.open('POST', form.action);
+            request.setRequestHeader('X-Requested-With', 'fetch');
+            request.upload.addEventListener('progress', (progress) => {{
+              if (!progress.lengthComputable) return;
+              const percent = Math.max(1, Math.min(99, Math.round((progress.loaded / progress.total) * 100)));
+              setUploadStatus(`Uploading ${{percent}}%... Keep this page open.`, 'warn');
+            }});
+            request.addEventListener('load', () => {{
+              let payload = null;
+              try {{
+                payload = JSON.parse(request.responseText || '{{}}');
+              }} catch (_error) {{
+                payload = null;
+              }}
+              if (request.status < 200 || request.status >= 300 || !payload?.ok) {{
+                reject(new Error(payload?.error || `Upload failed with status ${{request.status}}`));
+                return;
+              }}
+              resolve(payload);
+            }});
+            request.addEventListener('error', () => reject(new Error('Upload connection failed')));
+            request.addEventListener('timeout', () => reject(new Error('Upload timed out')));
+            request.send(formData);
           }});
-          let payload = null;
-          try {{
-            payload = await response.json();
-          }} catch (_error) {{
-            payload = null;
-          }}
-          if (!response.ok || !payload?.ok) {{
-            throw new Error(payload?.error || `Upload failed with status ${{response.status}}`);
-          }}
           setUploadStatus(payload.message || `Saved ${{payload.saved}} file(s) to input.`, payload.saved ? 'ok' : 'error');
           form.reset();
           await refreshStatus();
