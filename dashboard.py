@@ -53,6 +53,13 @@ DASHBOARD_USER = (os.getenv("DASHBOARD_USER", "admin") or "admin").strip()
 DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "")
 AUTH_REQUIRED = bool(DASHBOARD_PASSWORD)
 
+# Shared <head> markup so every page loads the same Figtree web font (matches home).
+FONT_HEAD = (
+    '<link rel="preconnect" href="https://fonts.googleapis.com">'
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+    '<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">'
+)
+
 # Injected for non-owner visitors: hides every action form (read-only view) and
 # shows an "Owner login" button. Server-side auth on POST is the real guard; this
 # is just the matching UI so visitors don't see controls that wouldn't work.
@@ -1547,6 +1554,7 @@ def render_tracker_page() -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Video Tracker</title>
+  {FONT_HEAD}
   <style>
     :root {{
       color-scheme: dark;
@@ -1705,6 +1713,7 @@ def render_queue_page(page: int = 1, sort_order: str = "oldest") -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Video Queue</title>
+  {FONT_HEAD}
   <style>
     :root {{
       color-scheme: dark;
@@ -1935,8 +1944,10 @@ def render_queue_page(page: int = 1, sort_order: str = "oldest") -> str:
       .queue-meta {{ align-items: flex-start; flex-direction: column; }}
       .queue-tools {{ justify-content: flex-start; }}
       .pagination {{ justify-content: flex-start; }}
-      .shell {{ padding-top: 36px; }}
+      .shell {{ padding-top: 36px; padding-left: 16px; padding-right: 16px; }}
+      .table-wrap {{ max-width: 100%; }}
     }}
+    html, body {{ overflow-x: hidden; }}
   </style>
 </head>
 <body>
@@ -2363,6 +2374,7 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TikTok Candidates</title>
+  {FONT_HEAD}
   <style>
     :root {{
       color-scheme: dark;
@@ -2608,7 +2620,10 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
       .candidate-strip {{ grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }}
       .schedule-box {{ justify-items: start; }}
       .schedule-times {{ justify-content: flex-start; }}
+      .shell {{ padding-left: 16px; padding-right: 16px; }}
+      .table-wrap {{ max-width: 100%; }}
     }}
+    html, body {{ overflow-x: hidden; }}
   </style>
 </head>
 <body>
@@ -2970,6 +2985,7 @@ def render_stats_page(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>YouTube Stats</title>
+  {FONT_HEAD}
   <style>
     :root {{
       color-scheme: dark;
@@ -3412,7 +3428,18 @@ def render_stats_page(
       .metric-header {{ flex-direction: column; }}
       .summary-pills {{ justify-content: flex-start; }}
       .shell {{ padding-top: 36px; }}
+      /* Keep everything within the phone width; wide tables scroll inside their box. */
+      .market > *, .lower-grid > *, .project-grid > * {{ min-width: 0; }}
+      .table-wrap {{ max-width: 100%; }}
+      table {{ min-width: 640px; }}
+      .metric-title {{ font-size: 30px; }}
+      .metric-value {{ font-size: 40px; }}
     }}
+    @media (max-width: 640px) {{
+      .shell {{ padding-left: 16px; padding-right: 16px; }}
+      .summary-pill {{ min-width: 96px; }}
+    }}
+    html, body {{ overflow-x: hidden; }}
   </style>
 </head>
 <body>
