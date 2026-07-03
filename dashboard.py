@@ -23,7 +23,13 @@ import config
 from generate_clips import ensure_directories
 from logging_setup import configure_logging
 from project_dataset import read_project_dataset, refresh_project_dataset
-from stats_tracker import best_posting_hours, latest_video_stats, read_stats_history, refresh_youtube_stats_history
+from stats_tracker import (
+    best_posting_days,
+    best_posting_hours,
+    latest_video_stats,
+    read_stats_history,
+    refresh_youtube_stats_history,
+)
 from tracker import update_tracker
 from youtube_upload import get_youtube_service, read_upload_records
 from generate_metadata import read_metadata
@@ -2809,6 +2815,7 @@ def render_stats_page(
     public_count = sum(1 for row in latest_rows if row.get("privacy_status", "") == "public")
     best_hour = str(hour_rows[0]["hour"]) if hour_rows else "No data"
     top_video_markup = render_top_video_list(latest_rows)
+    top_day_markup = render_top_day_list(best_posting_days())
     project_rows = read_project_dataset()
     selected_project_week = normalize_project_week(project_rows, selected_project_week)
     selected_project_sort = normalize_project_sort(selected_project_sort)
@@ -2942,8 +2949,33 @@ def render_stats_page(
       display: grid;
       grid-template-columns: minmax(0, 1fr) 360px;
       gap: 26px;
-      align-items: start;
+      align-items: stretch;
     }}
+    .side-column {{
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      min-height: 0;
+    }}
+    .side-panel-grow {{ flex: 1 1 auto; display: flex; flex-direction: column; }}
+    .top-days {{
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 20px 20px;
+    }}
+    .top-day {{ display: block; }}
+    .top-day-head {{
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 7px;
+    }}
+    .top-day-head strong {{ font-size: 14px; color: #fff; }}
+    .top-day-head span {{ color: var(--muted); font-size: 12px; }}
     .chart-panel {{
       min-height: 540px;
       padding: 0 0 20px;
@@ -3018,7 +3050,7 @@ def render_stats_page(
     }}
     .video-rank {{
       display: grid;
-      grid-template-columns: 1fr 86px auto;
+      grid-template-columns: 1fr auto;
       gap: 12px;
       align-items: center;
       padding: 13px 20px;
@@ -3320,9 +3352,15 @@ def render_stats_page(
           <div class="hours-grid">{hour_markup}</div>
         </div>
       </section>
-      <aside class="side-panel">
-        <div class="side-title">Top videos</div>
-        {top_video_markup}
+      <aside class="side-column">
+        <div class="side-panel">
+          <div class="side-title">Top videos</div>
+          {top_video_markup}
+        </div>
+        <div class="side-panel side-panel-grow">
+          <div class="side-title">Top Days to Post</div>
+          <div class="top-days">{top_day_markup}</div>
+        </div>
       </aside>
     </div>
     <div class="lower-grid">
@@ -3711,13 +3749,11 @@ def render_top_video_list(rows: list[dict[str, str]]) -> str:
 
 
 def render_top_video_row(row: dict[str, str], index: int, max_views: int) -> str:
-    """Render a top-video row with a small trend sparkline."""
+    """Render a compact top-video row (rank, title, views, likes)."""
     views = parse_stat_int(row.get("view_count", ""))
     likes = parse_stat_int(row.get("like_count", ""))
     title = row.get("title", "").split("#", 1)[0].strip() or row.get("clip_filename", "")
     clip = row.get("clip_filename", "")
-    color = "#3b8bff" if views >= max_views / 4 else "#ff5c00"
-    sparkline = render_mini_sparkline(row.get("clip_filename", "") + row.get("view_count", ""), color)
 
     return f"""
       <div class="video-rank">
@@ -3725,11 +3761,35 @@ def render_top_video_row(row: dict[str, str], index: int, max_views: int) -> str
           <strong>{index}. {html.escape(title[:28])}</strong>
           <span>{html.escape(clip)}</span>
         </div>
-        {sparkline}
         <div class="video-numbers">
           <strong>{views:,}</strong>
           <span>{likes:,} likes</span>
         </div>
+      </div>
+    """
+
+
+def render_top_day_list(rows: list[dict[str, int | float | str]]) -> str:
+    """Render the Top Days to Post panel (avg views by weekday, ranked)."""
+    if not rows:
+        return '<p class="muted" style="padding:16px 20px;">No day data yet.</p>'
+    max_average = max(float(row["average_views"]) for row in rows) or 1.0
+    return "".join(render_top_day_row(row, max_average) for row in rows)
+
+
+def render_top_day_row(row: dict[str, int | float | str], max_average: float) -> str:
+    """Render one weekday row with an average-views bar."""
+    day = str(row["day"])
+    average = float(row["average_views"])
+    videos = int(row["video_count"])
+    pct = max(3.0, min(100.0, (average / max_average) * 100))
+    return f"""
+      <div class="top-day">
+        <div class="top-day-head">
+          <strong>{html.escape(day)}</strong>
+          <span>{average:,.0f} avg • {videos} videos</span>
+        </div>
+        <div class="track"><div class="fill" style="width:{pct:.1f}%"></div></div>
       </div>
     """
 

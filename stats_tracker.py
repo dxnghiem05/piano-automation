@@ -149,6 +149,40 @@ def best_posting_hours() -> list[dict[str, int | float | str]]:
     return sorted(summaries, key=lambda row: float(row["average_views"]), reverse=True)
 
 
+def best_posting_days() -> list[dict[str, int | float | str]]:
+    """Summarize latest views by scheduled posting weekday (Mon-Sun)."""
+    groups: defaultdict[str, list[int]] = defaultdict(list)
+    for row in latest_video_stats():
+        day = weekday_name(row.get("scheduled_publish_time", ""))
+        if not day:
+            continue
+        groups[day].append(int_or_zero(row.get("view_count", "")))
+
+    summaries = []
+    for day, values in groups.items():
+        average = sum(values) / len(values)
+        summaries.append(
+            {
+                "day": day,
+                "video_count": len(values),
+                "average_views": round(average, 1),
+                "best_views": max(values),
+            }
+        )
+
+    return sorted(summaries, key=lambda row: float(row["average_views"]), reverse=True)
+
+
+def weekday_name(value: str) -> str:
+    """Extract the local weekday name from an ISO timestamp."""
+    if not value:
+        return ""
+    try:
+        return datetime.fromisoformat(value).strftime("%A")
+    except ValueError:
+        return ""
+
+
 def scheduled_hour(value: str) -> str:
     """Extract local scheduled hour from an ISO timestamp."""
     if not value:
