@@ -1603,7 +1603,7 @@ def render_queue_page(page: int = 1, sort_order: str = "oldest") -> str:
       --muted: #b3b3b3;
       --line: rgba(255, 255, 255, .09);
       --panel: #181818;
-      --accent: #1ed760;
+      --accent: #1fd9b4;
       --warn: #ffa42b;
     }}
     * {{ box-sizing: border-box; }}
@@ -1613,8 +1613,8 @@ def render_queue_page(page: int = 1, sort_order: str = "oldest") -> str:
       font-weight: 430;
       color: var(--ink);
       background:
-        radial-gradient(circle at 20% 0%, rgba(30, 215, 96, .18), transparent 30%),
-        linear-gradient(180deg, #1f2b29 0, #121212 360px);
+        radial-gradient(circle at 20% 0%, rgba(31, 217, 180, .20), transparent 30%),
+        linear-gradient(180deg, #123029 0, #121212 360px);
     }}
     .shell {{ max-width: 1440px; margin: 0 auto; padding: 58px 24px; }}
     .top {{
@@ -1664,7 +1664,7 @@ def render_queue_page(page: int = 1, sort_order: str = "oldest") -> str:
       cursor: pointer;
     }}
     .links a:hover, .links button:hover {{ background: #303030; transform: translateY(-1px); }}
-    .links button:hover {{ background: #3be477; }}
+    .links button:hover {{ background: #33e6c4; }}
     .links button:disabled {{ cursor: wait; opacity: .72; transform: none; }}
     .queue-panel {{
       overflow: auto;
@@ -1697,11 +1697,11 @@ def render_queue_page(page: int = 1, sort_order: str = "oldest") -> str:
     td {{ color: #d7d7d7; }}
     tr {{ scroll-margin-top: 24px; }}
     tr:target {{
-      background: rgba(30,215,96,.10);
-      outline: 1px solid rgba(30,215,96,.35);
+      background: rgba(31,217,180,.10);
+      outline: 1px solid rgba(31,217,180,.35);
     }}
     tr.saved-row {{
-      background: rgba(30,215,96,.10);
+      background: rgba(31,217,180,.10);
     }}
     .title-cell {{
       max-width: 340px;
@@ -1719,7 +1719,7 @@ def render_queue_page(page: int = 1, sort_order: str = "oldest") -> str:
       font-size: 12px;
       font-weight: 560;
     }}
-    .badge.future {{ background: rgba(30,215,96,.16); color: var(--accent); }}
+    .badge.future {{ background: rgba(31,217,180,.16); color: var(--accent); }}
     .badge.issue {{ background: rgba(255,164,43,.16); color: var(--warn); }}
     .youtube-link {{ color: var(--accent); font-weight: 560; text-decoration: none; }}
     form.privacy-form {{ display: flex; align-items: center; gap: 8px; margin: 0; }}
@@ -1742,7 +1742,7 @@ def render_queue_page(page: int = 1, sort_order: str = "oldest") -> str:
       padding: 0 14px;
       cursor: pointer;
     }}
-    button:hover {{ background: #3be477; transform: scale(1.02); }}
+    button:hover {{ background: #33e6c4; transform: scale(1.02); }}
     button:disabled {{ cursor: wait; opacity: .72; transform: none; }}
     .inline-status {{
       color: var(--muted);
@@ -1756,7 +1756,7 @@ def render_queue_page(page: int = 1, sort_order: str = "oldest") -> str:
       padding: 14px 16px;
       border: 1px solid rgba(255,255,255,.1);
       border-radius: 14px;
-      background: rgba(30,215,96,.12);
+      background: rgba(31,217,180,.12);
       color: #d7d7d7;
     }}
     .message.error {{
@@ -1810,7 +1810,7 @@ def render_queue_page(page: int = 1, sort_order: str = "oldest") -> str:
       text-decoration: none;
       font-weight: 560;
     }}
-    .page-link:hover {{ border-color: rgba(30,215,96,.45); color: var(--accent); }}
+    .page-link:hover {{ border-color: rgba(31,217,180,.45); color: var(--accent); }}
     .page-link.active {{
       background: var(--accent);
       border-color: var(--accent);
@@ -2260,7 +2260,7 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
       --ink: #f5f5f5;
       --muted: #b3b3b3;
       --line: rgba(255, 255, 255, .09);
-      --accent: #1ed760;
+      --accent: #ff2d55;
       --panel: #181818;
     }}
     * {{ box-sizing: border-box; }}
@@ -2269,8 +2269,9 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
       font-family: {APP_FONT_STACK};
       color: var(--ink);
       background:
-        radial-gradient(circle at 20% 0%, rgba(30, 215, 96, .18), transparent 30%),
-        linear-gradient(180deg, #1f2b29 0, #121212 360px);
+        radial-gradient(circle at 18% 0%, rgba(255, 45, 85, .18), transparent 32%),
+        radial-gradient(circle at 88% 6%, rgba(37, 244, 238, .14), transparent 34%),
+        linear-gradient(180deg, #241521 0, #121212 360px);
     }}
     .shell {{ max-width: 1440px; margin: 0 auto; padding: 48px 24px 64px; }}
     .top {{
@@ -2457,7 +2458,7 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
     .status-chip {{
       padding: 7px 10px;
       border-radius: 999px;
-      background: rgba(30,215,96,.14);
+      background: rgba(255,45,85,.14);
       color: var(--accent);
       font-size: 12px;
       font-weight: 560;
@@ -2798,7 +2799,7 @@ def render_stats_page(
 ) -> str:
     """Render YouTube stats dashboard."""
     latest_rows = latest_video_stats()
-    hour_rows = best_posting_hours()
+    hour_rows = best_posting_hours()[:5]
     selected_range = normalize_stats_range(selected_range)
     chart_rows = chart_view_gains(selected_range)
 
@@ -2846,8 +2847,8 @@ def render_stats_page(
 
     chart_svg = render_views_chart(chart_rows, selected_range)
     chart_note = (
-        "1D shows views gained between saved dashboard refreshes. "
-        "Open or refresh the stats page during the day to collect more points."
+        "1D shows views gained during each hour of the day (9 AM-9 PM), from saved YouTube "
+        "stats snapshots. Keep the stats page open during the day so snapshots fill every hour."
         if selected_range == "1d"
         else "Longer ranges show daily gains from saved YouTube stats snapshots."
     )
@@ -2868,7 +2869,7 @@ def render_stats_page(
       --paper: #121212;
       --panel: #181818;
       --panel-soft: rgba(255,255,255,.045);
-      --accent: #1ed760;
+      --accent: #3b8bff;
       --orange: #ff5c00;
     }}
     * {{ box-sizing: border-box; }}
@@ -2877,8 +2878,8 @@ def render_stats_page(
       font-family: {APP_FONT_STACK};
       color: var(--ink);
       background:
-        radial-gradient(circle at 20% 0%, rgba(30, 215, 96, .18), transparent 30%),
-        linear-gradient(180deg, #1f2b29 0, #121212 360px);
+        radial-gradient(circle at 20% 0%, rgba(59, 139, 255, .20), transparent 30%),
+        linear-gradient(180deg, #142338 0, #121212 360px);
       letter-spacing: 0;
     }}
     .shell {{ max-width: 1440px; margin: 0 auto; padding: 38px 24px 64px; }}
@@ -3102,9 +3103,14 @@ def render_stats_page(
     .chart-point:hover .point-dot,
     .chart-point:focus .point-dot {{
       r: 5.5;
-      fill: #7bf58d;
+      fill: #9cc9ff;
     }}
+    .chart-point .bar {{ transition: fill .16s ease; }}
+    .chart-point:hover .bar,
+    .chart-point:focus .bar {{ fill: #7cb2ff; }}
     .hour {{ margin: 0 0 16px; }}
+    .chart-hours {{ margin-top: 22px; border-top: 1px solid var(--line); padding-top: 16px; }}
+    .chart-hours-title {{ margin: 0 0 14px; font-size: 15px; font-weight: 700; color: #fff; }}
     .hours-grid {{
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -3115,7 +3121,7 @@ def render_stats_page(
     .hour-label strong {{ color: #fff; }}
     .hour-label span {{ color: var(--muted); }}
     .track {{ height: 12px; background: #242424; border-radius: 999px; overflow: hidden; }}
-    .fill {{ height: 100%; background: linear-gradient(90deg, #1ed760, #b6f23c); }}
+    .fill {{ height: 100%; background: linear-gradient(90deg, #3b8bff, #7cc4ff); }}
     .project-grid {{
       display: grid;
       grid-template-columns: minmax(0, 1.2fr) minmax(320px, .8fr);
@@ -3309,6 +3315,10 @@ def render_stats_page(
         {chart_svg}
         <p class="chart-note">{html.escape(chart_note)}</p>
         {range_tabs}
+        <div class="chart-hours">
+          <h3 class="chart-hours-title">Best Posting Hours · Top 5</h3>
+          <div class="hours-grid">{hour_markup}</div>
+        </div>
       </section>
       <aside class="side-panel">
         <div class="side-title">Top videos</div>
@@ -3317,10 +3327,6 @@ def render_stats_page(
     </div>
     <div class="lower-grid">
       {project_tracker_markup}
-      <section>
-        <h2>Best Posting Hours</h2>
-        <div class="hours-grid">{hour_markup}</div>
-      </section>
       <section id="video-stats">
         <div class="section-head">
           <h2>Video Stats</h2>
@@ -3492,9 +3498,72 @@ def chart_view_gains(selected_range: str) -> list[dict[str, int | str]]:
     selected_range = normalize_stats_range(selected_range)
 
     if selected_range == "1d":
-        return snapshot_view_gains(parsed_rows, newest)
+        return hourly_view_gains(parsed_rows, newest)
 
     return daily_view_gains(parsed_rows, newest, selected_range)
+
+
+def hourly_view_gains(
+    parsed_rows: list[tuple[datetime, str, dict[str, str]]],
+    newest: datetime,
+) -> list[dict[str, int | str]]:
+    """Return channel views gained within each posting hour of the newest local day.
+
+    Each bucket H (e.g. 10 AM) holds the views gained between H:00:00 and
+    H:59:59 on the most recent day that has snapshots, computed from the saved
+    stats history. Hours still in the future (or with no snapshot yet) show 0.
+    Granularity depends on how often snapshots were saved during the day.
+    """
+    local_zone = ZoneInfo(config.TIMEZONE)
+    newest_local = newest.astimezone(local_zone) if newest.tzinfo else newest.replace(tzinfo=local_zone)
+    day = newest_local.date()
+    midnight = datetime.combine(day, datetime.min.time(), tzinfo=local_zone)
+
+    # First snapshot of this day: used as a floor so the first observed hour shows
+    # only in-hour growth, not overnight views lumped in from the day's first check.
+    day_snapshot_times = [
+        (checked_at.astimezone(local_zone) if checked_at.tzinfo else checked_at.replace(tzinfo=local_zone))
+        for checked_at, _video_id, _row in parsed_rows
+    ]
+    day_snapshot_times = [t for t in day_snapshot_times if t.date() == day]
+    first_snapshot = min(day_snapshot_times) if day_snapshot_times else newest_local
+
+    # Overnight bucket: views gained between the previous day's last snapshot
+    # (everything at or before this midnight) and today's first snapshot.
+    overnight_views = max(
+        0,
+        channel_total_at(parsed_rows, first_snapshot) - channel_total_at(parsed_rows, midnight),
+    )
+    rows: list[dict[str, int | str]] = [
+        {
+            "label": "Night",
+            "tooltip": f"Overnight ({day.strftime('%b %-d')})",
+            "views": overnight_views,
+            "fill": "#6a5cff",
+        }
+    ]
+
+    start_hour = config.POST_START_HOUR
+    end_hour = config.POST_END_HOUR
+    for hour in range(start_hour, end_hour + 1):
+        hour_start = midnight.replace(hour=hour)
+        hour_end = hour_start + timedelta(hours=1)
+        # Baseline no earlier than the first snapshot; never look past the newest one.
+        lower = min(max(hour_start, first_snapshot), newest_local)
+        upper = min(hour_end, newest_local)
+        gained = (
+            max(0, channel_total_at(parsed_rows, upper) - channel_total_at(parsed_rows, lower))
+            if upper > lower
+            else 0
+        )
+        rows.append(
+            {
+                "label": hour_start.strftime("%-I%p"),
+                "tooltip": f"{hour_start.strftime('%-I %p')}–{hour_end.strftime('%-I %p')}",
+                "views": gained,
+            }
+        )
+    return rows
 
 
 def snapshot_view_gains(
@@ -3647,7 +3716,7 @@ def render_top_video_row(row: dict[str, str], index: int, max_views: int) -> str
     likes = parse_stat_int(row.get("like_count", ""))
     title = row.get("title", "").split("#", 1)[0].strip() or row.get("clip_filename", "")
     clip = row.get("clip_filename", "")
-    color = "#1ed760" if views >= max_views / 4 else "#ff5c00"
+    color = "#3b8bff" if views >= max_views / 4 else "#ff5c00"
     sparkline = render_mini_sparkline(row.get("clip_filename", "") + row.get("view_count", ""), color)
 
     return f"""
@@ -3999,6 +4068,10 @@ def render_views_chart(rows: list[dict[str, int | str]], selected_range: str) ->
     height = 360
     padding = 42
     max_views = max(int(row["views"]) for row in rows) or 1
+
+    if normalize_stats_range(selected_range) == "1d":
+        return render_hourly_bar_chart(rows, width, height, padding, max_views)
+
     points = []
     for index, row in enumerate(rows):
         x = width / 2 if len(rows) == 1 else padding + index * ((width - padding * 2) / (len(rows) - 1))
@@ -4025,10 +4098,90 @@ def render_views_chart(rows: list[dict[str, int | str]], selected_range: str) ->
         <line x1="{padding}" y1="{height / 2:.1f}" x2="{width - padding}" y2="{height / 2:.1f}" stroke="rgba(255,255,255,.22)" stroke-dasharray="1 7"/>
         <line x1="{padding}" y1="{height - padding}" x2="{width - padding}" y2="{height - padding}" stroke="rgba(255,255,255,.14)"/>
         <text x="{padding}" y="20" fill="#b3b3b3">{max_views:,} {html.escape(max_label)}</text>
-        <polyline points="{polyline}" fill="none" stroke="#1ed760" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
-        <g fill="#1ed760">{circles}</g>
+        <polyline points="{polyline}" fill="none" stroke="#3b8bff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <g fill="#3b8bff">{circles}</g>
         <g fill="#b3b3b3" font-size="11">{labels}</g>
       </svg>
+    """
+
+
+def render_hourly_bar_chart(
+    rows: list[dict[str, int | str]],
+    width: int,
+    height: int,
+    padding: int,
+    max_views: int,
+) -> str:
+    """Render an hourly bar chart of views gained per posting hour (9 AM-9 PM)."""
+    count = len(rows) or 1
+    slot = (width - padding * 2) / count
+    bar_w = min(48.0, slot * 0.62)
+    baseline = height - padding
+    bars = []
+    labels = []
+    for index, row in enumerate(rows):
+        views = int(row["views"])
+        center_x = padding + slot * (index + 0.5)
+        bar_h = (views / max_views) * (height - padding * 2)
+        bar_x = center_x - bar_w / 2
+        bar_y = baseline - bar_h
+        tooltip_text = f"{row.get('tooltip', row['label'])} • {views:,} views"
+        bar_fill = str(row.get("fill", "#3b8bff"))
+        bars.append(
+            render_hour_bar_column(
+                center_x, bar_x, bar_y, bar_w, bar_h, slot, baseline, padding, height, width, tooltip_text, bar_fill
+            )
+        )
+        labels.append(
+            f'<text x="{center_x:.1f}" y="{height - 12}" text-anchor="middle">{html.escape(str(row["label"]))}</text>'
+        )
+
+    return f"""
+      <svg class="chart" viewBox="0 0 {width} {height}" role="img" aria-label="Views gained per hour today">
+        <line x1="{padding}" y1="{baseline:.1f}" x2="{width - padding}" y2="{baseline:.1f}" stroke="rgba(255,255,255,.14)"/>
+        <text x="{padding}" y="20" fill="#b3b3b3">{max_views:,} max views gained in a single hour</text>
+        <g>{''.join(bars)}</g>
+        <g fill="#b3b3b3" font-size="11">{''.join(labels)}</g>
+      </svg>
+    """
+
+
+def render_hour_bar_column(
+    center_x: float,
+    bar_x: float,
+    bar_y: float,
+    bar_w: float,
+    bar_h: float,
+    slot: float,
+    baseline: float,
+    padding: int,
+    height: int,
+    width: int,
+    tooltip_text: str,
+    bar_fill: str = "#3b8bff",
+) -> str:
+    """Render one hoverable hour bar with an exact-value tooltip."""
+    tooltip_width = max(120, min(260, 7 * len(tooltip_text) + 28))
+    tooltip_x = center_x - tooltip_width / 2
+    tooltip_y = max(4, bar_y - 40)
+    if tooltip_x < padding:
+        tooltip_x = padding
+    if tooltip_x + tooltip_width > width - padding:
+        tooltip_x = width - padding - tooltip_width
+    text_x = tooltip_x + tooltip_width / 2
+    text_y = tooltip_y + 20
+    hit_x = center_x - slot / 2
+
+    return f"""
+          <g class="chart-point" tabindex="0" aria-label="{html.escape(tooltip_text)}">
+            <rect class="point-hit" x="{hit_x:.1f}" y="{padding}" width="{slot:.1f}" height="{height - padding * 2:.1f}"></rect>
+            <rect class="bar" x="{bar_x:.1f}" y="{bar_y:.1f}" width="{bar_w:.1f}" height="{max(0.0, bar_h):.1f}" rx="4" fill="{bar_fill}"><title>{html.escape(tooltip_text)}</title></rect>
+            <g class="point-tooltip">
+              <line x1="{center_x:.1f}" y1="{padding}" x2="{center_x:.1f}" y2="{baseline:.1f}" stroke="rgba(255,255,255,.4)"></line>
+              <rect x="{tooltip_x:.1f}" y="{tooltip_y:.1f}" width="{tooltip_width:.1f}" height="28" rx="8" fill="#121212" stroke="rgba(255,255,255,.18)"></rect>
+              <text x="{text_x:.1f}" y="{text_y:.1f}" fill="#f5f5f5" text-anchor="middle" font-size="11" font-weight="560">{html.escape(tooltip_text)}</text>
+            </g>
+          </g>
     """
 
 
