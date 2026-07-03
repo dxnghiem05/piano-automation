@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pianodashboard.public</string>
+
+    <!-- Runs serve_public.command, which starts the dashboard and opens the
+         permanent ngrok tunnel. It reads DASHBOARD_PASSWORD and NGROK_DOMAIN
+         from .env, so no secrets live in this file. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>/Users/dustinnghiem/.codex/workspaces/default/serve_public.command</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/dustinnghiem/.codex/workspaces/default</string>
+
+    <!-- Start automatically at login, and relaunch if it stops. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/dustinnghiem/.codex/workspaces/default/logs/public_link.out</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/dustinnghiem/.codex/workspaces/default/logs/public_link.err</string>
+</dict>
+</plist>
