@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Iterable
 
 import config
+from media_tools import media_tool_path, require_media_tool
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +51,8 @@ def ensure_directories() -> None:
 
 
 def verify_ffmpeg_tools() -> None:
-    """Verify ffmpeg and ffprobe are available on PATH."""
-    missing = [tool for tool in ("ffmpeg", "ffprobe") if shutil.which(tool) is None]
+    """Verify ffmpeg and ffprobe are installed."""
+    missing = [tool for tool in ("ffmpeg", "ffprobe") if media_tool_path(tool) is None]
     if missing:
         raise RuntimeError(
             f"Missing required tool(s): {', '.join(missing)}. Install ffmpeg with Homebrew: brew install ffmpeg"
@@ -88,7 +89,7 @@ def discover_videos(input_dir: Path = config.INPUT_DIR) -> list[SourceVideo]:
 def get_video_duration(path: Path) -> float:
     """Read actual video duration with ffprobe."""
     command = [
-        "ffprobe",
+        require_media_tool("ffprobe"),
         "-v",
         "error",
         "-show_entries",
@@ -198,7 +199,7 @@ def run_ffmpeg_clip(source: Path, output: Path, start_seconds: float, duration_s
         temp_output.unlink()
 
     command = [
-        "ffmpeg",
+        require_media_tool("ffmpeg"),
         "-hide_banner",
         "-y",
         "-ss",

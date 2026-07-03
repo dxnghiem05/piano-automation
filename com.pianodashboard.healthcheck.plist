@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pianodashboard.healthcheck</string>
+
+    <!-- Run the read-only daily health check via the project's own virtualenv.
+         No --clean-junk here on purpose: the scheduled job never deletes anything. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/dustinnghiem/.codex/workspaces/default/.venv/bin/python</string>
+        <string>/Users/dustinnghiem/.codex/workspaces/default/daily_health_check.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/dustinnghiem/.codex/workspaces/default</string>
+
+    <!-- Every morning at 8:30 AM local time. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>8</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <!-- Do not run automatically the moment it is loaded; wait for 8:30 AM. -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <!-- launchd's own stdout/stderr (the script also writes logs/health_check_latest.txt). -->
+    <key>StandardOutPath</key>
+    <string>/Users/dustinnghiem/.codex/workspaces/default/logs/health_check_launchd.out</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/dustinnghiem/.codex/workspaces/default/logs/health_check_launchd.err</string>
+</dict>
+</plist>

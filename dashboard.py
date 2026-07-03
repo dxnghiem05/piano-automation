@@ -39,7 +39,7 @@ QUEUE_PAGE_SIZE = 20
 STATS_TABLE_PAGE_SIZE = 25
 AUTO_STATS_REFRESH_MINUTES = 2
 APP_FONT_STACK = (
-    '"CircularSp", "Circular Std", "Avenir Next", "Helvetica Neue", '
+    '"Figtree", "CircularSp", "Circular Std", "Avenir Next", "Helvetica Neue", '
     'Helvetica, Arial, sans-serif'
 )
 RUN_STATE = {
@@ -157,7 +157,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if parsed.path == "/run":
             start_run()
             if self.is_ajax_request():
-                self.send_json({"ok": True, "message": "Started full run."})
+                self.send_json({"ok": True, "message": "Started clipping and YouTube scheduling."})
                 return
             self.redirect(self.redirect_back_path(default="/"))
             return
@@ -394,6 +394,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args: object) -> None:
         """Route default HTTP logs into app logging."""
+        message = format % args
+        if any(path in message for path in ('GET /api/status ', 'GET /api/logs ', 'GET /api/v1/courses')):
+            return
         logger.info("dashboard: " + format, *args)
 
 
@@ -402,7 +405,7 @@ def render_dashboard() -> str:
     status = build_status()
     clips = list_clip_files()[:HOME_PREVIEW_CLIP_LIMIT]
     upload_running = bool(status["run"]["running"])
-    run_label = "Clipping..." if upload_running else "Clip Input Videos"
+    run_label = "Running..." if upload_running else "Clip + Upload Videos"
     run_disabled = "disabled" if upload_running else ""
 
     hero_preview = render_hero_preview(clips)
@@ -413,6 +416,9 @@ def render_dashboard() -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Piano Shorts Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
     :root {{
       color-scheme: light;
@@ -861,45 +867,69 @@ def render_dashboard() -> str:
     }}
     .album-action {{
       position: relative;
-      min-height: 128px;
-      display: flex;
-      align-items: flex-end;
-      justify-content: flex-start;
-      overflow: hidden;
+      display: block;
+      width: 100%;
       padding: 14px;
       border: 0;
-      border-radius: 12px;
+      border-radius: 10px;
       color: #fff;
       text-align: left;
       text-decoration: none;
-      font-size: 14px;
-      font-weight: 560;
-      background: #282828;
+      background: #181818;
       cursor: pointer;
-      transition: transform .18s ease, background .18s ease;
+      font-family: inherit;
+      transition: background .25s ease;
     }}
-    .album-action:hover {{ transform: translateY(-3px); background: #333; }}
-    .album-action::after {{
-      content: "";
+    .album-action:hover {{ background: #282828; }}
+    .album-action .cover {{
+      display: block;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 14px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.5);
+      background: var(--cover, linear-gradient(135deg, #1ed760, #005c38));
+    }}
+    .album-action .cover svg {{ display: block; width: 100%; height: 100%; }}
+    .album-action .name {{
+      display: block;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin-bottom: 5px;
+    }}
+    .album-action .desc {{
+      display: block;
+      font-size: 12.5px;
+      font-weight: 500;
+      color: #b3b3b3;
+      line-height: 1.35;
+    }}
+    .album-action .play {{
       position: absolute;
-      right: -24px;
-      bottom: -22px;
-      width: 86px;
-      height: 86px;
-      border-radius: 10px;
-      background:
-        linear-gradient(135deg, rgba(255,255,255,.22), transparent),
-        var(--cover, linear-gradient(135deg, #1ed760, #005c38));
-      transform: rotate(18deg);
-      box-shadow: 0 12px 24px rgba(0,0,0,.35);
+      right: 22px;
+      bottom: 78px;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: #1ed760;
+      display: grid;
+      place-items: center;
+      box-shadow: 0 8px 16px rgba(0,0,0,.4);
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity .2s ease, transform .2s ease;
     }}
-    .album-action span {{ position: relative; z-index: 1; max-width: 120px; }}
-    .cover-run {{ --cover: linear-gradient(135deg, #1ed760, #137b43); }}
-    .cover-stats {{ --cover: linear-gradient(135deg, #00d4ff, #2554ff); }}
-    .cover-refresh {{ --cover: linear-gradient(135deg, #f43f5e, #7c3aed); }}
-    .cover-queue {{ --cover: linear-gradient(135deg, #1ed760, #0ea5e9); }}
-    .cover-tiktok {{ --cover: linear-gradient(135deg, #1ed760, #ff0050); }}
+    .album-action:hover .play {{ opacity: 1; transform: translateY(0); }}
+    .album-action .play svg {{ width: 20px; height: 20px; }}
+    .cover-run {{ --cover: linear-gradient(135deg, #1ed760, #0a5c2e); }}
+    .cover-stats {{ --cover: linear-gradient(135deg, #3b8bff, #0b2a6b); }}
+    .cover-refresh {{ --cover: linear-gradient(135deg, #e93cc0, #5b2e91); }}
+    .cover-queue {{ --cover: linear-gradient(135deg, #1fd9b4, #0c4a45); }}
+    .cover-tiktok {{ --cover: linear-gradient(135deg, #ff2d55, #25f4ee); }}
     .album-action:disabled {{ opacity: .55; cursor: wait; }}
+    .album-action:disabled .play {{ opacity: 0; }}
     .upload-album {{
       display: grid;
       gap: 12px;
@@ -982,14 +1012,13 @@ def render_dashboard() -> str:
     }}
     .automation-wide {{
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 16px;
       margin-bottom: 12px;
     }}
-    .automation-wide .cover-run,
-    .automation-wide .cover-refresh {{
-      grid-column: auto;
-      width: 100%;
+    .automation-wide .run-form,
+    .automation-wide .refresh-form {{
+      display: contents;
     }}
     .status-card pre {{
       margin-top: 14px;
@@ -1029,7 +1058,7 @@ def render_dashboard() -> str:
         <h1>Piano Shorts Dashboard</h1>
         <p class="subtitle">Clip, schedule, track, and study your YouTube Shorts from one quiet studio interface.</p>
         <div class="hero-actions">
-          <form action="/clip-only" method="post" class="run-form">
+          <form action="/run" method="post" class="run-form">
             <button type="submit" data-run-primary {run_disabled}>{run_label}</button>
           </form>
           <a class="button ghost" href="/stats">View Stats</a>
@@ -1050,7 +1079,7 @@ def render_dashboard() -> str:
           <form action="/upload" method="post" enctype="multipart/form-data" class="upload-album">
             <label class="upload-drop">
               <span class="upload-title">Drop videos into input</span>
-              <span class="upload-copy">Drag files here or choose .mp4/.mov videos. They are saved into the input folder only.</span>
+              <span class="upload-copy">Drag files here or choose .mp4/.mov videos. Then press Clip + Upload Videos to schedule them.</span>
               <input type="file" name="videos" accept=".mp4,.mov,video/mp4,video/quicktime" multiple>
             </label>
             <div class="upload-buttons">
@@ -1062,15 +1091,40 @@ def render_dashboard() -> str:
         <section>
           <h2>Automation</h2>
           <div class="automation-wide">
-            <form action="/clip-only" method="post" class="run-form">
-              <button class="album-action cover-run" type="submit" data-run-primary {run_disabled}><span>{run_label}</span></button>
+            <form action="/run" method="post" class="run-form">
+              <button class="album-action cover-run" type="submit" data-run-primary {run_disabled}>
+                <span class="cover"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="acRun" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1ed760"/><stop offset="1" stop-color="#0a5c2e"/></linearGradient></defs><rect width="100" height="100" fill="url(#acRun)"/><g fill="none" stroke="rgba(0,0,0,.35)" stroke-width="3"><circle cx="30" cy="66" r="9"/><circle cx="54" cy="66" r="9"/><line x1="38" y1="61" x2="76" y2="32"/><line x1="62" y1="61" x2="76" y2="52"/></g><path d="M74 18 l0 28 M63 29 l11 -11 l11 11" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span class="play"><svg viewBox="0 0 24 24" fill="#000"><path d="M8 5v14l11-7z"/></svg></span>
+                <span class="name">{run_label}</span>
+                <span class="desc">Clip, caption &amp; schedule Shorts</span>
+              </button>
             </form>
-            <a class="album-action cover-stats" href="/stats"><span>YouTube Stats</span></a>
-            <a class="album-action cover-queue" href="/queue"><span>Queue</span></a>
-            <a class="album-action cover-tiktok" href="/tiktok-candidates"><span>TikTok Candidates</span></a>
+            <a class="album-action cover-stats" href="/stats">
+              <span class="cover"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="acStats" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b8bff"/><stop offset="1" stop-color="#0b2a6b"/></linearGradient></defs><rect width="100" height="100" fill="url(#acStats)"/><g fill="rgba(255,255,255,.92)"><rect x="24" y="58" width="10" height="22" rx="2"/><rect x="42" y="46" width="10" height="34" rx="2"/><rect x="60" y="34" width="10" height="46" rx="2"/></g><path d="M22 52 L38 42 L54 48 L78 24" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/><circle cx="78" cy="24" r="4" fill="#fff"/></svg></span>
+              <span class="play"><svg viewBox="0 0 24 24" fill="#000"><path d="M8 5v14l11-7z"/></svg></span>
+              <span class="name">YouTube Stats</span>
+              <span class="desc">Views, likes &amp; growth</span>
+            </a>
+            <a class="album-action cover-queue" href="/queue">
+              <span class="cover"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="acQueue" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1fd9b4"/><stop offset="1" stop-color="#0c4a45"/></linearGradient></defs><rect width="100" height="100" fill="url(#acQueue)"/><g stroke="rgba(0,0,0,.4)" stroke-width="4" stroke-linecap="round"><line x1="30" y1="34" x2="78" y2="34"/><line x1="30" y1="50" x2="78" y2="50"/><line x1="30" y1="66" x2="62" y2="66"/></g><path d="M70 60 v18 l14 -9 z" fill="#ffffff"/></svg></span>
+              <span class="play"><svg viewBox="0 0 24 24" fill="#000"><path d="M8 5v14l11-7z"/></svg></span>
+              <span class="name">Queue</span>
+              <span class="desc">Scheduled &amp; deferred clips</span>
+            </a>
+            <a class="album-action cover-tiktok" href="/tiktok-candidates">
+              <span class="cover"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="acTok" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff2d55"/><stop offset=".55" stop-color="#111"/><stop offset="1" stop-color="#25f4ee"/></linearGradient></defs><rect width="100" height="100" fill="url(#acTok)"/><g fill="none" stroke="#25f4ee" stroke-width="4" transform="translate(2,-1)"><circle cx="38" cy="66" r="9"/><path d="M47 66 V30 c8 6 14 7 20 7" stroke-linecap="round" stroke-linejoin="round"/></g><g fill="none" stroke="#ff2d55" stroke-width="4" transform="translate(-3,2)"><circle cx="38" cy="66" r="9"/><path d="M47 66 V30 c8 6 14 7 20 7" stroke-linecap="round" stroke-linejoin="round"/></g></svg></span>
+              <span class="play"><svg viewBox="0 0 24 24" fill="#000"><path d="M8 5v14l11-7z"/></svg></span>
+              <span class="name">TikTok Candidates</span>
+              <span class="desc">Top clips to repost</span>
+            </a>
             <form action="/refresh-stats" method="post" class="refresh-form">
               <input type="hidden" name="redirect_to" value="/">
-              <button class="album-action cover-refresh" type="submit" data-run-lock {run_disabled}><span>Refresh Stats</span></button>
+              <button class="album-action cover-refresh" type="submit" data-run-lock {run_disabled}>
+                <span class="cover"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="acRef" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e93cc0"/><stop offset="1" stop-color="#5b2e91"/></linearGradient></defs><rect width="100" height="100" fill="url(#acRef)"/><g fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round"><path d="M68 40 a20 20 0 1 0 4 16"/></g><path d="M68 26 l2 16 l-16 -3 z" fill="#ffffff"/></svg></span>
+                <span class="play"><svg viewBox="0 0 24 24" fill="#000"><path d="M8 5v14l11-7z"/></svg></span>
+                <span class="name">Refresh Stats</span>
+                <span class="desc">Pull latest YouTube data</span>
+              </button>
             </form>
           </div>
         </section>
@@ -1118,8 +1172,8 @@ def render_dashboard() -> str:
         }});
         document.querySelectorAll('[data-run-primary]').forEach((button) => {{
           button.disabled = Boolean(run.running);
-          const label = run.running ? 'Clipping...' : 'Clip Input Videos';
-          const span = button.querySelector('span');
+          const label = run.running ? 'Running...' : 'Clip + Upload Videos';
+          const span = button.querySelector('.name') || button.querySelector('span');
           if (span) span.textContent = label;
           else button.textContent = label;
         }});
@@ -1160,11 +1214,10 @@ def render_dashboard() -> str:
       form.addEventListener('submit', async (event) => {{
         event.preventDefault();
         const button = form.querySelector('button');
-        const previousLabel = button ? button.textContent : '';
-        if (button) {{
-          button.disabled = true;
-          button.textContent = 'Starting...';
-        }}
+        const labelEl = button ? (button.querySelector('.name') || button) : null;
+        const previousLabel = labelEl ? labelEl.textContent : '';
+        if (button) button.disabled = true;
+        if (labelEl) labelEl.textContent = 'Starting...';
         try {{
           await fetch(form.action, {{
             method: 'POST',
@@ -1175,9 +1228,7 @@ def render_dashboard() -> str:
         }} catch (error) {{
           console.error(error);
         }} finally {{
-          if (button) {{
-            button.textContent = previousLabel || 'Clip Input Videos';
-          }}
+          if (labelEl) labelEl.textContent = previousLabel || 'Clip + Upload Videos';
         }}
       }});
     }});
@@ -1185,11 +1236,10 @@ def render_dashboard() -> str:
       form.addEventListener('submit', async (event) => {{
         event.preventDefault();
         const button = form.querySelector('button');
-        const label = button ? button.textContent : '';
-        if (button) {{
-          button.disabled = true;
-          button.textContent = 'Refreshing...';
-        }}
+        const labelEl = button ? (button.querySelector('.name') || button) : null;
+        const label = labelEl ? labelEl.textContent : '';
+        if (button) button.disabled = true;
+        if (labelEl) labelEl.textContent = 'Refreshing...';
         try {{
           await fetch(form.action, {{
             method: 'POST',
@@ -1200,10 +1250,8 @@ def render_dashboard() -> str:
         }} catch (error) {{
           console.error(error);
         }} finally {{
-          if (button) {{
-            button.disabled = false;
-            button.textContent = label;
-          }}
+          if (button) button.disabled = false;
+          if (labelEl) labelEl.textContent = label;
         }}
       }});
     }});
@@ -2797,6 +2845,12 @@ def render_stats_page(
         hour_markup = '<p class="muted">No posting-hour data yet.</p>'
 
     chart_svg = render_views_chart(chart_rows, selected_range)
+    chart_note = (
+        "1D shows views gained between saved dashboard refreshes. "
+        "Open or refresh the stats page during the day to collect more points."
+        if selected_range == "1d"
+        else "Longer ranges show daily gains from saved YouTube stats snapshots."
+    )
     range_tabs = render_range_tabs(selected_range, selected_project_week, selected_project_sort)
 
     return f"""<!doctype html>
@@ -3021,6 +3075,13 @@ def render_stats_page(
     td {{ color: #d7d7d7; }}
     .muted {{ color: var(--muted); }}
     .chart {{ width: 100%; min-height: 360px; display: block; }}
+    .chart-note {{
+      margin: -4px 0 0;
+      max-width: 720px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }}
     .chart-point .point-hit {{
       cursor: crosshair;
       fill: transparent;
@@ -3246,6 +3307,7 @@ def render_stats_page(
           </div>
         </div>
         {chart_svg}
+        <p class="chart-note">{html.escape(chart_note)}</p>
         {range_tabs}
       </section>
       <aside class="side-panel">
@@ -3430,37 +3492,48 @@ def chart_view_gains(selected_range: str) -> list[dict[str, int | str]]:
     selected_range = normalize_stats_range(selected_range)
 
     if selected_range == "1d":
-        return hourly_view_gains(parsed_rows, newest)
+        return snapshot_view_gains(parsed_rows, newest)
 
     return daily_view_gains(parsed_rows, newest, selected_range)
 
 
-def hourly_view_gains(
+def snapshot_view_gains(
     parsed_rows: list[tuple[datetime, str, dict[str, str]]],
     newest: datetime,
 ) -> list[dict[str, int | str]]:
-    """Return view gains per hour for the newest local day."""
+    """Return view gains between saved snapshots for the newest local day."""
     local_zone = ZoneInfo(config.TIMEZONE)
     newest_local = newest.astimezone(local_zone) if newest.tzinfo else newest.replace(tzinfo=local_zone)
     day_start = newest_local.replace(hour=0, minute=0, second=0, microsecond=0)
-    current_hour = newest_local.replace(minute=0, second=0, microsecond=0)
+    snapshot_times = sorted(
+        {
+            (checked_at.astimezone(local_zone) if checked_at.tzinfo else checked_at.replace(tzinfo=local_zone))
+            for checked_at, _video_id, _row in parsed_rows
+            if (checked_at.astimezone(local_zone) if checked_at.tzinfo else checked_at.replace(tzinfo=local_zone)).date()
+            == newest_local.date()
+            and (checked_at.astimezone(local_zone) if checked_at.tzinfo else checked_at.replace(tzinfo=local_zone))
+            <= newest_local
+        }
+    )
 
     rows = []
     previous_total = channel_total_at(parsed_rows, day_start)
-    hour = day_start
-    while hour <= current_hour:
-        bucket_end = min(hour + timedelta(hours=1) - timedelta(microseconds=1), newest_local)
-        total = channel_total_at(parsed_rows, bucket_end)
+    previous_time = day_start
+    for checked_local in snapshot_times:
+        total = channel_total_at(parsed_rows, checked_local)
         views = max(0, total - previous_total)
         rows.append(
             {
-                "label": hour.strftime("%-I %p"),
-                "tooltip": hour.strftime("%m-%d %-I %p"),
+                "label": checked_local.strftime("%-I %p" if checked_local.minute == 0 else "%-I:%M %p"),
+                "tooltip": (
+                    f"{checked_local.strftime('%m-%d %-I:%M %p')} "
+                    f"since {previous_time.strftime('%-I:%M %p')}"
+                ),
                 "views": views,
             }
         )
         previous_total = total
-        hour += timedelta(hours=1)
+        previous_time = checked_local
 
     return rows
 
@@ -3785,7 +3858,7 @@ def render_project_tracker_section(
     sorted_rows = sort_project_rows(filtered_rows, selected_sort)
     preview_rows = "".join(render_project_dataset_row(row) for row in sorted_rows)
     if not preview_rows:
-        preview_rows = '<tr><td colspan="12" class="muted">No project dataset rows yet. Refresh YouTube Stats to build the tracker.</td></tr>'
+        preview_rows = '<tr><td colspan="15" class="muted">No project dataset rows yet. Refresh YouTube Stats to build the tracker.</td></tr>'
     week_filter = render_project_week_filter(rows, selected_week, selected_range, selected_sort)
     views_header = project_views_sort_header(selected_sort, selected_week, selected_range)
     like_rate_header = project_sort_header("Like Rate", "like_rate", selected_sort, selected_week, selected_range)
@@ -3832,9 +3905,12 @@ def render_project_tracker_section(
                 <th>Length</th>
                 <th>Orientation</th>
                 <th>Content Type</th>
+                <th>Live Views</th>
+                <th>Live Like Rate</th>
                 <th>{views_header}</th>
                 <th>{like_rate_header}</th>
                 <th>{high_performer_header}</th>
+                <th>Last Updated</th>
               </tr>
             </thead>
             <tbody>{preview_rows}</tbody>
@@ -3846,6 +3922,11 @@ def render_project_tracker_section(
 
 def render_project_dataset_row(row: dict[str, str]) -> str:
     """Render a project dataset preview row."""
+    views_24h = row.get("views_24h", "") or "Pending"
+    like_rate_24h = row.get("like_rate_24h", "") or "Pending"
+    high_performing = row.get("high_performing", "") or "Pending"
+    checked_at = row.get("last_checked_at", "")
+    last_updated = checked_at.replace("T", " ")[:16] if checked_at else ""
     cells = [
         row.get("project_week", ""),
         row.get("clip_id", ""),
@@ -3856,9 +3937,12 @@ def render_project_dataset_row(row: dict[str, str]) -> str:
         row.get("clip_length_seconds", ""),
         row.get("video_orientation", ""),
         row.get("content_type", ""),
-        row.get("views_24h", ""),
-        row.get("like_rate_24h", ""),
-        row.get("high_performing", ""),
+        row.get("current_views", ""),
+        row.get("current_like_rate", ""),
+        views_24h,
+        like_rate_24h,
+        high_performing,
+        last_updated,
     ]
     return "<tr>" + "".join(f"<td>{html.escape(value)}</td>" for value in cells) + "</tr>"
 
@@ -3932,13 +4016,15 @@ def render_views_chart(rows: list[dict[str, int | str]], selected_range: str) ->
         for x, _y, label, _tooltip, _views in label_points
     )
 
-    chart_title = "Hourly views gained today" if normalize_stats_range(selected_range) == "1d" else "Daily views gained"
+    is_one_day = normalize_stats_range(selected_range) == "1d"
+    chart_title = "Views gained between saved refreshes today" if is_one_day else "Daily views gained"
+    max_label = "max views gained between refreshes" if is_one_day else "max views gained"
 
     return f"""
       <svg class="chart" viewBox="0 0 {width} {height}" role="img" aria-label="{html.escape(chart_title)}">
         <line x1="{padding}" y1="{height / 2:.1f}" x2="{width - padding}" y2="{height / 2:.1f}" stroke="rgba(255,255,255,.22)" stroke-dasharray="1 7"/>
         <line x1="{padding}" y1="{height - padding}" x2="{width - padding}" y2="{height - padding}" stroke="rgba(255,255,255,.14)"/>
-        <text x="{padding}" y="20" fill="#b3b3b3">{max_views:,} max views gained</text>
+        <text x="{padding}" y="20" fill="#b3b3b3">{max_views:,} {html.escape(max_label)}</text>
         <polyline points="{polyline}" fill="none" stroke="#1ed760" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
         <g fill="#1ed760">{circles}</g>
         <g fill="#b3b3b3" font-size="11">{labels}</g>

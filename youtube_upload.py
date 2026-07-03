@@ -265,6 +265,56 @@ def read_upload_attempted_filenames() -> set[str]:
     }
 
 
+def read_stale_deferred_filenames(now: datetime | None = None) -> set[str]:
+    """Return deferred_quota clips whose intended slot has already passed.
+
+    A clip is "stale" when every deferred_quota slot recorded for it is in the
+    past. Such clips can never be scheduled again (YouTube cannot publish to a
+    past time) and re-queuing them would let old June clips jump ahead of the
+    current prepared backlog. Deferred clips whose latest slot is still in the
+    future (e.g. clip_000515 -> July 11) are NOT stale and stay eligible for
+    retry. Uploaded/failed clips are handled separately and ignored here.
+    """
+    reference = now or datetime.now().astimezone()
+
+    latest_deferred: dict[str, datetime] = {}
+    uploaded: set[str] = set()
+    for record in read_upload_records():
+        name = record.clip_filename
+        if not name:
+            continue
+        if record.status == "uploaded":
+            uploaded.add(name)
+            continue
+        if record.status != "deferred_quota":
+            continue
+        slot = _parse_schedule_time(record.scheduled_publish_time)
+        if slot is None:
+            continue
+        current = latest_deferred.get(name)
+        if current is None or slot > current:
+            latest_deferred[name] = slot
+
+    return {
+        name
+        for name, slot in latest_deferred.items()
+        if name not in uploaded and slot < reference
+    }
+
+
+def _parse_schedule_time(value: str) -> datetime | None:
+    """Parse an ISO scheduled_publish_time into a timezone-aware datetime."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.astimezone()
+    return parsed
+
+
 def append_upload_record(record: UploadRecord) -> None:
     """Append an upload record to uploads_log.csv."""
     config.LOGS_DIR.mkdir(parents=True, exist_ok=True)

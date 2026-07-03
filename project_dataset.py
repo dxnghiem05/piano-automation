@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 import config
+from media_tools import require_media_tool
 from stats_tracker import int_or_zero, read_stats_history
 from youtube_upload import read_upload_records
 
@@ -139,6 +140,11 @@ class ProjectDatasetRow:
     posting_hour: str
     posting_time_group: str
     day_of_week: str
+    current_views: str
+    current_likes: str
+    current_comments: str
+    current_like_rate: str
+    current_engagement_rate: str
     views_1h: str
     views_6h: str
     views_24h: str
@@ -206,6 +212,9 @@ def build_project_dataset() -> list[ProjectDatasetRow]:
         views_24h = int_or_zero(twenty_four_hours.get("view_count", ""))
         likes_24h = int_or_zero(twenty_four_hours.get("like_count", ""))
         comments_24h = int_or_zero(twenty_four_hours.get("comment_count", ""))
+        current_views = int_or_zero(latest.get("view_count", ""))
+        current_likes = int_or_zero(latest.get("like_count", ""))
+        current_comments = int_or_zero(latest.get("comment_count", ""))
         clip_info = clip_info_for(record.clip_filename, tracker_by_clip, previous_project_rows, clip_info_by_name)
         caption_word = parse_caption_word(record.title)
         project_week = project_week_label(publish_at)
@@ -237,6 +246,11 @@ def build_project_dataset() -> list[ProjectDatasetRow]:
                 posting_hour=publish_at.strftime("%-I %p") if publish_at else "",
                 posting_time_group=posting_time_group(publish_at),
                 day_of_week=publish_at.strftime("%A") if publish_at else "",
+                current_views=str(current_views) if latest else "",
+                current_likes=str(current_likes) if latest else "",
+                current_comments=str(current_comments) if latest else "",
+                current_like_rate=rate(current_likes, current_views) if latest else "",
+                current_engagement_rate=rate(current_likes + current_comments, current_views) if latest else "",
                 views_1h=str(int_or_zero(one_hour.get("view_count", ""))) if one_hour else "",
                 views_6h=str(int_or_zero(six_hours.get("view_count", ""))) if six_hours else "",
                 views_24h=str(views_24h) if twenty_four_hours else "",
@@ -464,7 +478,7 @@ def probe_video(path: Path) -> tuple[float, int, int] | None:
     try:
         result = subprocess.run(
             [
-                "ffprobe",
+                require_media_tool("ffprobe"),
                 "-v",
                 "error",
                 "-select_streams",

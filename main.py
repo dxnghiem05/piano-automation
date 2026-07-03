@@ -15,7 +15,12 @@ from generate_metadata import ClipMetadata, generate_metadata_for_clips
 from logging_setup import configure_logging
 from scheduler import generate_schedule
 from tracker import update_tracker
-from youtube_upload import is_youtube_quota_error, read_upload_attempted_filenames, upload_clips
+from youtube_upload import (
+    is_youtube_quota_error,
+    read_stale_deferred_filenames,
+    read_upload_attempted_filenames,
+    upload_clips,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -95,9 +100,16 @@ def parse_args() -> argparse.Namespace:
 
 
 def filter_not_attempted(clip_paths: list[Path]) -> list[Path]:
-    """Return current-run clips that have not already had an upload attempt."""
-    attempted = read_upload_attempted_filenames()
-    return [clip_path for clip_path in clip_paths if clip_path.name not in attempted]
+    """Return clips still eligible for upload.
+
+    Excludes clips already uploaded or hard-failed, and also excludes stale
+    deferred_quota clips whose scheduled slot is already in the past. Skipping
+    stale deferred clips keeps a run continuing from the current prepared
+    backlog (e.g. clip_000515) instead of re-queuing old June clips whose slots
+    have passed. Future deferred clips and brand-new clips remain eligible.
+    """
+    skip = read_upload_attempted_filenames() | read_stale_deferred_filenames()
+    return [clip_path for clip_path in clip_paths if clip_path.name not in skip]
 
 
 def print_summary(summary: RunSummary) -> None:

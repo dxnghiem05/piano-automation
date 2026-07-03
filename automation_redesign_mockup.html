@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Piano Dashboard — Automation (Spotify-style mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #121212;
+    --bg-elevated: #181818;
+    --bg-hover: #282828;
+    --bg-top: #1f1f1f;
+    --text: #ffffff;
+    --text-sub: #b3b3b3;
+    --green: #1ed760;
+    --green-press: #1fdf64;
+    --radius: 8px;
+    --font: 'Figtree', 'Circular', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.01em;
+  }
+  .shell {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 28px 28px 80px;
+    background: linear-gradient(180deg, #1c1c1c 0%, #141414 180px, var(--bg) 340px);
+    border-radius: 12px;
+  }
+
+  /* Top pill filter row (decorative, Spotify vibe) */
+  .pills { display: flex; gap: 8px; margin-bottom: 34px; flex-wrap: wrap; }
+  .pill {
+    border: none;
+    background: var(--bg-top);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 15px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .pill.active { background: var(--text); color: #000; }
+
+  h2.section {
+    font-size: 24px;
+    font-weight: 800;
+    margin: 0 0 4px;
+    letter-spacing: -0.02em;
+  }
+  .section-row {
+    display: flex; align-items: baseline; justify-content: space-between; margin: 36px 0 16px;
+  }
+  .show-all { color: var(--text-sub); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; cursor: pointer; }
+  .show-all:hover { color: var(--text); }
+
+  /* Featured / "Picked for you" hero */
+  .hero {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 26px;
+    align-items: center;
+    background: linear-gradient(135deg, #1e1e1e 0%, #161616 100%);
+    border-radius: 10px;
+    padding: 22px;
+  }
+  .hero .art { width: 220px; height: 220px; border-radius: 8px; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+  .hero .eyebrow { color: var(--text-sub); font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+  .hero .title { font-size: 40px; font-weight: 900; margin: 0 0 8px; letter-spacing: -0.03em; line-height: 1.02; }
+  .hero .sub { color: var(--text-sub); font-size: 14px; font-weight: 500; margin: 0 0 20px; }
+  .hero .actions { display: flex; align-items: center; gap: 18px; }
+  .play-lg {
+    width: 56px; height: 56px; border-radius: 50%; border: none; cursor: pointer;
+    background: var(--green); display: grid; place-items: center;
+    box-shadow: 0 8px 20px rgba(30,215,96,.35); transition: transform .12s ease, background .12s ease;
+  }
+  .play-lg:hover { transform: scale(1.06); background: var(--green-press); }
+  .plus { width: 34px; height: 34px; color: var(--text-sub); cursor: pointer; }
+  .plus:hover { color: var(--text); }
+
+  /* Album grid */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .card {
+    display: block;
+    background: var(--bg-elevated);
+    border-radius: 10px;
+    padding: 14px;
+    text-decoration: none;
+    color: var(--text);
+    position: relative;
+    transition: background .25s ease;
+    cursor: pointer;
+  }
+  .card:hover { background: var(--bg-hover); }
+  .card .cover {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 14px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5);
+    position: relative;
+  }
+  .card .cover svg { display: block; width: 100%; height: 100%; }
+  .card .name { font-size: 15px; font-weight: 700; margin: 0 0 5px; letter-spacing: -0.01em; }
+  .card .desc { font-size: 12.5px; font-weight: 500; color: var(--text-sub); margin: 0; line-height: 1.35; }
+
+  /* Hover play button on cards */
+  .card .play {
+    position: absolute;
+    right: 22px;
+    bottom: 76px;
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--green);
+    display: grid; place-items: center;
+    box-shadow: 0 8px 16px rgba(0,0,0,.4);
+    opacity: 0; transform: translateY(8px);
+    transition: opacity .2s ease, transform .2s ease;
+  }
+  .card:hover .play { opacity: 1; transform: translateY(0); }
+  .play svg, .play-lg svg { width: 20px; height: 20px; }
+
+  .note { color: #6f6f6f; font-size: 12px; margin-top: 40px; text-align: center; }
+
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .hero { grid-template-columns: 1fr; text-align: left; }
+    .hero .art { width: 160px; height: 160px; }
+    .hero .title { font-size: 30px; }
+  }
+</style>
+</head>
+<body>
+  <div class="shell">
+
+    <div class="pills">
+      <button class="pill active">All</button>
+      <button class="pill">Uploads</button>
+      <button class="pill">Stats</button>
+      <button class="pill">TikTok</button>
+    </div>
+
+    <!-- Featured action, echoing Spotify's "Picked for you" -->
+    <h2 class="section">Picked for you</h2>
+    <div class="hero">
+      <div class="art">
+        <!-- Clip + Upload cover art -->
+        <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
+          <defs>
+            <linearGradient id="gRunBig" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#1ed760"/><stop offset="1" stop-color="#0a5c2e"/>
+            </linearGradient>
+          </defs>
+          <rect width="100" height="100" fill="url(#gRunBig)"/>
+          <g fill="none" stroke="rgba(0,0,0,.35)" stroke-width="2">
+            <circle cx="30" cy="66" r="8"/><circle cx="52" cy="66" r="8"/>
+            <line x1="37" y1="62" x2="72" y2="34"/><line x1="59" y1="62" x2="72" y2="52"/>
+          </g>
+          <path d="M72 20 l0 26 M62 30 l10 -10 l10 10" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div>
+        <p class="eyebrow">Featured automation</p>
+        <h3 class="title">Clip + Upload Videos</h3>
+        <p class="sub">Clip your raw piano videos, generate captions, and schedule Shorts 9AM–9PM.</p>
+        <div class="actions">
+          <button class="play-lg" title="Run">
+            <svg viewBox="0 0 24 24" fill="#000"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+          <svg class="plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8" stroke-linecap="round"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Album grid of all automations -->
+    <div class="section-row">
+      <h2 class="section">Your automations</h2>
+      <span class="show-all">Show all</span>
+    </div>
+
+    <div class="grid">
+
+      <!-- Clip + Upload -->
+      <a class="card cover-run">
+        <div class="cover">
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="gRun" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1ed760"/><stop offset="1" stop-color="#0a5c2e"/></linearGradient></defs>
+            <rect width="100" height="100" fill="url(#gRun)"/>
+            <g fill="none" stroke="rgba(0,0,0,.35)" stroke-width="3"><circle cx="30" cy="66" r="9"/><circle cx="54" cy="66" r="9"/><line x1="38" y1="61" x2="76" y2="32"/><line x1="62" y1="61" x2="76" y2="52"/></g>
+            <path d="M74 18 l0 28 M63 29 l11 -11 l11 11" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="play"><svg viewBox="0 0 24 24" fill="#000"><path d="M8 5v14l11-7z"/></svg></div>
+        <p class="name">Clip + Upload</p>
+        <p class="desc">Clip, caption &amp; schedule Shorts</p>
+      </a>
+
+      <!-- YouTube Stats -->
+      <a class="card cover-stats">
+        <div class="cover">
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="gStats" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b8bff"/><stop offset="1" stop-color="#0b2a6b"/></linearGradient></defs>
+            <rect width="100" height="100" fill="url(#gStats)"/>
+            <g fill="rgba(255,255,255,.92)"><rect x="24" y="58" width="10" height="22" rx="2"/><rect x="42" y="46" width="10" height="34" rx="2"/><rect x="60" y="34" width="10" height="46" rx="2"/></g>
+            <path d="M22 52 L38 42 L54 48 L78 24" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>
+            <circle cx="78" cy="24" r="4" fill="#fff"/>
+          </svg>
+        </div>
+        <div class="play"><svg viewBox="0 0 24 24" fill="#000"><path d="M8 5v14l11-7z"/></svg></div>
+        <p class="name">YouTube Stats</p>
+        <p class="desc">Views, likes &amp; growth</p>
+      </a>
+
+      <!-- Queue -->
+      <a class="card cover-queue">
+        <div class="cover">
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="gQueue" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1fd9b4"/><stop offset="1" stop-color="#0c4a45"/></linearGradient></defs>
+            <rect width="100" height="100" fill="url(#gQueue)"/>
+            <g stroke="rgba(0,0,0,.4)" stroke-width="4" stroke-linecap="round"><line x1="30" y1="34" x2="78" y2="34"/><line x1="30" y1="50" x2="78" y2="50"/><line x1="30" y1="66" x2="62" y2="66"/></g>
+            <path d="M70 60 v18 l14 -9 z" fill="#ffffff"/>
+          </svg>
+        </div>
+        <div class="play"><svg viewBox="0 0 24 24" fill="#000"><path d="M8 5v14l11-7z"/></svg></div>
+        <p class="name">Queue</p>
+        <p class="desc">Scheduled &amp; deferred clips</p>
+      </a>
+
+      <!-- TikTok Candidates -->
+      <a class="card cover-tiktok">
+        <div class="cover">
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="gTok" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff2d55"/><stop offset=".55" stop-color="#111"/><stop offset="1" stop-color="#25f4ee"/></linearGradient></defs>
+            <rect width="100" height="100" fill="url(#gTok)"/>
+            <g fill="none" stroke="#25f4ee" stroke-width="4" transform="translate(2,-1)"><circle cx="38" cy="66" r="9"/><path d="M47 66 V30 c8 6 14 7 20 7" stroke-linecap="round" stroke-linejoin="round"/></g>
+            <g fill="none" stroke="#ff2d55" stroke-width="4" transform="translate(-3,2)"><circle cx="38" cy="66" r="9"/><path d="M47 66 V30 c8 6 14 7 20 7" stroke-linecap="round" stroke-linejoin="round"/></g>
+          </svg>
+        </div>
+        <div class="play"><svg viewBox="0 0 24 24" fill="#000"><path d="M8 5v14l11-7z"/></svg></div>
+        <p class="name">TikTok Candidates</p>
+        <p class="desc">Top clips to repost</p>
+      </a>
+
+      <!-- Refresh Stats -->
+      <a class="card cover-refresh">
+        <div class="cover">
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="gRef" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e93cc0"/><stop offset="1" stop-color="#5b2e91"/></linearGradient></defs>
+            <rect width="100" height="100" fill="url(#gRef)"/>
+            <g fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round">
+              <path d="M68 40 a20 20 0 1 0 4 16"/>
+            </g>
+            <path d="M68 26 l2 16 l-16 -3 z" fill="#ffffff"/>
+          </svg>
+        </div>
+        <div class="play"><svg viewBox="0 0 24 24" fill="#000"><path d="M8 5v14l11-7z"/></svg></div>
+        <p class="name">Refresh Stats</p>
+        <p class="desc">Pull latest YouTube data</p>
+      </a>
+
+    </div>
+
+    <p class="note">Mockup preview — nothing pushed. Class names (cover-run, cover-stats, cover-queue, cover-tiktok, cover-refresh) match the live dashboard so this can drop into dashboard.py.</p>
+
+  </div>
+</body>
+</html>
