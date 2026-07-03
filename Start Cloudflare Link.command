@@ -31,6 +31,21 @@ if ! lsof -nP -iTCP:$PORT -sTCP:LISTEN >/dev/null 2>&1; then
   exit 1
 fi
 
+# Safety gate: never expose the dashboard publicly without an owner password.
+if [ ! -f .env ] || ! grep -qE '^DASHBOARD_PASSWORD=.+' .env; then
+  echo "REFUSING to start a public link: no DASHBOARD_PASSWORD is set."
+  echo ""
+  echo "Without a password, anyone with the link could run uploads and edit your data."
+  echo "Fix: copy .env.example to .env, set a strong DASHBOARD_PASSWORD, then RESTART"
+  echo "the dashboard so it loads the password, and run this launcher again."
+  echo ""
+  echo "Press any key to close."
+  read -k 1
+  exit 1
+fi
+
+echo "Owner password detected - the public link will be read-only for visitors."
+echo ""
 echo "Starting Cloudflare tunnel for:"
 echo "http://localhost:$PORT"
 echo ""

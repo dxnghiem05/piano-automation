@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import base64
 import cgi
 import csv
+import hmac
 import html
 import json
 import logging
@@ -34,6 +36,50 @@ from tracker import update_tracker
 from youtube_upload import get_youtube_service, read_upload_records
 from generate_metadata import read_metadata
 from googleapiclient.errors import HttpError
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except Exception:  # noqa: BLE001 - dotenv is optional; env vars still work without it
+    pass
+
+# --- Owner authentication -----------------------------------------------------
+# The public can VIEW every page (read-only). Only the owner, who logs in with a
+# password, can trigger actions (run, upload, refresh, privacy, tiktok queue).
+# Auth turns on automatically when DASHBOARD_PASSWORD is set (in .env); with no
+# password it stays off so local-only use is unaffected.
+DASHBOARD_USER = (os.getenv("DASHBOARD_USER", "admin") or "admin").strip()
+DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "")
+AUTH_REQUIRED = bool(DASHBOARD_PASSWORD)
+
+# Injected for non-owner visitors: hides every action form (read-only view) and
+# shows an "Owner login" button. Server-side auth on POST is the real guard; this
+# is just the matching UI so visitors don't see controls that wouldn't work.
+VIEWER_MODE_SNIPPET = """
+<style id="viewer-mode">
+  form[action="/run"], form[action="/clip-only"], form[action="/upload"],
+  form[action="/refresh-stats"], form[action="/queue/privacy"],
+  form[action="/tiktok-schedule"], [data-owner-only] { display: none !important; }
+  .owner-login-badge {
+    position: fixed; right: 16px; bottom: 16px; z-index: 99999;
+    background: #1ed760; color: #05140b;
+    font: 700 13px/1 -apple-system, BlinkMacSystemFont, sans-serif;
+    padding: 11px 16px; border-radius: 999px; text-decoration: none;
+    box-shadow: 0 8px 20px rgba(0,0,0,.45);
+  }
+</style>
+<a href="/login" class="owner-login-badge">Owner login</a>
+"""
+
+
+def viewer_mode_html(page_html: str, is_owner: bool) -> str:
+    """For non-owners, inject the read-only viewer overlay so the site can't be edited."""
+    if is_owner:
+        return page_html
+    if "</body>" in page_html:
+        return page_html.replace("</body>", VIEWER_MODE_SNIPPET + "</body>", 1)
+    return page_html + VIEWER_MODE_SNIPPET
 
 logger = logging.getLogger(__name__)
 
@@ -72,13 +118,55 @@ def is_safe_dashboard_path(value: str) -> bool:
 class DashboardHandler(BaseHTTPRequestHandler):
     """HTTP handler for the local dashboard."""
 
+    def _is_owner(self) -> bool:
+        """Return True if the request has valid owner credentials (or auth is disabled)."""
+        if not AUTH_REQUIRED:
+            return True
+        header = self.headers.get("Authorization", "")
+        if not header.startswith("Basic "):
+            return False
+        try:
+            decoded = base64.b64decode(header[6:].strip()).decode("utf-8")
+        except Exception:  # noqa: BLE001
+            return False
+        user, _, password = decoded.partition(":")
+        user_ok = hmac.compare_digest(user, DASHBOARD_USER)
+        password_ok = hmac.compare_digest(password, DASHBOARD_PASSWORD)
+        return user_ok and password_ok
+
+    def _send_unauthorized(self) -> None:
+        """Send a 401 that prompts the browser for owner credentials."""
+        self.send_response(HTTPStatus.UNAUTHORIZED)
+        self.send_header("WWW-Authenticate", 'Basic realm="Piano Dashboard (owner)"')
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(b"Owner login required to perform this action.")
+
+    def _require_owner(self) -> bool:
+        """Guard for state-changing requests: returns False (and 401s) if not the owner."""
+        if self._is_owner():
+            return True
+        time.sleep(0.5)  # gentle brute-force slowdown
+        self._send_unauthorized()
+        return False
+
     def do_GET(self) -> None:
         """Handle dashboard GET routes."""
         parsed = urlparse(self.path)
         path = parsed.path
+        owner = self._is_owner()
+
+        if path == "/login":
+            # Owners trigger the browser Basic-Auth prompt here, then land on home.
+            if owner:
+                self.redirect("/")
+            else:
+                self._send_unauthorized()
+            return
 
         if path == "/":
-            self.send_html(render_dashboard())
+            self.send_html(viewer_mode_html(render_dashboard(), owner))
             return
 
         if path == "/api/status":
@@ -86,19 +174,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/logs":
+            if not owner:
+                self.send_json({"lines": [], "text": "Live activity is visible to the owner only."})
+                return
             self.send_json({"lines": live_dashboard_log_lines(), "text": live_dashboard_log_text()})
             return
 
         if path == "/tracker":
-            self.send_html(render_tracker_page())
+            self.send_html(viewer_mode_html(render_tracker_page(), owner))
             return
 
         if path == "/queue":
             query = parse_qs(parsed.query)
             self.send_html(
-                render_queue_page(
-                    parse_page(query.get("page", ["1"])[0]),
-                    parse_queue_sort(query.get("sort", ["oldest"])[0]),
+                viewer_mode_html(
+                    render_queue_page(
+                        parse_page(query.get("page", ["1"])[0]),
+                        parse_queue_sort(query.get("sort", ["oldest"])[0]),
+                    ),
+                    owner,
                 )
             )
             return
@@ -106,7 +200,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if path == "/tiktok-candidates":
             query = parse_qs(parsed.query)
             selected_date = query.get("date", [""])[0]
-            self.send_html(render_tiktok_candidates_page(selected_date))
+            self.send_html(viewer_mode_html(render_tiktok_candidates_page(selected_date), owner))
             return
 
         if path == "/stats":
@@ -117,32 +211,34 @@ class DashboardHandler(BaseHTTPRequestHandler):
             selected_stats_page = parse_page(query.get("stats_page", ["1"])[0])
             auto_refresh_started = auto_refresh_youtube_stats_if_stale()
             self.send_html(
-                render_stats_page(
-                    selected_range,
-                    selected_project_week,
-                    selected_project_sort,
-                    selected_stats_page,
-                    auto_refresh_started,
+                viewer_mode_html(
+                    render_stats_page(
+                        selected_range,
+                        selected_project_week,
+                        selected_project_sort,
+                        selected_stats_page,
+                        auto_refresh_started,
+                    ),
+                    owner,
                 )
             )
             return
 
-        if path == "/tracker.csv":
-            self.send_file(config.METADATA_DIR / "video_tracker.csv", download=True)
-            return
-
-        if path == "/tracker.xlsx":
-            self.send_file(config.METADATA_DIR / "video_tracker.xlsx", download=True)
-            return
-
-        if path == "/project-data.csv":
-            refresh_project_dataset()
-            self.send_file(config.PROJECT_DATASET_CSV_FILE, download=True)
-            return
-
-        if path == "/project-data.xlsx":
-            refresh_project_dataset()
-            self.send_file(config.PROJECT_DATASET_EXCEL_FILE, download=True)
+        # Data-file downloads are owner-only (they are raw exports, not part of the showcase).
+        if path in {"/tracker.csv", "/tracker.xlsx", "/project-data.csv", "/project-data.xlsx"}:
+            if not owner:
+                self.send_error(HTTPStatus.NOT_FOUND, "Not found")
+                return
+            if path == "/tracker.csv":
+                self.send_file(config.METADATA_DIR / "video_tracker.csv", download=True)
+            elif path == "/tracker.xlsx":
+                self.send_file(config.METADATA_DIR / "video_tracker.xlsx", download=True)
+            elif path == "/project-data.csv":
+                refresh_project_dataset()
+                self.send_file(config.PROJECT_DATASET_CSV_FILE, download=True)
+            else:
+                refresh_project_dataset()
+                self.send_file(config.PROJECT_DATASET_EXCEL_FILE, download=True)
             return
 
         if path.startswith("/clips/"):
@@ -155,6 +251,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         """Handle dashboard POST routes."""
         parsed = urlparse(self.path)
+
+        # Every state-changing action requires the owner login. Public visitors
+        # (no/invalid credentials) get a 401 and cannot modify anything.
+        if not self._require_owner():
+            return
 
         if parsed.path == "/upload":
             self.handle_upload()
@@ -333,6 +434,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(encoded)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
         self.end_headers()
         self.wfile.write(encoded)
 
