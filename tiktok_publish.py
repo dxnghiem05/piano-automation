@@ -15,9 +15,11 @@ Environment variables (put these in .env):
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
+import secrets
 import time
 import urllib.parse
 import urllib.request
@@ -70,14 +72,26 @@ def redirect_uri() -> str:
     return base.rstrip("/") + "/tiktok/callback"
 
 
-# --- OAuth -------------------------------------------------------------------
-def authorize_url(state: str) -> str:
+# --- OAuth (with PKCE, which TikTok requires) --------------------------------
+def make_code_verifier() -> str:
+    """Random 43-128 char PKCE verifier (token_urlsafe uses the allowed alphabet)."""
+    return secrets.token_urlsafe(64)
+
+
+def code_challenge(code_verifier: str) -> str:
+    """TikTok requires the challenge to be the *hex* SHA-256 of the verifier."""
+    return hashlib.sha256(code_verifier.encode("ascii")).hexdigest()
+
+
+def authorize_url(state: str, code_verifier: str) -> str:
     params = {
         "client_key": client_key(),
         "scope": SCOPES,
         "response_type": "code",
         "redirect_uri": redirect_uri(),
         "state": state,
+        "code_challenge": code_challenge(code_verifier),
+        "code_challenge_method": "S256",
     }
     return AUTH_BASE + "?" + urllib.parse.urlencode(params)
 
@@ -105,15 +119,18 @@ def _post_json(url: str, body: dict, access_token: str) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def exchange_code(code: str) -> dict:
+def exchange_code(code: str, code_verifier: str = "") -> dict:
     """Exchange an authorization code for an access token and persist it."""
-    result = _post_form(TOKEN_URL, {
+    fields = {
         "client_key": client_key(),
         "client_secret": client_secret(),
         "code": code,
         "grant_type": "authorization_code",
         "redirect_uri": redirect_uri(),
-    })
+    }
+    if code_verifier:
+        fields["code_verifier"] = code_verifier
+    result = _post_form(TOKEN_URL, fields)
     if "access_token" not in result:
         raise RuntimeError(f"TikTok token exchange failed: {result}")
     _save_token(result)

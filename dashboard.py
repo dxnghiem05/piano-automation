@@ -171,8 +171,9 @@ RUN_STATE = {
 STATS_REFRESH_LOCK = threading.Lock()
 LAST_AUTO_STATS_REFRESH_ATTEMPT: datetime | None = None
 
-# TikTok OAuth CSRF state + last post result (shown on the TikTok Candidates page).
+# TikTok OAuth CSRF state + PKCE verifier + last post result (shown on the page).
 TIKTOK_OAUTH_STATE = ""
+TIKTOK_CODE_VERIFIER = ""
 TIKTOK_RESULT = {"message": "", "error": ""}
 
 
@@ -304,13 +305,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if not owner:
                 self._send_unauthorized()
                 return
-            global TIKTOK_OAUTH_STATE
+            global TIKTOK_OAUTH_STATE, TIKTOK_CODE_VERIFIER
             if not tiktok.is_configured():
                 TIKTOK_RESULT.update({"error": "TikTok is not configured. Set TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET in .env.", "message": ""})
                 self.redirect("/tiktok-candidates")
                 return
             TIKTOK_OAUTH_STATE = base64.urlsafe_b64encode(os.urandom(18)).decode("ascii").rstrip("=")
-            self.redirect(tiktok.authorize_url(TIKTOK_OAUTH_STATE))
+            TIKTOK_CODE_VERIFIER = tiktok.make_code_verifier()
+            self.redirect(tiktok.authorize_url(TIKTOK_OAUTH_STATE, TIKTOK_CODE_VERIFIER))
             return
 
         if path == "/tiktok/callback":
@@ -324,7 +326,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 TIKTOK_RESULT.update({"error": "TikTok login could not be verified (state mismatch). Please try again.", "message": ""})
             else:
                 try:
-                    tiktok.exchange_code(code)
+                    tiktok.exchange_code(code, TIKTOK_CODE_VERIFIER)
                     TIKTOK_RESULT.update({"message": "TikTok account connected.", "error": ""})
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("TikTok token exchange failed: %s", exc)
