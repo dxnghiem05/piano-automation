@@ -1745,8 +1745,7 @@ STYLE_V5 = r"""<style>
   .kpi .d{font-size:12px;font-weight:700;color:var(--kc,var(--green));margin-top:3px}
   .kc-g{--kc:#1ed760}.kc-b{--kc:#4f97ff}.kc-t{--kc:#24d6b6}.kc-a{--kc:#f5b544}
   .hero-num{font-size:clamp(46px,7vw,84px);font-weight:900;letter-spacing:-.04em;line-height:1;background:linear-gradient(180deg,#fff,#bfe9cf);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-  .chartbox{position:relative;height:240px;margin-top:14px}
-  .chartbox canvas{position:absolute;inset:0;width:100%!important;height:100%!important}
+  .chartbox{position:relative;height:240px;margin-top:14px;width:100%}
 
   .pk-wrap{display:flex;align-items:flex-end;gap:10px;height:220px;padding-top:10px}
   .pk{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
@@ -1901,16 +1900,62 @@ def _cap(raw: str, fallback: str = "") -> str:
 def concept_chart(canvas_id: str, labels: list, data: list, colors: list) -> str:
     payload = json.dumps({"l": labels, "d": data, "c": colors})
     tmpl = r"""<script>
-(function(){function init(){if(typeof Chart==='undefined'){return setTimeout(init,60);}
-  var ctx=document.getElementById('__CID__');if(!ctx)return;var P=__P__;
-  Chart.defaults.font.family="'Figtree',sans-serif";Chart.defaults.color='#8892a3';
-  new Chart(ctx,{type:'bar',data:{labels:P.l,datasets:[{data:P.d,backgroundColor:P.c,borderRadius:6,maxBarThickness:34}]},
-    options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:function(x){return x.raw.toLocaleString()+' views';}}}},
-      scales:{x:{grid:{display:false},ticks:{font:{size:11}}},y:{grid:{color:'rgba(255,255,255,.05)'},ticks:{callback:function(v){return v>=1000?(v/1000)+'k':v;}}}},
-      responsive:true,maintainAspectRatio:false,animation:{duration:800}});}
-  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}})();
+(function(){
+  var CID='__CID__';var P=__P__;var drawn=false;
+  function draw(){
+    if(drawn)return;
+    if(typeof Chart==='undefined'){return setTimeout(draw,60);}
+    var ctx=document.getElementById(CID);if(!ctx)return;
+    drawn=true;
+    Chart.defaults.font.family="'Figtree',sans-serif";Chart.defaults.color='#8892a3';
+    new Chart(ctx,{type:'bar',data:{labels:P.l,datasets:[{data:P.d,backgroundColor:P.c,borderRadius:6,maxBarThickness:34}]},
+      options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:function(x){return x.raw.toLocaleString()+' views';}}}},
+        scales:{x:{grid:{display:false},ticks:{font:{size:11}}},y:{grid:{color:'rgba(255,255,255,.05)'},ticks:{callback:function(v){return v>=1000?(v/1000)+'k':v;}}}},
+        responsive:true,maintainAspectRatio:false,animation:{duration:800}});
+  }
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',draw);}else{draw();}
+  window.addEventListener('load',draw);
+})();
 </script>"""
     return tmpl.replace("__CID__", canvas_id).replace("__P__", payload)
+
+
+def svg_bar_chart(labels: list, data: list, colors: list, height: int = 260) -> str:
+    """Server-rendered inline SVG bar chart — always renders, no JS/CDN needed."""
+    W, pad_l, pad_r, pad_t, pad_b = 720, 46, 14, 14, 32
+    plot_w = W - pad_l - pad_r
+    plot_h = height - pad_t - pad_b
+    n = len(data) or 1
+    maxv = max(data) if data and max(data) > 0 else 1
+    slot = plot_w / n
+    barw = min(42, slot * 0.62)
+    base = pad_t + plot_h
+
+    parts = []
+    for frac in (0.0, 0.5, 1.0):
+        y = pad_t + plot_h * (1 - frac)
+        val = int(maxv * frac)
+        lab = f"{val // 1000}k" if val >= 1000 else str(val)
+        parts.append(f'<line x1="{pad_l}" y1="{y:.1f}" x2="{W - pad_r}" y2="{y:.1f}" stroke="rgba(255,255,255,.06)"/>')
+        parts.append(f'<text x="{pad_l - 7}" y="{y + 3:.1f}" text-anchor="end" font-size="10" fill="#7c8595">{lab}</text>')
+
+    for i, v in enumerate(data):
+        c = colors[i] if i < len(colors) else "#1ed760"
+        lb = str(labels[i]) if i < len(labels) else ""
+        h = (v / maxv) * plot_h if maxv else 0
+        x = pad_l + slot * i + (slot - barw) / 2
+        y = base - h
+        parts.append(
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{barw:.1f}" height="{max(0, h):.1f}" rx="4" fill="{c}">'
+            f'<title>{html.escape(lb)}: {v:,} views</title></rect>'
+        )
+        parts.append(
+            f'<text x="{x + barw / 2:.1f}" y="{height - pad_b + 14}" text-anchor="middle" font-size="9.5" fill="#7c8595">{html.escape(lb)}</text>'
+        )
+    return (
+        f'<svg viewBox="0 0 {W} {height}" style="width:100%;height:auto;display:block;margin-top:14px" '
+        f'preserveAspectRatio="xMidYMid meet" font-family="Figtree,sans-serif">{"".join(parts)}</svg>'
+    )
 
 
 def _topbar(active: str) -> str:
@@ -2025,6 +2070,7 @@ def render_overview() -> str:
     labels = [str(r.get("label", "")) for r in rows1d]
     data = [int(r.get("views", 0)) for r in rows1d]
     colors = ["#8b6cff" if r.get("fill") else "#1ed760" for r in rows1d]
+    chart_svg = svg_bar_chart(labels, data, colors)
 
     log_lines = live_dashboard_log_lines(6)
     log_html = "".join(
@@ -2037,7 +2083,7 @@ def render_overview() -> str:
         '<div class="panel"><p class="eyebrow" style="color:var(--muted)">Total channel views</p>'
         f'<div class="hero-num">{total_views:,}</div>'
         f'<div class="sub" style="margin-top:8px">+<b style="color:var(--green)">{delta:,}</b> overnight · best hour <b style="color:var(--green)">{html.escape(best_hour)}</b> · today’s gains below</div>'
-        '<div class="chartbox"><canvas id="ovChart"></canvas></div></div>'
+        f'{chart_svg}</div>'
         '<div class="panel"><h3>Live activity</h3>'
         '<div class="now-card"><div class="big-np"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>'
         f'<div><b style="font-size:15px">{"Pipeline running…" if running else "Pipeline idle · ready"}</b><div class="sub" style="margin-top:2px">Drop videos in input, then Clip + Upload</div></div></div>'
@@ -2064,7 +2110,6 @@ def render_overview() -> str:
     return render_page(
         "overview", "Mission Control", "Overview",
         "Your whole Shorts studio at a glance.", body,
-        head_extra=CHART_HEAD + concept_chart("ovChart", labels, data, colors),
         top_actions=top_actions,
     )
 
@@ -2088,6 +2133,7 @@ def render_stats_page(selected_range: str = "1d", *_ignore, **_kw) -> str:
     labels = [str(r.get("label", "")) for r in rows1w]
     data = [int(r.get("views", 0)) for r in rows1w]
     colors = ["#1ed760"] * len(data)
+    chart_svg = svg_bar_chart(labels, data, colors)
 
     def kpi(cls, lab, val, delta_txt, dcolor=""):
         style = f' style="color:{dcolor}"' if dcolor else ""
@@ -2148,7 +2194,7 @@ def render_stats_page(selected_range: str = "1d", *_ignore, **_kw) -> str:
     body = (
         kpis
         + '<div class="row r-2 mt">'
-        '<div class="panel"><h3>Views gained · last 7 days</h3><div class="chartbox"><canvas id="stChart"></canvas></div></div>'
+        f'<div class="panel"><h3>Views gained · last 7 days</h3>{chart_svg}</div>'
         f'<div class="panel"><h3>Top performers</h3>{top_html}</div>'
         '</div>'
         f'<div class="panel mt"><h3>Best posting hours <span style="color:var(--faint);font-weight:600;font-size:12px">· taller key = more avg views</span></h3><div class="pk-wrap">{pk}</div></div>'
@@ -2164,7 +2210,6 @@ def render_stats_page(selected_range: str = "1d", *_ignore, **_kw) -> str:
     return render_page(
         "stats", "Performance Center", "YouTube Stats",
         "Where and when your clips actually land.", body,
-        head_extra=CHART_HEAD + concept_chart("stChart", labels, data, colors),
         top_actions=top_actions,
     )
 
