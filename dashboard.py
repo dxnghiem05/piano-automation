@@ -1722,6 +1722,10 @@ STYLE_V4 = r"""<style>
   .qtable .clip{color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-size:12px}
   .qtable .word{font-weight:700}
   .table-wrap{overflow-x:auto}
+  .ds-scroll{max-height:64vh;overflow:auto;border:1px solid var(--line);border-radius:12px}
+  .ds-scroll table{margin:0}
+  .ds-scroll thead th{position:sticky;top:0;z-index:2;background:#141613;padding:12px;border-bottom:1px solid var(--line-2)}
+  .ds-scroll td{white-space:nowrap}
   .badge{font-size:11px;font-weight:800;padding:3px 10px;border-radius:999px}
   .badge.sch{background:rgba(79,151,255,.14);color:var(--blue)}.badge.up{background:var(--green-soft);color:var(--green)}.badge.def{background:rgba(245,181,68,.15);color:var(--amber)}.badge.fail{background:rgba(255,93,120,.16);color:#ff5d78}.badge.wait{background:rgba(255,255,255,.06);color:var(--muted)}
 
@@ -2168,27 +2172,30 @@ def render_project_tracker_section(selected_week: str, selected_sort: str,
                                    stats_page: int, selected_range: str,
                                    base_path: str = "/data-science") -> str:
     rows = read_project_dataset()
-    selected_week = normalize_project_week(rows, selected_week)
+    show_all = str(selected_week).strip().lower() == "all"
+    if not show_all:
+        selected_week = normalize_project_week(rows, selected_week)
     selected_sort = normalize_project_sort(selected_sort)
     summary = summarize_project_dataset(rows)
 
+    def week_href(token: str) -> str:
+        return f'{base_path}?project_week={token.replace(" ", "%20")}&project_sort={selected_sort}&range={selected_range}'
+
     weeks = planned_project_weeks()
     chips = ['<div class="chipset">']
+    chips.append(f'<a class="{"fchip active" if show_all else "fchip"}" href="{week_href("all")}">All weeks</a>')
     for wk in weeks:
-        active = "fchip active" if wk == selected_week else "fchip"
-        chips.append(f'<a class="{active}" href="{base_path}?project_week={wk.replace(" ", "%20")}&project_sort={selected_sort}&range={selected_range}">{html.escape(wk)}</a>')
+        active = "fchip active" if (not show_all and wk == selected_week) else "fchip"
+        chips.append(f'<a class="{active}" href="{week_href(wk)}">{html.escape(wk)}</a>')
     chips.append('</div>')
     chips = "".join(chips)
 
-    filtered = [r for r in rows if r.get("project_week") == selected_week] if selected_week else rows
-    filtered = sort_project_rows(filtered, selected_sort)
-
-    page_size = STATS_TABLE_PAGE_SIZE
-    total = len(filtered)
-    total_pages = max(1, (total + page_size - 1) // page_size)
-    stats_page = max(1, min(stats_page, total_pages))
-    start = (stats_page - 1) * page_size
-    visible = filtered[start:start + page_size]
+    if show_all:
+        filtered = list(rows)
+    else:
+        filtered = [r for r in rows if r.get("project_week") == selected_week] if selected_week else rows
+    visible = sort_project_rows(filtered, selected_sort)
+    total = len(visible)
 
     columns = [
         ("Week", "project_week", "plain"),
@@ -2246,9 +2253,7 @@ def render_project_tracker_section(selected_week: str, selected_sort: str,
     tbody = "".join(trs) or f'<tr><td colspan="{len(columns)}" class="metric-cap">No rows for this week yet.</td></tr>'
     thead = "".join(f"<th>{html.escape(label)}</th>" for label, _k, _kind in columns)
 
-    pager = _simple_pager(stats_page, total_pages,
-                          lambda p: f'{base_path}?project_week={selected_week.replace(" ", "%20")}&project_sort={selected_sort}&range={selected_range}&stats_page={p}')
-
+    scope_label = "all weeks" if show_all else html.escape(str(selected_week))
     downloads = (
         '<div class="top-actions" data-owner-only>'
         '<a class="btn" href="/project-data.csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>CSV</a>'
@@ -2258,10 +2263,10 @@ def render_project_tracker_section(selected_week: str, selected_sort: str,
 
     return (
         '<section class="panel"><div class="panel-h"><h2>Data-Science Tracker</h2>'
-        f'<span class="hint">{summary.get("official", 0)} official · {summary.get("completed_24h", 0)} with 24h data</span></div>'
+        f'<span class="hint">{total:,} rows · {scope_label} · scroll to see all</span></div>'
         + downloads + chips
-        + f'<div class="table-wrap"><table class="qtable"><thead><tr>{thead}</tr></thead>'
-        + f'<tbody>{tbody}</tbody></table></div>' + pager
+        + f'<div class="ds-scroll"><table class="qtable"><thead><tr>{thead}</tr></thead>'
+        + f'<tbody>{tbody}</tbody></table></div>'
         + '</section>'
     )
 
