@@ -1817,7 +1817,8 @@ def chart_script(canvas_id: str, tabset: str, default_range: str = "1d") -> str:
     payload = build_chart_payload()
     tmpl = r"""
 <script>
-(function(){
+function __init_chart___CID__(){
+  if(typeof Chart==='undefined'){return setTimeout(__init_chart___CID__,50);}
   Chart.defaults.font.family="'Figtree', sans-serif";Chart.defaults.font.weight='600';Chart.defaults.color='#6a716a';
   var RANGES=__PAYLOAD__;var cur='__DEF__';
   var ctx=document.getElementById('__CID__');if(!ctx)return;
@@ -1833,7 +1834,8 @@ def chart_script(canvas_id: str, tabset: str, default_range: str = "1d") -> str:
     tabs.forEach(function(x){x.classList.remove('active');});t.classList.add('active');
     cur=t.dataset.r;var s=set(cur);chart.data.labels=s.labels;chart.data.datasets[0].data=s.data;chart.data.datasets[0].backgroundColor=s.colors;chart.update();
   });});
-})();
+}
+if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',__init_chart___CID__);}else{__init_chart___CID__();}
 </script>"""
     return (tmpl.replace("__PAYLOAD__", payload).replace("__CID__", canvas_id)
             .replace("__TAB__", tabset).replace("__DEF__", default_range))
@@ -2120,24 +2122,61 @@ def render_project_tracker_section(selected_week: str, selected_sort: str,
     start = (stats_page - 1) * page_size
     visible = filtered[start:start + page_size]
 
+    columns = [
+        ("Week", "project_week", "plain"),
+        ("Clip", "clip_id", "clip"),
+        ("Platform", "platform", "plain"),
+        ("Caption", "caption_word", "word"),
+        ("Style", "caption_style", "plain"),
+        ("Group", "posting_time_group", "plain"),
+        ("Length", "clip_length_seconds", "secs"),
+        ("Orientation", "video_orientation", "plain"),
+        ("Content Type", "content_type", "plain"),
+        ("Live Views", "current_views", "int"),
+        ("Live Like Rate", "current_like_rate", "rate"),
+        ("24h Views", "views_24h", "int"),
+        ("24h Like Rate", "like_rate_24h", "rate"),
+        ("High Performer", "high_performing", "flag"),
+        ("Last Updated", "last_checked_at", "time"),
+    ]
+
+    def fmt(kind, value):
+        raw = "" if value is None else str(value).strip()
+        if raw == "":
+            return "—"
+        if kind == "int":
+            try:
+                return f"{int(float(raw)):,}"
+            except ValueError:
+                return html.escape(raw)
+        if kind == "rate":
+            try:
+                return f"{float(raw) * 100:.2f}%"
+            except ValueError:
+                return html.escape(raw)
+        if kind == "secs":
+            try:
+                return f"{float(raw):.0f}s"
+            except ValueError:
+                return html.escape(raw)
+        if kind == "flag":
+            return "★ Yes" if raw in ("1", "1.0", "True", "true") else "No"
+        if kind == "time":
+            parsed = parse_iso_datetime(raw)
+            return parsed.strftime("%b %-d, %-I:%M %p") if parsed else html.escape(raw[:16])
+        if kind == "word":
+            return html.escape(raw[:22])
+        return html.escape(raw)
+
     trs = []
     for r in visible:
-        clip = r.get("clip_id", "") or r.get("clip_filename", "")
-        caption = r.get("caption_word", "") or _clean_title(r.get("title", ""), clip)
-        views = r.get("views_24h", "") or r.get("current_views", "") or "—"
-        eng_raw = r.get("engagement_rate_24h", "") or r.get("current_engagement_rate", "")
-        try:
-            eng = f"{float(eng_raw) * 100:.2f}%" if eng_raw else "—"
-        except ValueError:
-            eng = html.escape(str(eng_raw)) or "—"
-        trs.append(
-            f'<tr><td class="clip">{html.escape(clip)}</td>'
-            f'<td class="word">{html.escape(str(caption)[:26])}</td>'
-            f'<td>{html.escape(str(r.get("project_week", "")))}</td>'
-            f'<td>{html.escape(str(views))}</td>'
-            f'<td>{eng}</td></tr>'
-        )
-    tbody = "".join(trs) or '<tr><td colspan="5" class="metric-cap">No rows for this week yet.</td></tr>'
+        cells = []
+        for _label, key, kind in columns:
+            css = ' class="clip"' if kind == "clip" else (' class="word"' if kind == "word" else "")
+            cells.append(f"<td{css}>{fmt(kind, r.get(key, ''))}</td>")
+        trs.append("<tr>" + "".join(cells) + "</tr>")
+    tbody = "".join(trs) or f'<tr><td colspan="{len(columns)}" class="metric-cap">No rows for this week yet.</td></tr>'
+    thead = "".join(f"<th>{html.escape(label)}</th>" for label, _k, _kind in columns)
 
     pager = _simple_pager(stats_page, total_pages,
                           lambda p: f'/stats?project_week={selected_week.replace(" ", "%20")}&project_sort={selected_sort}&range={selected_range}&stats_page={p}')
@@ -2153,7 +2192,7 @@ def render_project_tracker_section(selected_week: str, selected_sort: str,
         '<section class="panel"><div class="panel-h"><h2>Data-Science Tracker</h2>'
         f'<span class="hint">{summary.get("official", 0)} official · {summary.get("completed_24h", 0)} with 24h data</span></div>'
         + downloads + chips
-        + '<div class="table-wrap"><table class="qtable"><thead><tr><th>Clip</th><th>Caption</th><th>Week</th><th>24h Views</th><th>Engagement</th></tr></thead>'
+        + f'<div class="table-wrap"><table class="qtable"><thead><tr>{thead}</tr></thead>'
         + f'<tbody>{tbody}</tbody></table></div>' + pager
         + '</section>'
     )
