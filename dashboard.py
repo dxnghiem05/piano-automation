@@ -90,6 +90,63 @@ def viewer_mode_html(page_html: str, is_owner: bool) -> str:
 
 logger = logging.getLogger(__name__)
 
+# --- Stats-history read cache -------------------------------------------------
+# The YouTube stats history CSV is large (tens of thousands of rows) and several
+# functions read it multiple times per page render. Cache the parsed rows keyed
+# by the file's modification time so repeated reads in one request are instant,
+# while any refresh (which rewrites the file) transparently invalidates it.
+import stats_tracker as _stats_tracker
+
+_STATS_HISTORY_CACHE: dict[str, object] = {}
+
+
+def _cached_read_stats_history() -> list[dict[str, str]]:
+    path = config.YOUTUBE_STATS_HISTORY_FILE
+    key = path.stat().st_mtime_ns if path.exists() else 0
+    if _STATS_HISTORY_CACHE.get("key") != key:
+        _STATS_HISTORY_CACHE["key"] = key
+        _STATS_HISTORY_CACHE["rows"] = _stats_tracker._uncached_read_stats_history()
+    return _STATS_HISTORY_CACHE["rows"]  # type: ignore[return-value]
+
+
+if not hasattr(_stats_tracker, "_uncached_read_stats_history"):
+    _stats_tracker._uncached_read_stats_history = _stats_tracker.read_stats_history
+    _stats_tracker.read_stats_history = _cached_read_stats_history
+# Point this module's imported name at the cached version too.
+read_stats_history = _cached_read_stats_history
+
+
+def _hist_mtime_key() -> tuple:
+    def _m(path) -> int:
+        try:
+            return path.stat().st_mtime_ns
+        except OSError:
+            return 0
+    return (_m(config.YOUTUBE_STATS_HISTORY_FILE), _m(config.UPLOAD_LOG_FILE))
+
+
+def _memoize_by_history(func):
+    """Cache a pure history-derived function's result until the stats files change."""
+    store: dict = {}
+
+    def wrapper(*args):
+        key = _hist_mtime_key()
+        entry = store.get(args)
+        if entry is None or entry[0] != key:
+            value = func(*args)
+            store[args] = (key, value)
+            return value
+        return entry[1]
+
+    wrapper.__name__ = getattr(func, "__name__", "wrapped")
+    return wrapper
+
+
+# Memoize the heavy per-request aggregations so repeat page loads are instant.
+latest_video_stats = _memoize_by_history(latest_video_stats)
+best_posting_hours = _memoize_by_history(best_posting_hours)
+best_posting_days = _memoize_by_history(best_posting_days)
+
 HOST = "127.0.0.1"
 PORT = 8000
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024 * 1024
@@ -623,7 +680,7 @@ def read_privacy_overrides() -> dict[str, str]:
     return overrides
 
 
-def build_queue_rows() -> list[dict[str, str]]:
+def _build_queue_rows_uncached() -> list[dict[str, str]]:
     """Build queue rows from upload records and pending clips."""
     latest_by_id = {row.get("youtube_video_id", ""): row for row in latest_video_stats()}
     privacy_overrides = read_privacy_overrides()
@@ -672,6 +729,26 @@ def build_queue_rows() -> list[dict[str, str]]:
         )
 
     return sorted(rows, key=lambda row: row["sort_key"])
+
+
+_QUEUE_ROWS_CACHE: dict[str, object] = {}
+
+
+def build_queue_rows() -> list[dict[str, str]]:
+    """Cached build_queue_rows keyed by the files it depends on (invalidates on change)."""
+    def _mtime(path) -> int:
+        try:
+            return path.stat().st_mtime_ns
+        except OSError:
+            return 0
+    key = (
+        _mtime(config.UPLOAD_LOG_FILE), _mtime(config.PRIVACY_OVERRIDES_FILE),
+        _mtime(config.METADATA_FILE), _mtime(config.YOUTUBE_STATS_HISTORY_FILE),
+    )
+    if _QUEUE_ROWS_CACHE.get("key") != key:
+        _QUEUE_ROWS_CACHE["key"] = key
+        _QUEUE_ROWS_CACHE["rows"] = _build_queue_rows_uncached()
+    return _QUEUE_ROWS_CACHE["rows"]  # type: ignore[return-value]
 
 
 def queue_row_anchor(row: dict[str, str]) -> str:
@@ -935,6 +1012,9 @@ def chart_view_gains(selected_range: str) -> list[dict[str, int | str]]:
         return hourly_view_gains(parsed_rows, newest)
 
     return daily_view_gains(parsed_rows, newest, selected_range)
+
+
+chart_view_gains = _memoize_by_history(chart_view_gains)
 
 
 def hourly_view_gains(
@@ -1566,14 +1646,14 @@ STYLE_V5 = r"""<style>
       radial-gradient(65% 55% at 50% 104%, rgba(30,215,96,.30), transparent 60%),
       radial-gradient(40% 40% at 92% 88%, rgba(245,105,120,.28), transparent 60%),
       linear-gradient(180deg,#070812,#04060b 60%,#02040a)}
-  .blob{position:absolute;border-radius:50%;filter:blur(95px);mix-blend-mode:screen;opacity:.5;will-change:transform}
+  .blob{position:absolute;border-radius:50%;filter:blur(70px);opacity:.4}
   .blob.g{width:640px;height:640px;background:radial-gradient(circle,#1ed760,transparent 68%);top:-190px;left:6%;animation:drift 16s ease-in-out infinite}
   .blob.v{width:560px;height:560px;background:radial-gradient(circle,#8b6cff,transparent 68%);top:-130px;right:5%;animation:drift 19s ease-in-out infinite reverse}
   .blob.b{width:520px;height:520px;background:radial-gradient(circle,#4f97ff,transparent 68%);bottom:-170px;left:42%;animation:drift 22s ease-in-out infinite}
   @keyframes drift{0%,100%{transform:translate(0,0)}50%{transform:translate(26px,-22px)}}
   .grain{position:absolute;inset:0;opacity:.05;background-image:radial-gradient(#fff 1px,transparent 1px);background-size:4px 4px}
   .keys{position:absolute;left:50%;bottom:-46px;transform:translateX(-50%) perspective(1150px) rotateX(51deg);
-    transform-origin:bottom center;display:flex;gap:4px;opacity:.46;filter:drop-shadow(0 -8px 50px rgba(79,151,255,.42));transition:opacity .6s}
+    transform-origin:bottom center;display:flex;gap:4px;opacity:.46;transition:opacity .6s}
   body.tab .keys{opacity:.16}
   .key{width:50px;height:278px;border-radius:0 0 8px 8px;background:linear-gradient(180deg,#e9edf6,#aab3c6);position:relative;box-shadow:inset 0 -12px 20px rgba(0,0,0,.25)}
   .key.g{background:linear-gradient(180deg,#c9ffe0,#1ed760);box-shadow:0 0 30px rgba(30,215,96,.8)}
@@ -1581,7 +1661,7 @@ STYLE_V5 = r"""<style>
   .key.b{background:linear-gradient(180deg,#d5e7ff,#4f97ff);box-shadow:0 0 30px rgba(79,151,255,.8)}
   .bk{position:absolute;top:0;right:-14px;width:28px;height:176px;border-radius:0 0 5px 5px;background:linear-gradient(180deg,#181c26,#05070c);z-index:3;box-shadow:0 6px 8px rgba(0,0,0,.5)}
   .key.nb .bk{display:none}
-  .note{position:absolute;bottom:3%;color:rgba(255,255,255,.45);filter:drop-shadow(0 0 7px rgba(30,215,96,.5));will-change:transform,opacity;pointer-events:none}
+  .note{position:absolute;bottom:3%;color:rgba(255,255,255,.4);text-shadow:0 0 6px rgba(30,215,96,.35);will-change:transform,opacity;pointer-events:none}
   @keyframes rise{0%{transform:translateY(20px) rotate(0);opacity:0}12%{opacity:.9}85%{opacity:.6}100%{transform:translateY(-48vh) rotate(16deg);opacity:0}}
 
   /* home */
@@ -1638,7 +1718,7 @@ STYLE_V5 = r"""<style>
   .sub{color:var(--muted);font-size:14px;margin-top:5px}
   .topline{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:6px}
   .top-actions{display:flex;align-items:center;gap:10px}
-  .panel{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px;backdrop-filter:blur(8px)}
+  .panel{position:relative;overflow:hidden;background:rgba(16,18,23,.66);border:1px solid var(--line);border-radius:18px;padding:20px}
   .panel h3{margin:0 0 14px;font-size:15px;font-weight:750}
   .row{display:grid;gap:16px}
   .r-4{grid-template-columns:repeat(4,1fr)}.r-3{grid-template-columns:repeat(3,1fr)}.r-2{grid-template-columns:1.5fr 1fr}
@@ -1665,7 +1745,8 @@ STYLE_V5 = r"""<style>
   .kpi .d{font-size:12px;font-weight:700;color:var(--kc,var(--green));margin-top:3px}
   .kc-g{--kc:#1ed760}.kc-b{--kc:#4f97ff}.kc-t{--kc:#24d6b6}.kc-a{--kc:#f5b544}
   .hero-num{font-size:clamp(46px,7vw,84px);font-weight:900;letter-spacing:-.04em;line-height:1;background:linear-gradient(180deg,#fff,#bfe9cf);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-  canvas{max-height:230px}
+  .chartbox{position:relative;height:240px;margin-top:14px}
+  .chartbox canvas{position:absolute;inset:0;width:100%!important;height:100%!important}
 
   .pk-wrap{display:flex;align-items:flex-end;gap:10px;height:220px;padding-top:10px}
   .pk{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
@@ -1766,12 +1847,12 @@ BG_SCRIPT = r"""<script>
     while(Object.keys(lit).length<n){lit[Math.floor(Math.random()*NK)]=cols[Math.floor(Math.random()*3)];}
     for(var i=0;i<NK;i++){var nb=(i%7===2||i%7===6);var k=document.createElement('div');k.className='key'+(nb?' nb':'')+(lit[i]?(' '+lit[i]):'');if(!nb){var b=document.createElement('div');b.className='bk';k.appendChild(b);}keys.appendChild(k);}}
   var stage=document.querySelector('.stage');var gl=['♪','♫','♩','♬'];var live=0;
-  setInterval(function(){if(document.hidden||live>9||!stage)return;var e=document.createElement('div');e.className='note';e.textContent=gl[Math.random()*4|0];
+  setInterval(function(){if(document.hidden||live>6||!stage)return;var e=document.createElement('div');e.className='note';e.textContent=gl[Math.random()*4|0];
     e.style.left=(5+Math.random()*88)+'%';e.style.fontSize=(16+Math.random()*16)+'px';e.style.animation='rise '+(8+Math.random()*5).toFixed(1)+'s linear forwards';
-    stage.appendChild(e);live++;e.addEventListener('animationend',function(){e.remove();live--;});},1000);
-  window.addEventListener('mousemove',function(ev){var x=ev.clientX/innerWidth-.5,y=ev.clientY/innerHeight-.5;
-    var bl=document.querySelectorAll('.blob');for(var j=0;j<bl.length;j++){var d=(j+1)*12;bl[j].style.marginLeft=(-x*d)+'px';bl[j].style.marginTop=(-y*d)+'px';}
-    var g=document.getElementById('glass');if(g)g.style.transform='rotateX('+(-y*4).toFixed(2)+'deg) rotateY('+(x*5).toFixed(2)+'deg)';});
+    stage.appendChild(e);live++;e.addEventListener('animationend',function(){e.remove();live--;});},1500);
+  var glass=document.getElementById('glass');
+  if(glass){window.addEventListener('mousemove',function(ev){var x=ev.clientX/innerWidth-.5,y=ev.clientY/innerHeight-.5;
+    glass.style.transform='rotateX('+(-y*4).toFixed(2)+'deg) rotateY('+(x*5).toFixed(2)+'deg)';});}
 })();
 </script>"""
 
@@ -1956,7 +2037,7 @@ def render_overview() -> str:
         '<div class="panel"><p class="eyebrow" style="color:var(--muted)">Total channel views</p>'
         f'<div class="hero-num">{total_views:,}</div>'
         f'<div class="sub" style="margin-top:8px">+<b style="color:var(--green)">{delta:,}</b> overnight · best hour <b style="color:var(--green)">{html.escape(best_hour)}</b> · today’s gains below</div>'
-        '<canvas id="ovChart" class="mt"></canvas></div>'
+        '<div class="chartbox"><canvas id="ovChart"></canvas></div></div>'
         '<div class="panel"><h3>Live activity</h3>'
         '<div class="now-card"><div class="big-np"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>'
         f'<div><b style="font-size:15px">{"Pipeline running…" if running else "Pipeline idle · ready"}</b><div class="sub" style="margin-top:2px">Drop videos in input, then Clip + Upload</div></div></div>'
@@ -2067,7 +2148,7 @@ def render_stats_page(selected_range: str = "1d", *_ignore, **_kw) -> str:
     body = (
         kpis
         + '<div class="row r-2 mt">'
-        '<div class="panel"><h3>Views gained · last 7 days</h3><canvas id="stChart"></canvas></div>'
+        '<div class="panel"><h3>Views gained · last 7 days</h3><div class="chartbox"><canvas id="stChart"></canvas></div></div>'
         f'<div class="panel"><h3>Top performers</h3>{top_html}</div>'
         '</div>'
         f'<div class="panel mt"><h3>Best posting hours <span style="color:var(--faint);font-weight:600;font-size:12px">· taller key = more avg views</span></h3><div class="pk-wrap">{pk}</div></div>'
