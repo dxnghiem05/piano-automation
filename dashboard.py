@@ -1824,7 +1824,27 @@ STYLE_V5 = r"""<style>
   .chipset::-webkit-scrollbar{height:6px}.chipset::-webkit-scrollbar-thumb{background:#2a2e2a;border-radius:8px}
   .fchip{flex:none;white-space:nowrap;font-size:12px;font-weight:700;color:var(--muted);background:var(--panel);border:1px solid var(--line);padding:6px 12px;border-radius:999px}
   .fchip.active{background:var(--green-soft);color:var(--green);border-color:transparent}
-  .ds-scroll{max-height:calc(100vh - 470px);min-height:220px;overflow:auto;border:1px solid var(--line);border-radius:12px}
+  .ds-scroll{max-height:calc(100vh - 430px);min-height:240px;overflow:auto;border:1px solid var(--line);border-radius:12px}
+  .ds-split{display:grid;grid-template-columns:346px 1fr;gap:18px}
+  @media(max-width:900px){.ds-split{grid-template-columns:1fr}}
+  .ds-list{max-height:calc(100vh - 430px);min-height:240px;overflow:auto;padding-right:6px}
+  .ds-list::-webkit-scrollbar{width:8px}.ds-list::-webkit-scrollbar-thumb{background:#2a2e2a;border-radius:8px}
+  .arow{display:flex;align-items:center;gap:13px;padding:9px 10px;border-radius:12px;cursor:pointer;transition:.16s}
+  .arow:hover{background:rgba(255,255,255,.055)}
+  .arow.sel{background:rgba(255,255,255,.06)}
+  .arow .acov{width:52px;height:52px;border-radius:8px;flex:none;background:#0e1118 center/cover no-repeat;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+  .arow .acov.all{background:linear-gradient(135deg,#1ed760,#0d6e46);display:grid;place-items:center}
+  .arow .acov.all svg{width:24px;height:24px}
+  .arow .acov.empty{background:linear-gradient(135deg,#20242e,#12151c)}
+  .arow .atx{min-width:0;flex:1}
+  .arow .att{font-size:15px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
+  .arow.sel .att{color:var(--green)}
+  .arow .ast{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+  .arow.future{opacity:.5}.arow.future .ast{color:var(--faint)}
+  .apin{width:12px;height:12px;color:var(--green);flex:none;opacity:0}
+  .arow.sel .apin{opacity:1}
+  .acount{margin-left:auto;font-size:11px;font-weight:800;color:var(--muted);background:rgba(255,255,255,.06);padding:3px 9px;border-radius:999px;flex:none}
+  .arow.sel .acount{background:var(--green-soft);color:var(--green)}
   .ds-scroll table{margin:0;width:100%;border-collapse:collapse;font-size:13px}
   .ds-scroll th{position:sticky;top:0;z-index:2;background:#141613;text-align:left;color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:800;padding:12px;border-bottom:1px solid var(--line)}
   .ds-scroll td{padding:11px 12px;border-top:1px solid var(--line);white-space:nowrap}
@@ -2410,13 +2430,65 @@ def render_project_tracker_section(selected_week: str, selected_sort: str,
         return f'{base_path}?project_week={token.replace(" ", "%20")}&project_sort={selected_sort}'
 
     weeks = planned_project_weeks()
-    chips = ['<div class="chipset">']
-    chips.append(f'<a class="{"fchip active" if show_all else "fchip"}" href="{week_href("all")}">All weeks</a>')
+
+    # Per-week cover = the highest-viewed clip's YouTube thumbnail, and clip counts.
+    covers: dict[str, tuple[int, str]] = {}
+    counts: dict[str, int] = {}
+    for r in rows:
+        wk = r.get("project_week", "")
+        counts[wk] = counts.get(wk, 0) + 1
+        vid = r.get("youtube_video_id", "")
+        if vid:
+            try:
+                cv = int(float(r.get("current_views") or 0))
+            except ValueError:
+                cv = 0
+            if wk not in covers or cv > covers[wk][0]:
+                covers[wk] = (cv, vid)
+
+    def phase_for(label: str) -> str:
+        if label == "Week 0":
+            return "Pre-project baseline"
+        try:
+            n = int(label.split()[1])
+        except (IndexError, ValueError):
+            return ""
+        if n <= 2:
+            return "Baseline"
+        if n <= 4:
+            return "Posting-time test"
+        if n <= 6:
+            return "Caption test"
+        if n <= 8:
+            return "Frequency test"
+        return "Content type + capstone"
+
+    pin = '<svg class="apin" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.7 2 6 4.7 6 8c0 4.5 6 12 6 12s6-7.5 6-12c0-3.3-2.7-6-6-6zm0 8.5A2.5 2.5 0 1112 5a2.5 2.5 0 010 5.5z"/></svg>'
+    note = '<svg viewBox="0 0 24 24" fill="#04140a"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>'
+
+    def album_row(key: str, title: str, subtitle: str, count: int, cover_vid: str,
+                  is_all: bool = False, future: bool = False) -> str:
+        sel = (show_all and is_all) or (not show_all and key == selected_week and not is_all)
+        cls = "arow" + (" sel" if sel else "") + (" all" if is_all else "") + (" future" if future else "")
+        if is_all:
+            cov = f'<div class="acov all">{note}</div>'
+        elif cover_vid:
+            cov = f'<div class="acov" style="background-image:url(\'https://i.ytimg.com/vi/{html.escape(cover_vid)}/mqdefault.jpg\')"></div>'
+        else:
+            cov = '<div class="acov empty"></div>'
+        return (
+            f'<a class="{cls}" href="{week_href("all" if is_all else key)}">{cov}'
+            f'<div class="atx"><div class="att">{pin}{html.escape(title)}</div><div class="ast">{html.escape(subtitle)}</div></div>'
+            f'<span class="acount">{count}</span></a>'
+        )
+
+    list_html = [album_row("all", "All weeks", f"Full experiment · {len(rows)} clips", len(rows), "", is_all=True)]
     for wk in weeks:
-        active = "fchip active" if (not show_all and wk == selected_week) else "fchip"
-        chips.append(f'<a class="{active}" href="{week_href(wk)}">{html.escape(wk)}</a>')
-    chips.append('</div>')
-    chips = "".join(chips)
+        c = counts.get(wk, 0)
+        future = c == 0
+        subtitle = "Upcoming" if future else f"{phase_for(wk)} · {c} clips"
+        list_html.append(album_row(wk, wk, subtitle, c, covers.get(wk, (0, ""))[1], future=future))
+    album_list = '<div class="ds-list">' + "".join(list_html) + '</div>'
 
     if show_all:
         filtered = list(rows)
@@ -2475,16 +2547,16 @@ def render_project_tracker_section(selected_week: str, selected_sort: str,
     scope = "all weeks" if show_all else html.escape(str(selected_week))
 
     downloads = (
-        '<div class="top-actions" data-owner-only style="margin-bottom:14px">'
-        '<a class="btn" href="/project-data.csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>CSV</a>'
-        '<a class="btn" href="/project-data.xlsx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>XLSX</a></div>'
+        '<div class="top-actions" data-owner-only>'
+        '<a class="btn" href="/project-data.csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>CSV (all weeks)</a>'
+        '<a class="btn" href="/project-data.xlsx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>XLSX (all weeks)</a></div>'
     )
     return (
-        '<div class="panel mt"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">'
-        '<h3 style="margin:0">Data-Science Tracker</h3>'
-        f'<span class="sub" style="margin:0">{total:,} rows · {scope} · scroll to see all</span></div>'
-        + downloads + chips
-        + f'<div class="ds-scroll"><table><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table></div></div>'
+        '<div class="panel mt"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">'
+        '<h3 style="margin:0">Experiment library <span style="color:var(--faint);font-weight:600;font-size:12px">· pick a week like a playlist</span></h3>'
+        f'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span class="sub" style="margin:0">{scope} · {total:,} clips</span>{downloads}</div></div>'
+        f'<div class="ds-split">{album_list}'
+        f'<div class="ds-scroll"><table><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table></div></div></div>'
     )
 
 
