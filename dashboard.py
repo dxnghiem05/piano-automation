@@ -160,7 +160,8 @@ APP_FONT_STACK = (
     'Helvetica, Arial, sans-serif'
 )
 RUN_STATE = {
-    "running": False,
+    "running": False,          # the clip + upload pipeline is actually running
+    "stats_running": False,    # a stats-only refresh is running (not the pipeline)
     "started_at": "",
     "finished_at": "",
     "last_output": "",
@@ -1411,8 +1412,8 @@ def count_upload_records() -> int:
 
 
 def start_run() -> None:
-    """Run main.py in a background thread unless already running."""
-    if RUN_STATE["running"]:
+    """Run main.py in a background thread unless already running or refreshing stats."""
+    if RUN_STATE["running"] or STATS_REFRESH_LOCK.locked():
         return
 
     thread = threading.Thread(target=run_main_process, daemon=True)
@@ -1420,8 +1421,8 @@ def start_run() -> None:
 
 
 def start_clip_only() -> None:
-    """Run clipping only in a background thread unless already running."""
-    if RUN_STATE["running"]:
+    """Run clipping only in a background thread unless already running or refreshing stats."""
+    if RUN_STATE["running"] or STATS_REFRESH_LOCK.locked():
         return
 
     thread = threading.Thread(target=run_main_process, kwargs={"clip_only": True}, daemon=True)
@@ -1464,7 +1465,7 @@ def auto_refresh_youtube_stats_if_stale() -> bool:
     LAST_AUTO_STATS_REFRESH_ATTEMPT = datetime.now().astimezone()
     RUN_STATE.update(
         {
-            "running": True,
+            "stats_running": True,
             "started_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             "finished_at": "",
             "last_output": "Auto-refreshing YouTube stats for the Stats page...",
@@ -1485,7 +1486,7 @@ def auto_refresh_stats_process() -> None:
         logger.exception("Automatic stats refresh failed: %s", exc)
         RUN_STATE["last_error"] = f"Automatic YouTube stats refresh failed: {exc}"
     finally:
-        RUN_STATE["running"] = False
+        RUN_STATE["stats_running"] = False
         RUN_STATE["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
         STATS_REFRESH_LOCK.release()
 
@@ -1516,7 +1517,7 @@ def refresh_stats_process() -> None:
 
     RUN_STATE.update(
         {
-            "running": True,
+            "stats_running": True,
             "started_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             "finished_at": "",
             "last_output": "",
@@ -1531,7 +1532,7 @@ def refresh_stats_process() -> None:
         RUN_STATE["last_error"] = str(exc)
     finally:
         STATS_REFRESH_LOCK.release()
-        RUN_STATE["running"] = False
+        RUN_STATE["stats_running"] = False
         RUN_STATE["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -2099,6 +2100,7 @@ def render_overview() -> str:
     best_hour = str(hours[0]["hour"]) if hours else "—"
     delta = _today_views_delta()
     running = bool(status["run"]["running"])
+    stats_running = bool(status["run"].get("stats_running"))
     input_count = int(status["input_count"])
     clip_count = int(status["clip_count"])
     uploaded_today = _uploaded_today_count()
@@ -2130,7 +2132,7 @@ def render_overview() -> str:
         f'{chart_svg}</div>'
         '<div class="panel"><h3>Live activity</h3>'
         '<div class="now-card"><div class="big-np"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>'
-        f'<div><b style="font-size:15px">{"Pipeline running…" if running else "Pipeline idle · ready"}</b><div class="sub" style="margin-top:2px">Drop videos in input, then Clip + Upload</div></div></div>'
+        f'<div><b style="font-size:15px">{"Pipeline running…" if running else ("Refreshing YouTube stats…" if stats_running else "Pipeline idle · ready")}</b><div class="sub" style="margin-top:2px">Drop videos in input, then Clip + Upload</div></div></div>'
         '<form class="upzone" action="/upload" method="post" enctype="multipart/form-data" data-owner-only>'
         '<input type="hidden" name="upload_action" value="upload_and_clip">'
         '<input type="file" name="videos" accept=".mp4,.mov" multiple style="color:var(--muted);font-size:12px;margin-bottom:10px"><br>'
@@ -2144,7 +2146,8 @@ def render_overview() -> str:
         f'<div class="chip"><div class="l">Uploaded today</div><div class="v">{uploaded_today}</div></div>'
         '</div>'
     )
-    ready = '<span class="pill ready"><span class="d"></span>' + ("Running" if running else "Ready") + '</span>'
+    pill_label = "Running" if running else ("Refreshing stats…" if stats_running else "Ready")
+    ready = '<span class="pill ready"><span class="d"></span>' + pill_label + '</span>'
     top_actions = ready + (
         '<form class="inline" action="/run" method="post" data-owner-only>'
         '<button class="btn primary" type="submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>Clip + Upload</button></form>'
