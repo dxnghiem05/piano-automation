@@ -55,6 +55,7 @@ AUTH_REQUIRED = bool(DASHBOARD_PASSWORD)
 
 # Shared <head> markup so every page loads the same Figtree web font (matches home).
 FONT_HEAD = (
+    '<link rel="icon" href="/favicon.ico" type="image/svg+xml">'
     '<link rel="preconnect" href="https://fonts.googleapis.com">'
     '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
     '<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">'
@@ -227,6 +228,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.redirect("/")
             else:
                 self._send_unauthorized()
+            return
+
+        if path in ("/favicon.ico", "/favicon.svg"):
+            self.send_favicon()
             return
 
         if path == "/":
@@ -541,6 +546,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 if not chunk:
                     break
                 self.wfile.write(chunk)
+
+    def send_favicon(self) -> None:
+        """Serve a small green piano tab icon (SVG) so browsers don't 404 on /favicon.ico."""
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+            '<rect width="32" height="32" rx="8" fill="#1ed760"/>'
+            '<path d="M13 21.5V11l8-1.4v9.4" fill="none" stroke="#04140a" stroke-width="2.2" '
+            'stroke-linecap="round" stroke-linejoin="round"/>'
+            '<circle cx="11" cy="21.5" r="2.4" fill="#04140a"/>'
+            '<circle cx="19" cy="20.1" r="2.4" fill="#04140a"/></svg>'
+        )
+        encoded = svg.encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "image/svg+xml")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.send_header("Cache-Control", "public, max-age=86400")
+        self.end_headers()
+        self.wfile.write(encoded)
 
     def send_download_text(self, filename: str, text: str) -> None:
         """Send generated text (CSV) as a file download."""
