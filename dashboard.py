@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from zoneinfo import ZoneInfo
 
 import config
+import tiktok_publish as tiktok
 from generate_clips import ensure_directories
 from logging_setup import configure_logging
 from project_dataset import read_project_dataset, refresh_project_dataset
@@ -68,7 +69,7 @@ VIEWER_MODE_SNIPPET = """
 <style id="viewer-mode">
   form[action="/run"], form[action="/clip-only"], form[action="/upload"],
   form[action="/refresh-stats"], form[action="/queue/privacy"],
-  form[action="/tiktok-schedule"], [data-owner-only] { display: none !important; }
+  form[action="/tiktok-schedule"], form[action="/tiktok/post"], [data-owner-only] { display: none !important; }
   .owner-login-badge {
     position: fixed; right: 16px; bottom: 16px; z-index: 99999;
     background: #1ed760; color: #05140b;
@@ -169,6 +170,10 @@ RUN_STATE = {
 }
 STATS_REFRESH_LOCK = threading.Lock()
 LAST_AUTO_STATS_REFRESH_ATTEMPT: datetime | None = None
+
+# TikTok OAuth CSRF state + last post result (shown on the TikTok Candidates page).
+TIKTOK_OAUTH_STATE = ""
+TIKTOK_RESULT = {"message": "", "error": ""}
 
 
 def is_safe_dashboard_path(value: str) -> bool:
@@ -295,6 +300,47 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_html(viewer_mode_html(render_experiment_page(), owner))
             return
 
+        if path == "/tiktok/connect":
+            if not owner:
+                self._send_unauthorized()
+                return
+            global TIKTOK_OAUTH_STATE
+            if not tiktok.is_configured():
+                TIKTOK_RESULT.update({"error": "TikTok is not configured. Set TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET in .env.", "message": ""})
+                self.redirect("/tiktok-candidates")
+                return
+            TIKTOK_OAUTH_STATE = base64.urlsafe_b64encode(os.urandom(18)).decode("ascii").rstrip("=")
+            self.redirect(tiktok.authorize_url(TIKTOK_OAUTH_STATE))
+            return
+
+        if path == "/tiktok/callback":
+            query = parse_qs(parsed.query)
+            code = query.get("code", [""])[0]
+            state = query.get("state", [""])[0]
+            err = query.get("error", [""])[0]
+            if err:
+                TIKTOK_RESULT.update({"error": f"TikTok authorization was declined ({err}).", "message": ""})
+            elif not code or state != TIKTOK_OAUTH_STATE or not TIKTOK_OAUTH_STATE:
+                TIKTOK_RESULT.update({"error": "TikTok login could not be verified (state mismatch). Please try again.", "message": ""})
+            else:
+                try:
+                    tiktok.exchange_code(code)
+                    TIKTOK_RESULT.update({"message": "TikTok account connected.", "error": ""})
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("TikTok token exchange failed: %s", exc)
+                    TIKTOK_RESULT.update({"error": f"Could not complete TikTok login: {exc}", "message": ""})
+            self.redirect("/tiktok-candidates")
+            return
+
+        if path == "/tiktok/disconnect":
+            if not owner:
+                self._send_unauthorized()
+                return
+            tiktok.clear_token()
+            TIKTOK_RESULT.update({"message": "TikTok account disconnected.", "error": ""})
+            self.redirect("/tiktok-candidates")
+            return
+
         # Generated CSV exports (public — they only expose already-visible showcase data).
         if path == "/queue.csv":
             self.send_download_text("upload_queue.csv", queue_csv())
@@ -361,6 +407,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             redirect_target = self.form_redirect_target(default=self.redirect_back_path(default="/stats"))
             start_stats_refresh()
             self.redirect(redirect_target)
+            return
+
+        if parsed.path == "/tiktok/post":
+            self.handle_tiktok_post()
             return
 
         if parsed.path == "/queue/privacy":
@@ -503,6 +553,38 @@ class DashboardHandler(BaseHTTPRequestHandler):
             RUN_STATE["last_error"] = ""
 
         self.redirect(f"/tiktok-candidates#day-{stats_date}")
+
+    def handle_tiktok_post(self) -> None:
+        """Direct-post one clip to the connected TikTok account."""
+        content_length = int(self.headers.get("Content-Length", "0"))
+        raw_body = self.rfile.read(content_length).decode("utf-8")
+        form = parse_qs(raw_body)
+        clip_filename = Path((form.get("clip_filename", [""])[0] or "").strip()).name
+        caption = (form.get("caption", [""])[0] or "").strip() or "Piano clip"
+
+        if not tiktok.is_connected():
+            TIKTOK_RESULT.update({"error": "Connect a TikTok account first.", "message": ""})
+            self.redirect("/tiktok-candidates")
+            return
+
+        clip_path = config.CLIPS_DIR / clip_filename
+        if not clip_filename or not clip_path.exists():
+            TIKTOK_RESULT.update({"error": f"Clip not found: {clip_filename}", "message": ""})
+            self.redirect("/tiktok-candidates")
+            return
+
+        try:
+            result = tiktok.direct_post_video(clip_path, caption)
+            TIKTOK_RESULT.update({
+                "message": f"Posted {clip_filename} to TikTok "
+                           f"({result.get('privacy_level', 'SELF_ONLY')}). It may take a moment to appear.",
+                "error": "",
+            })
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("TikTok post failed: %s", exc)
+            TIKTOK_RESULT.update({"error": f"TikTok post failed: {exc}", "message": ""})
+
+        self.redirect("/tiktok-candidates")
 
     def is_ajax_request(self) -> bool:
         """Return whether the request expects a JSON response."""
@@ -2264,11 +2346,30 @@ def render_stats_page(selected_range: str = "1d", *_ignore, **_kw) -> str:
 # ---------------------------------------------------------------------------
 # TIKTOK CANDIDATES  (/tiktok-candidates)
 # ---------------------------------------------------------------------------
+TIKTOK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l3-1v10"/><circle cx="6" cy="18" r="3"/><path d="M14 7c1.5 2 4 2.5 6 2.5"/></svg>'
+
+
 def render_tiktok_candidates_page(selected_date: str = "") -> str:
     _ = selected_date
     today = datetime.now(ZoneInfo(config.TIMEZONE)).date()
     medal = ["\U0001f947", "\U0001f948", "\U0001f949"]
     cls = ["gold", "silver", "bronze"]
+
+    tk_configured = tiktok.is_configured()
+    tk_connected = tiktok.is_connected()
+    disp = tiktok.connected_display() if tk_connected else {}
+
+    def post_form(clip_filename: str, caption: str) -> str:
+        if not tk_connected:
+            return ""
+        return (
+            '<form action="/tiktok/post" method="post" data-owner-only style="position:relative;margin-top:12px">'
+            f'<input type="hidden" name="clip_filename" value="{html.escape(clip_filename)}">'
+            f'<input type="hidden" name="caption" value="{html.escape(caption)}">'
+            '<button class="btn primary" type="submit" style="width:100%;justify-content:center">'
+            + TIKTOK_ICON + 'Post to TikTok</button></form>'
+        )
+
     blocks = []
     for day in tiktok_candidate_days():
         try:
@@ -2281,10 +2382,12 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
         pods = []
         for i, c in enumerate(cand):
             title = _cap(str(c["title"]), str(c["clip_filename"]))
+            clip_fn = str(c["clip_filename"])
             pods.append(
                 f'<div class="pod {cls[i]}"><div class="medal">{medal[i]}</div><div class="w">{title}</div>'
-                f'<div class="c">{html.escape(str(c["clip_filename"]))}</div>'
-                f'<div class="met"><b>{int(c["views"]):,}</b> views · <b>{int(c["likes"]):,}</b> likes</div></div>'
+                f'<div class="c">{html.escape(clip_fn)}</div>'
+                f'<div class="met"><b>{int(c["views"]):,}</b> views · <b>{int(c["likes"]):,}</b> likes</div>'
+                f'{post_form(clip_fn, title)}</div>'
             )
         while len(pods) < 3:
             pods.append('<div class="pod"><div class="met sub">—</div></div>')
@@ -2292,11 +2395,59 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
         label = "Today · " + format_stats_date(str(day["date"])) if d == today else format_stats_date(str(day["date"]))
         blocks.append(f'<div class="day-block"><h4>{html.escape(label)}</h4><div class="podium">{ordered}</div></div>')
 
-    body = "".join(blocks) or '<div class="panel"><div class="placeholder"><h3>No candidates in the past week</h3><div>Once clips have 24h of stats they appear here.</div></div></div>'
-    top_actions = '<a class="btn primary" href="/tiktok-candidates.csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>Download CSV of all weeks</a>'
+    grid = "".join(blocks) or '<div class="panel"><div class="placeholder"><h3>No candidates in the past week</h3><div>Once clips have 24h of stats they appear here.</div></div></div>'
+
+    # One-shot status banner from the last connect/post action.
+    msg = TIKTOK_RESULT.get("message", "")
+    err = TIKTOK_RESULT.get("error", "")
+    TIKTOK_RESULT.update({"message": "", "error": ""})
+    banner = ""
+    if err:
+        banner = f'<div class="panel" style="border-color:rgba(255,93,120,.5);margin-bottom:16px"><b style="color:#ff5d78">{html.escape(err)}</b></div>'
+    elif msg:
+        banner = f'<div class="panel" style="border-color:rgba(30,215,96,.5);margin-bottom:16px"><b style="color:var(--green)">{html.escape(msg)}</b></div>'
+
+    # Owner-only connection panel (hidden from public viewers).
+    if not tk_configured:
+        conn_panel = (
+            '<div class="panel" data-owner-only style="margin-bottom:16px">'
+            '<h3>Connect TikTok</h3>'
+            '<p class="sub" style="margin:0">TikTok isn\'t configured yet. Add <code>TIKTOK_CLIENT_KEY</code> and '
+            '<code>TIKTOK_CLIENT_SECRET</code> to your <code>.env</code>, then register this redirect URI in the TikTok portal:</p>'
+            f'<p style="font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--green);margin-top:8px">{html.escape(tiktok.redirect_uri())}</p>'
+            '</div>'
+        )
+    elif not tk_connected:
+        conn_panel = (
+            '<div class="panel" data-owner-only style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">'
+            '<div><h3 style="margin:0 0 4px">Connect your TikTok account</h3>'
+            '<span class="sub">Authorize PianoClip to post your top clips. Redirect URI: '
+            f'<code style="color:var(--green)">{html.escape(tiktok.redirect_uri())}</code></span></div>'
+            '<a class="btn primary" href="/tiktok/connect">' + TIKTOK_ICON + 'Connect TikTok</a>'
+            '</div>'
+        )
+    else:
+        name = html.escape(disp.get("display_name", "your TikTok"))
+        avatar = disp.get("avatar_url", "")
+        av = (f'<img src="{html.escape(avatar)}" alt="" style="width:36px;height:36px;border-radius:50%;object-fit:cover">'
+              if avatar else '')
+        conn_panel = (
+            '<div class="panel" data-owner-only style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">'
+            f'<div style="display:flex;align-items:center;gap:12px">{av}'
+            f'<div><b>Connected: {name}</b><div class="sub" style="margin:0">Use “Post to TikTok” on any clip below.</div></div></div>'
+            '<a class="btn" href="/tiktok/disconnect">Disconnect</a>'
+            '</div>'
+        )
+
+    body = banner + conn_panel + grid
+    top_actions = ""
+    if tk_connected:
+        top_actions += '<span class="pill ready" data-owner-only><span class="d"></span>TikTok connected</span>'
+    top_actions += '<a class="btn" href="/tiktok-candidates.csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>Download CSV</a>'
     return render_page(
         "tiktok", "YouTube winners → TikTok", "TikTok Candidates",
-        "The daily podium of clips worth reposting.", body, top_actions=top_actions,
+        "The daily podium of clips worth reposting — connect TikTok and post them in one click.",
+        body, top_actions=top_actions,
     )
 
 
