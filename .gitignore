@@ -25,3 +25,6 @@ processing/*
 !processing/.gitkeep
 
 tools/
+
+# PianoClip compliance website (hosted separately, not part of the dashboard)
+pianoclip-site/
