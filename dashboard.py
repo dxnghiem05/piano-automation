@@ -119,7 +119,7 @@ def is_safe_dashboard_path(value: str) -> bool:
     parsed = urlparse(value)
     if parsed.netloc or parsed.scheme:
         return False
-    return parsed.path in {"/", "/stats", "/queue", "/tracker", "/tiktok-candidates"}
+    return parsed.path in {"/", "/overview", "/stats", "/tracker", "/tiktok-candidates", "/experiment", "/data-science"}
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -187,21 +187,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_json({"lines": live_dashboard_log_lines(), "text": live_dashboard_log_text()})
             return
 
+        if path == "/overview":
+            self.send_html(viewer_mode_html(render_overview(), owner))
+            return
+
         if path == "/tracker":
             self.send_html(viewer_mode_html(render_tracker_page(), owner))
             return
 
         if path == "/queue":
-            query = parse_qs(parsed.query)
-            self.send_html(
-                viewer_mode_html(
-                    render_queue_page(
-                        parse_page(query.get("page", ["1"])[0]),
-                        parse_queue_sort(query.get("sort", ["oldest"])[0]),
-                    ),
-                    owner,
-                )
-            )
+            # Queue is folded into the Stats page now; keep the old link working.
+            self.redirect("/stats")
             return
 
         if path == "/tiktok-candidates":
@@ -213,22 +209,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if path == "/stats":
             query = parse_qs(parsed.query)
             selected_range = query.get("range", ["1d"])[0]
-            selected_project_week = query.get("project_week", [""])[0]
-            selected_project_sort = query.get("project_sort", ["recent"])[0]
-            selected_stats_page = parse_page(query.get("stats_page", ["1"])[0])
-            auto_refresh_started = auto_refresh_youtube_stats_if_stale()
-            self.send_html(
-                viewer_mode_html(
-                    render_stats_page(
-                        selected_range,
-                        selected_project_week,
-                        selected_project_sort,
-                        selected_stats_page,
-                        auto_refresh_started,
-                    ),
-                    owner,
-                )
-            )
+            auto_refresh_youtube_stats_if_stale()
+            self.send_html(viewer_mode_html(render_stats_page(selected_range), owner))
             return
 
         if path == "/data-science":
@@ -531,7 +513,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return default
 
         path = parsed.path or default
-        if path not in {"/", "/stats", "/queue", "/tracker", "/tiktok-candidates"}:
+        if path not in {"/", "/overview", "/stats", "/tracker", "/tiktok-candidates", "/experiment", "/data-science"}:
             return default
 
         return path + (f"?{parsed.query}" if parsed.query else "")
@@ -1557,356 +1539,263 @@ def upload_message(saved: int, upload_action: str) -> str:
 
 
 # ============================================================================
-# v4 dashboard UI — real multi-page rebuild (matches dashboard_revamp_preview.html)
-# Every page is a real server-rendered route. Numbers come from the live data
-# functions above; owner-only actions stay inside forms hidden from public viewers.
+# v5 dashboard UI — vibrant "Piano Shorts" concept, server-rendered & wired to
+# the live data functions. Home splash + real routes per tab. Owner-only actions
+# stay inside forms hidden from public viewers by the viewer-mode overlay.
 # ============================================================================
 
-STYLE_V4 = r"""<style>
+STYLE_V5 = r"""<style>
   :root{
-    --bg:#08090a;--panel:#121412;--panel-2:#171a17;--hover:#1d211d;
-    --line:rgba(255,255,255,.07);--line-2:rgba(255,255,255,.13);
-    --text:#f4f6f4;--muted:#98a098;--faint:#6a716a;
-    --green:#1ed760;--green-soft:rgba(30,215,96,.14);
-    --blue:#4f97ff;--teal:#24d6b6;--amber:#f5b544;--violet:#b18bff;--night:#6a5cff;
-    --radius:16px;--font:'Figtree',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    --green:#1ed760;--green-soft:rgba(30,215,96,.16);
+    --blue:#4f97ff;--violet:#8b6cff;--teal:#24d6b6;--amber:#f5b544;--rose:#ff5d78;
+    --text:#f6f8f6;--muted:#aeb6c2;--faint:#7c8595;
+    --panel:rgba(255,255,255,.045);--line:rgba(255,255,255,.10);
+    --font:'Figtree',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   }
   *{box-sizing:border-box}
-  html,body{margin:0;padding:0;background:var(--bg)}
-  body{font-family:var(--font);color:var(--text);-webkit-font-smoothing:antialiased;letter-spacing:-.011em;position:relative;overflow-x:hidden}
+  html,body{margin:0;min-height:100%}
   a{color:inherit;text-decoration:none}
+  body{font-family:var(--font);color:var(--text);background:#05060a;-webkit-font-smoothing:antialiased;letter-spacing:-.011em;min-height:100vh;position:relative;overflow-x:hidden}
   ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:#2a2e2a;border-radius:8px}
-  .bg-art{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
-  .blob{position:absolute;border-radius:50%;filter:blur(90px)}
-  .blob.b1{width:520px;height:520px;background:radial-gradient(circle,#1ed760,transparent 70%);top:-160px;left:180px;opacity:.26}
-  .blob.b2{width:460px;height:460px;background:radial-gradient(circle,#1f6bff,transparent 70%);top:120px;right:-140px;opacity:.15}
-  .blob.b3{width:420px;height:420px;background:radial-gradient(circle,#6a5cff,transparent 70%);bottom:-160px;left:40%;opacity:.13}
-  .blob.b4{width:360px;height:360px;background:radial-gradient(circle,#24d6b6,transparent 70%);bottom:120px;left:180px;opacity:.11}
-  .wave{position:absolute;top:0;left:248px;right:0;height:340px;opacity:.5}
-  .grain{position:absolute;inset:0;opacity:.035;background-image:radial-gradient(#fff 1px,transparent 1px);background-size:4px 4px}
 
-  .app{position:relative;z-index:1;display:grid;grid-template-columns:248px 1fr;min-height:100vh}
-  .sidebar{background:linear-gradient(180deg,rgba(13,15,13,.92),rgba(8,9,10,.92));backdrop-filter:blur(8px);border-right:1px solid var(--line);padding:22px 16px;display:flex;flex-direction:column;gap:5px;position:sticky;top:0;height:100vh}
-  .brand{display:flex;align-items:center;gap:11px;padding:6px 10px 22px}
-  .brand .logo{width:34px;height:34px;border-radius:50%;background:var(--green);display:grid;place-items:center;flex:none;box-shadow:0 0 0 5px var(--green-soft),0 0 24px rgba(30,215,96,.35)}
-  .brand .logo svg{width:18px;height:18px}
-  .brand b{font-size:15px;font-weight:800;letter-spacing:-.02em}.brand span{display:block;font-size:11px;color:var(--faint);font-weight:600;margin-top:1px}
-  .nav-label{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);padding:14px 12px 6px;font-weight:700}
-  .nav-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:11px;color:var(--muted);font-size:13.5px;font-weight:600;cursor:pointer;transition:.18s;user-select:none}
-  .nav-item svg{width:18px;height:18px;flex:none}
-  .nav-item:hover{background:var(--hover);color:var(--text)}
-  .nav-item.active{background:var(--green-soft);color:var(--green)}
-  .nav-group{margin:0}
-  .nav-group summary{list-style:none;display:flex;align-items:center;gap:2px;cursor:pointer}
-  .nav-group summary::-webkit-details-marker{display:none}
-  .nav-group summary .nav-item{flex:1}
-  .nav-group summary .nav-chev{width:16px;height:16px;color:var(--faint);flex:none;margin-right:6px;transition:transform .25s}
-  .nav-group[open] summary .nav-chev{transform:rotate(90deg);color:var(--green)}
-  .nav-children{display:flex;flex-direction:column;gap:3px;margin:3px 0 3px 30px;padding-left:10px;border-left:1px solid var(--line-2)}
-  .nav-sub{padding:8px 12px;border-radius:9px;color:var(--muted);font-size:12.5px;font-weight:600;transition:.15s}
-  .nav-sub:hover{background:var(--hover);color:var(--text)}
-  .nav-sub.active{background:var(--green-soft);color:var(--green)}
-  .ds-teaser{display:flex;align-items:center;justify-content:space-between;gap:16px;cursor:pointer;transition:.18s;margin-bottom:20px}
-  .ds-teaser:hover{border-color:var(--line-2);transform:translateY(-2px)}
-  .ds-teaser h2{margin:0 0 4px;font-size:16px;font-weight:750}
-  .ds-teaser .go{width:22px;height:22px;color:var(--green);flex:none}
-  .sidebar .spacer{flex:1}
-  .owner-card{margin-top:8px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);display:flex;align-items:center;gap:10px}
-  .owner-card .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
-  .owner-card small{color:var(--faint);font-size:11px;display:block}.owner-card b{font-size:12.5px}
+  .stage{position:fixed;inset:0;z-index:0;overflow:hidden}
+  .wash{position:absolute;inset:-12%;
+    background:
+      radial-gradient(48% 40% at 20% 16%, rgba(139,108,255,.50), transparent 60%),
+      radial-gradient(46% 42% at 84% 24%, rgba(79,151,255,.42), transparent 60%),
+      radial-gradient(65% 55% at 50% 104%, rgba(30,215,96,.30), transparent 60%),
+      radial-gradient(40% 40% at 92% 88%, rgba(245,105,120,.28), transparent 60%),
+      linear-gradient(180deg,#070812,#04060b 60%,#02040a)}
+  .blob{position:absolute;border-radius:50%;filter:blur(95px);mix-blend-mode:screen;opacity:.5;will-change:transform}
+  .blob.g{width:640px;height:640px;background:radial-gradient(circle,#1ed760,transparent 68%);top:-190px;left:6%;animation:drift 16s ease-in-out infinite}
+  .blob.v{width:560px;height:560px;background:radial-gradient(circle,#8b6cff,transparent 68%);top:-130px;right:5%;animation:drift 19s ease-in-out infinite reverse}
+  .blob.b{width:520px;height:520px;background:radial-gradient(circle,#4f97ff,transparent 68%);bottom:-170px;left:42%;animation:drift 22s ease-in-out infinite}
+  @keyframes drift{0%,100%{transform:translate(0,0)}50%{transform:translate(26px,-22px)}}
+  .grain{position:absolute;inset:0;opacity:.05;background-image:radial-gradient(#fff 1px,transparent 1px);background-size:4px 4px}
+  .keys{position:absolute;left:50%;bottom:-46px;transform:translateX(-50%) perspective(1150px) rotateX(51deg);
+    transform-origin:bottom center;display:flex;gap:4px;opacity:.46;filter:drop-shadow(0 -8px 50px rgba(79,151,255,.42));transition:opacity .6s}
+  body.tab .keys{opacity:.16}
+  .key{width:50px;height:278px;border-radius:0 0 8px 8px;background:linear-gradient(180deg,#e9edf6,#aab3c6);position:relative;box-shadow:inset 0 -12px 20px rgba(0,0,0,.25)}
+  .key.g{background:linear-gradient(180deg,#c9ffe0,#1ed760);box-shadow:0 0 30px rgba(30,215,96,.8)}
+  .key.v{background:linear-gradient(180deg,#e5dcff,#8b6cff);box-shadow:0 0 30px rgba(139,108,255,.8)}
+  .key.b{background:linear-gradient(180deg,#d5e7ff,#4f97ff);box-shadow:0 0 30px rgba(79,151,255,.8)}
+  .bk{position:absolute;top:0;right:-14px;width:28px;height:176px;border-radius:0 0 5px 5px;background:linear-gradient(180deg,#181c26,#05070c);z-index:3;box-shadow:0 6px 8px rgba(0,0,0,.5)}
+  .key.nb .bk{display:none}
+  .note{position:absolute;bottom:3%;color:rgba(255,255,255,.45);filter:drop-shadow(0 0 7px rgba(30,215,96,.5));will-change:transform,opacity;pointer-events:none}
+  @keyframes rise{0%{transform:translateY(20px) rotate(0);opacity:0}12%{opacity:.9}85%{opacity:.6}100%{transform:translateY(-48vh) rotate(16deg);opacity:0}}
 
-  .main{padding:26px 34px 60px;max-width:1520px}
-  .topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:24px;flex-wrap:wrap}
-  .eyebrow{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--green);font-weight:700;margin:0 0 6px}
-  .topbar h1{margin:0;font-size:30px;font-weight:850;letter-spacing:-.03em}
-  .topbar .sub{color:var(--muted);font-size:13.5px;margin-top:4px}
+  /* home */
+  .home{position:relative;z-index:2;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 20px}
+  .shell{position:relative;z-index:2;width:min(1160px,94vw);margin:0 auto}
+  .mark{width:54px;height:54px;border-radius:50%;background:var(--green);display:grid;place-items:center;margin:0 auto 8px;box-shadow:0 0 0 7px var(--green-soft),0 0 40px rgba(30,215,96,.6);animation:beat 3.4s ease-in-out infinite}
+  @keyframes beat{0%,100%{box-shadow:0 0 0 7px var(--green-soft),0 0 32px rgba(30,215,96,.5)}50%{box-shadow:0 0 0 10px var(--green-soft),0 0 56px rgba(30,215,96,.85)}}
+  .mark svg{width:27px;height:27px}
+  h1.big{font-size:clamp(40px,6.4vw,72px);font-weight:850;margin:6px 0 0;letter-spacing:-.045em;background:linear-gradient(180deg,#fff,#cfe9d9);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .kicker{margin:14px 0 4px;letter-spacing:.42em;font-size:13px;font-weight:700;color:rgba(255,255,255,.72);text-transform:uppercase}
+  .stat-line{color:var(--muted);font-size:13.5px;margin-bottom:26px;font-weight:600}.stat-line b{color:var(--green)}
+  .glass{position:relative;margin:0 auto;padding:32px 26px 28px;border-radius:26px;width:min(1180px,95vw);
+    background:linear-gradient(180deg,rgba(255,255,255,.13),rgba(255,255,255,.045));border:1px solid rgba(255,255,255,.18);
+    backdrop-filter:blur(26px) saturate(150%);-webkit-backdrop-filter:blur(26px) saturate(150%);
+    box-shadow:0 40px 120px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.25);transition:transform .2s cubic-bezier(.2,.7,.2,1)}
+  .glass::before{content:"";position:absolute;top:0;left:38px;right:38px;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent)}
+  .grid5{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+  .tile{position:relative;overflow:hidden;padding:24px 16px 22px;border-radius:18px;cursor:pointer;text-align:center;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);transition:transform .28s cubic-bezier(.2,.8,.2,1),background .28s,border-color .28s,box-shadow .28s;display:block}
+  .tile::after{content:"";position:absolute;width:180px;height:180px;border-radius:50%;filter:blur(46px);top:-100px;right:-60px;opacity:0;transition:opacity .35s;background:var(--ac,var(--green))}
+  .tile:hover{transform:translateY(-8px) scale(1.035);background:rgba(255,255,255,.07);border-color:color-mix(in srgb,var(--ac,var(--green)) 55%,transparent);box-shadow:0 22px 50px rgba(0,0,0,.4)}
+  .tile:hover::after{opacity:.55}
+  .tile .ic{width:56px;height:56px;margin:0 auto 15px;display:grid;place-items:center;border-radius:15px;color:#eef2f8;background:rgba(255,255,255,.04);transition:transform .35s cubic-bezier(.2,.8,.2,1),color .3s,background .3s}
+  .tile:hover .ic{color:var(--ac);background:color-mix(in srgb,var(--ac) 18%,transparent);transform:translateY(-2px) scale(1.08)}
+  .tile .ic svg{width:30px;height:30px;transition:filter .3s}
+  .tile:hover .ic svg{filter:drop-shadow(0 0 10px color-mix(in srgb,var(--ac) 90%,transparent))}
+  .tile b{display:block;font-size:15px;font-weight:750;color:#f6f8f6}
+  .tile small{display:block;color:var(--muted);font-size:11.5px;margin-top:3px;opacity:.55;transition:.3s}
+  .tile:hover small{opacity:1;color:#cfd6e0}
+  .tile .go{position:absolute;top:13px;right:14px;color:var(--ac);opacity:0;transform:translateX(-4px);transition:.3s;font-weight:800}
+  .tile:hover .go{opacity:1;transform:none}
+  .t1{--ac:#1ed760}.t2{--ac:#4f97ff}.t3{--ac:#ff5d78}.t4{--ac:#f5b544}.t5{--ac:#8b6cff}
+  .eq rect{transform-origin:bottom;animation:bar 1.1s ease-in-out infinite;animation-play-state:paused}
+  .tile:hover .eq rect{animation-play-state:running}
+  .eq rect:nth-child(2){animation-delay:.18s}.eq rect:nth-child(3){animation-delay:.36s}.eq rect:nth-child(4){animation-delay:.1s}
+  @keyframes bar{0%,100%{transform:scaleY(.4)}50%{transform:scaleY(1)}}
+  .social{margin-top:32px;display:flex;justify-content:center;gap:22px}
+  .social a{width:44px;height:44px;display:grid;place-items:center;border-radius:50%;color:#cdd4de;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);transition:transform .25s cubic-bezier(.2,.8,.2,1),color .25s,box-shadow .25s,background .25s}
+  .social a:hover{transform:translateY(-4px) scale(1.12);color:#fff;background:var(--green-soft);box-shadow:0 10px 26px rgba(30,215,96,.4);border-color:transparent}
+  .social a svg{width:19px;height:19px}
+
+  /* tab chrome */
+  .bar{position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:16px;padding:14px clamp(16px,4vw,40px);backdrop-filter:blur(14px);background:linear-gradient(180deg,rgba(6,8,12,.72),rgba(6,8,12,.3));border-bottom:1px solid var(--line)}
+  .backhome{display:inline-flex;align-items:center;gap:9px;font-weight:800;font-size:14px;cursor:pointer;padding:8px 12px;border-radius:11px;transition:.2s}
+  .backhome:hover{background:rgba(255,255,255,.06)}
+  .backhome .dot{width:22px;height:22px;border-radius:50%;background:var(--green);display:grid;place-items:center}
+  .backhome .dot svg{width:12px;height:12px}
+  .pills{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+  .pills a{font-size:12.5px;font-weight:700;color:var(--muted);padding:8px 13px;border-radius:999px;transition:.18s}
+  .pills a:hover{background:rgba(255,255,255,.06);color:var(--text)}
+  .pills a.on{background:var(--green-soft);color:var(--green)}
+  .page{padding:26px clamp(16px,4vw,40px) 90px}
+  .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--green);font-weight:800;margin:0 0 6px}
+  .h2{font-size:clamp(24px,3vw,34px);font-weight:850;letter-spacing:-.03em;margin:0}
+  .sub{color:var(--muted);font-size:14px;margin-top:5px}
+  .topline{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:6px}
   .top-actions{display:flex;align-items:center;gap:10px}
+  .panel{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px;backdrop-filter:blur(8px)}
+  .panel h3{margin:0 0 14px;font-size:15px;font-weight:750}
+  .row{display:grid;gap:16px}
+  .r-4{grid-template-columns:repeat(4,1fr)}.r-3{grid-template-columns:repeat(3,1fr)}.r-2{grid-template-columns:1.5fr 1fr}
+  @media(max-width:960px){.r-4,.r-3,.r-2,.grid5{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.r-4,.r-3,.r-2,.grid5{grid-template-columns:1fr}}
+  .mt{margin-top:16px}
+
   .pill{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:999px;font-size:12.5px;font-weight:700}
   .pill.ready{background:var(--green-soft);color:var(--green)}
-  .pill.ready .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s infinite}
+  .pill.ready .d{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-  .btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:999px;font:700 13px var(--font);cursor:pointer;border:1px solid var(--line-2);background:rgba(255,255,255,.02);color:var(--text);transition:.15s}
-  .btn:hover{background:var(--hover)}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:999px;font:800 13px var(--font);cursor:pointer;border:1px solid var(--line);background:rgba(255,255,255,.03);color:var(--text);transition:.18s}
+  .btn:hover{background:rgba(255,255,255,.08)}
   .btn.primary{background:var(--green);color:#04140a;border-color:var(--green)}
-  .btn.primary:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(30,215,96,.3)}
+  .btn.primary:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(30,215,96,.4)}
   .btn svg{width:15px;height:15px}
   form.inline{display:inline-flex;margin:0}
 
-  .panel{position:relative;background:linear-gradient(180deg,rgba(255,255,255,.028),rgba(255,255,255,.006)),var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;overflow:hidden}
-  .panel::before{content:"";position:absolute;top:0;left:24px;right:24px;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent)}
-  .panel-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px}
-  .panel-h h2{margin:0;font-size:16px;font-weight:750}.panel-h .hint{color:var(--faint);font-size:12px}
+  .kpi{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;transition:.25s}
+  .kpi:hover{transform:translateY(-4px);border-color:color-mix(in srgb,var(--kc,var(--green)) 50%,transparent);box-shadow:0 18px 40px rgba(0,0,0,.35)}
+  .kpi::after{content:"";position:absolute;width:150px;height:150px;border-radius:50%;filter:blur(46px);top:-80px;right:-50px;opacity:.4;background:var(--kc,var(--green))}
+  .kpi .lab{color:var(--muted);font-size:12.5px;font-weight:600}
+  .kpi .val{font-size:30px;font-weight:850;letter-spacing:-.03em;margin-top:8px}
+  .kpi .d{font-size:12px;font-weight:700;color:var(--kc,var(--green));margin-top:3px}
+  .kc-g{--kc:#1ed760}.kc-b{--kc:#4f97ff}.kc-t{--kc:#24d6b6}.kc-a{--kc:#f5b544}
+  .hero-num{font-size:clamp(46px,7vw,84px);font-weight:900;letter-spacing:-.04em;line-height:1;background:linear-gradient(180deg,#fff,#bfe9cf);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  canvas{max-height:230px}
 
-  .status-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
-  .chip{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px 16px;transition:.2s}
-  .chip:hover{border-color:var(--line-2);transform:translateY(-2px)}
-  .chip .l{color:var(--muted);font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px}
-  .chip .l svg{width:15px;height:15px;color:var(--kp,var(--green))}
-  .chip .v{font-size:24px;font-weight:850;letter-spacing:-.03em;margin-top:8px}
-  .chip::after{content:"";position:absolute;width:120px;height:120px;border-radius:50%;filter:blur(40px);top:-70px;right:-50px;opacity:.4;background:var(--kp,var(--green))}
-  .chip.b{--kp:var(--blue)}.chip.t{--kp:var(--teal)}.chip.a{--kp:var(--amber)}
+  .pk-wrap{display:flex;align-items:flex-end;gap:10px;height:220px;padding-top:10px}
+  .pk{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
+  .pk .col{width:100%;max-width:52px;border-radius:8px 8px 6px 6px;background:linear-gradient(180deg,#e9edf6,#aab3c6);transition:transform .3s,box-shadow .3s;box-shadow:inset 0 -10px 16px rgba(0,0,0,.2)}
+  .pk.best .col{background:linear-gradient(180deg,#c9ffe0,#1ed760);box-shadow:0 0 24px rgba(30,215,96,.7)}
+  .pk:hover .col{transform:translateY(-5px) scaleY(1.02);box-shadow:0 0 26px rgba(79,151,255,.6)}
+  .pk .v{font-size:12px;font-weight:800;margin-bottom:6px;color:#eef2f8}
+  .pk .h{font-size:11px;color:var(--muted);margin-top:8px;font-weight:700}
 
-  .auto-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px}
-  .auto{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius);padding:16px;cursor:pointer;transition:.18s;background:var(--panel);display:block}
-  .auto::after{content:"";position:absolute;width:150px;height:150px;border-radius:50%;filter:blur(44px);bottom:-80px;right:-50px;opacity:.5;background:var(--ac)}
-  .auto:hover{transform:translateY(-3px);border-color:var(--line-2)}
-  .auto .a-ic{position:relative;z-index:1;width:44px;height:44px;border-radius:12px;display:grid;place-items:center;margin-bottom:34px;background:color-mix(in srgb,var(--ac) 18%,transparent);color:var(--ac)}
-  .auto .a-ic svg{width:22px;height:22px}
-  .auto b{position:relative;z-index:1;display:block;font-size:14px;font-weight:750}
-  .auto small{position:relative;z-index:1;color:var(--muted);font-size:11.5px}
-  .auto button.bare{all:unset;cursor:pointer;display:block;width:100%}
-  .g1{--ac:#1ed760}.g2{--ac:#4f97ff}.g3{--ac:#24d6b6}.g4{--ac:#ff5d78}.g5{--ac:#b18bff}
+  .lead{display:grid;grid-template-columns:34px 1fr auto;gap:14px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+  .lead:last-child{border-bottom:0}
+  .lead .rk{font-weight:900;font-size:16px;text-align:center;background:linear-gradient(180deg,#fff,#9fdcb4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .lead .nm b{display:block;font-size:14px}.lead .nm small{color:var(--faint);font-size:11.5px;font-family:ui-monospace,Menlo,monospace}
+  .lead .nu{text-align:right}.lead .nu b{display:block}.lead .nu small{color:var(--green);font-size:11.5px}
 
-  .grid-2{display:grid;grid-template-columns:1.35fr 1fr;gap:16px;margin-bottom:20px}
-  .grid-3{display:grid;grid-template-columns:1fr 1fr 1.1fr;gap:16px;margin-bottom:20px}
+  .set{display:flex;align-items:center;gap:14px;padding:13px 14px;border-radius:13px;border:1px solid var(--line);background:var(--panel);margin-bottom:9px;transition:.2s}
+  .set:hover{transform:translateX(4px);border-color:rgba(30,215,96,.5);background:rgba(30,215,96,.06)}
+  .set .np{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;background:var(--green-soft);color:var(--green);flex:none}
+  .set .np svg{width:16px;height:16px}
+  .set .mid{flex:1}.set .mid b{font-size:14px}.set .mid small{display:block;color:var(--faint);font-size:11.5px;font-family:ui-monospace,Menlo,monospace}
+  .set .time{color:var(--muted);font-size:12.5px;font-weight:700}
+  .badge{font-size:11px;font-weight:800;padding:3px 10px;border-radius:999px;margin-left:12px}
+  .badge.up{background:var(--green-soft);color:var(--green)}.badge.sch{background:rgba(79,151,255,.16);color:var(--blue)}
 
-  .chart-wrap{margin-bottom:20px}
-  .chart-glow{position:absolute;width:420px;height:220px;background:radial-gradient(ellipse,rgba(30,215,96,.18),transparent 70%);top:-40px;left:-30px;pointer-events:none}
-  .chart-top{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:8px;position:relative}
-  .metric-big{font-size:44px;font-weight:850;letter-spacing:-.035em;line-height:1;background:linear-gradient(180deg,#fff,#cfeede);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-  .metric-cap{color:var(--muted);font-size:13px;margin-top:6px}.metric-cap b{color:var(--green)}
-  .tabs{display:inline-flex;gap:4px;background:rgba(0,0,0,.35);border:1px solid var(--line);border-radius:999px;padding:4px}
-  .tab{padding:6px 14px;border-radius:999px;font-size:12.5px;font-weight:700;color:var(--muted);cursor:pointer;border:none;background:transparent;transition:.16s}
-  .tab.active{background:var(--green);color:#04140a}
-  canvas.chart{max-height:280px;position:relative;z-index:1}
+  .podium{display:grid;grid-template-columns:1fr 1.15fr 1fr;gap:14px;align-items:end;margin-bottom:8px}
+  .pod{position:relative;overflow:hidden;border-radius:16px;padding:20px 16px;text-align:center;border:1px solid var(--line);background:var(--panel);transition:.25s}
+  .pod::after{content:"";position:absolute;inset:0;opacity:.14;background:var(--pc)}
+  .pod .medal{font-size:26px}.pod .w{font-size:18px;font-weight:850;margin:8px 0 2px;position:relative}
+  .pod .c{font-size:11px;color:var(--faint);font-family:ui-monospace,Menlo,monospace;position:relative}
+  .pod .met{margin-top:10px;font-size:13px;position:relative}.pod .met b{color:#fff}
+  .pod.gold{--pc:#f5b544;transform:translateY(-10px)}.pod.silver{--pc:#c8ccd2}.pod.bronze{--pc:#e08a4b}
+  .pod:hover{transform:translateY(-14px);box-shadow:0 20px 44px rgba(0,0,0,.4)}
+  .pod.gold:hover{transform:translateY(-22px)}
+  .day-block{margin-top:20px}.day-block h4{margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:700}
 
-  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}
-  .kpi{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;transition:.2s}
-  .kpi:hover{transform:translateY(-2px);border-color:var(--line-2)}
-  .kpi::after{content:"";position:absolute;width:180px;height:180px;border-radius:50%;filter:blur(50px);top:-90px;right:-70px;opacity:.5;background:var(--kp,var(--green))}
-  .kpi .k-top{display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1}
-  .kpi .k-label{color:var(--muted);font-size:12.5px;font-weight:600}
-  .kpi .k-ic{width:30px;height:30px;border-radius:9px;background:color-mix(in srgb,var(--kp,var(--green)) 16%,transparent);display:grid;place-items:center}
-  .kpi .k-ic svg{width:16px;height:16px;color:var(--kp,var(--green))}
-  .kpi .k-value{font-size:30px;font-weight:850;letter-spacing:-.03em;margin:12px 0 2px;position:relative;z-index:1}
-  .kpi .k-delta{font-size:12px;font-weight:700;position:relative;z-index:1}.kpi .k-delta.up{color:var(--kp,var(--green))}.kpi .k-delta.flat{color:var(--faint)}
-  .kpi.g{--kp:var(--green)}.kpi.b{--kp:var(--blue)}.kpi.t{--kp:var(--teal)}.kpi.a{--kp:var(--amber)}
+  .lib{display:grid;grid-template-columns:repeat(7,1fr);gap:12px}
+  @media(max-width:1100px){.lib{grid-template-columns:repeat(4,1fr)}}
+  @media(max-width:640px){.lib{grid-template-columns:repeat(2,1fr)}}
+  .alb{border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--panel);transition:.25s;cursor:pointer;display:block}
+  .alb:hover{transform:translateY(-6px) scale(1.03);box-shadow:0 18px 40px rgba(0,0,0,.4);border-color:rgba(139,108,255,.5)}
+  .alb .cover{height:104px;background:#0e1118 center/cover no-repeat;position:relative}
+  .alb .play{position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.45);display:grid;place-items:center;opacity:0;transition:.25s}
+  .alb:hover .play{opacity:1}.alb .play svg{width:11px;height:11px;color:#fff}
+  .alb .meta{padding:10px 11px}.alb .meta b{font-size:12.5px;display:block}.alb .meta small{color:var(--faint);font-size:10.5px;font-family:ui-monospace,Menlo,monospace}
+  .dlbtn{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:999px;font-weight:800;font-size:13px;cursor:pointer;color:#04140a;background:var(--green);transition:.2s}
+  .dlbtn:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(30,215,96,.4)}.dlbtn svg{width:15px;height:15px}
 
-  .bar-row{margin-bottom:14px}.bar-row:last-child{margin-bottom:0}
-  .bar-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;font-size:13px}
-  .bar-head b{font-weight:700}.bar-head span{color:var(--muted);font-size:11.5px}
-  .track{height:9px;background:#1e211e;border-radius:999px;overflow:hidden}
-  .fill{height:100%;border-radius:999px}
-  .fill.green{background:linear-gradient(90deg,#1ed760,#8ef0ab)}.fill.teal{background:linear-gradient(90deg,#1aa7ff,#24d6b6)}
-  .vrow{display:grid;grid-template-columns:24px 1fr auto;gap:12px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line)}.vrow:last-child{border-bottom:0}
-  .vrank{font-weight:850;font-size:14px;text-align:center;background:linear-gradient(180deg,#fff,#9fdcb4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-  .vname b{display:block;font-size:13.5px}.vname small{color:var(--faint);font-size:11.5px}
-  .vnum{text-align:right}.vnum b{display:block;font-size:13.5px}.vnum small{color:var(--green);font-size:11.5px}
+  .octave{display:flex;gap:5px;justify-content:center;margin:10px 0 22px;flex-wrap:wrap}
+  .wkey{width:58px;height:150px;border-radius:0 0 9px 9px;background:linear-gradient(180deg,#20242e,#12151c);border:1px solid rgba(255,255,255,.08);position:relative;display:flex;align-items:flex-end;justify-content:center;padding-bottom:12px;transition:.3s}
+  .wkey .n{font-size:12px;font-weight:800;color:var(--faint)}
+  .wkey.done{background:linear-gradient(180deg,#123a24,#0c2417)}.wkey.done .n{color:#8ef0ab}
+  .wkey.live{background:linear-gradient(180deg,#c9ffe0,#1ed760);box-shadow:0 0 30px rgba(30,215,96,.75);animation:beat 2.4s infinite}.wkey.live .n{color:#04140a}
+  .wkey:hover{transform:translateY(-6px)}
+  .phase{border:1px solid var(--line);border-radius:14px;background:var(--panel);margin-bottom:10px;overflow:hidden}
+  .phase summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:14px;padding:16px}
+  .phase summary::-webkit-details-marker{display:none}
+  .phase .wk{font-size:11px;font-weight:800;color:var(--green);width:64px;flex:none}
+  .phase .pt b{display:block;font-size:15px}.phase .pt small{color:var(--muted);font-size:12.5px}
+  .phase .st{margin-left:auto;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:4px 10px;border-radius:999px}
+  .st.live{background:var(--green-soft);color:var(--green)}.st.done{background:rgba(255,255,255,.06);color:var(--faint)}.st.next{background:rgba(79,151,255,.14);color:var(--blue)}
+  .phase .body{padding:0 16px 18px 78px;color:var(--muted);font-size:13px;line-height:1.6}
+  .phase .body .l{color:var(--faint);text-transform:uppercase;font-size:10px;letter-spacing:.1em;font-weight:800;display:block;margin:10px 0 3px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;color:var(--green);background:var(--green-soft);padding:4px 10px;border-radius:999px;margin:6px 6px 0 0}
+  .prog{height:8px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin:6px 0 4px}
+  .prog i{display:block;height:100%;background:linear-gradient(90deg,#1ed760,#8ef0ab);border-radius:999px}
 
-  .exp{display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-bottom:1px solid var(--line)}.exp:last-child{border-bottom:0}
-  .exp .wk{flex:none;width:64px;font-size:11px;font-weight:800;color:var(--green);letter-spacing:.04em;padding-top:2px}
-  .exp .body b{display:block;font-size:13.5px}.exp .body small{color:var(--muted);font-size:12px}
-  .exp .status{margin-left:auto;flex:none;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;padding:4px 9px;border-radius:999px}
-  .st-live{background:var(--green-soft);color:var(--green);animation:glow 2.2s infinite}
-  @keyframes glow{0%,100%{box-shadow:0 0 0 1px rgba(30,215,96,.25)}50%{box-shadow:0 0 14px rgba(30,215,96,.5)}}
-  .st-next{background:rgba(79,151,255,.12);color:var(--blue)}.st-done{background:rgba(255,255,255,.05);color:var(--faint)}
-
-  details.accw{border-bottom:1px solid var(--line)}details.accw:last-child{border-bottom:0}
-  details.accw summary{list-style:none;display:flex;gap:14px;align-items:center;padding:16px 0;cursor:pointer}
-  details.accw summary::-webkit-details-marker{display:none}
-  details.accw summary .wk{flex:none;width:70px;font-size:11px;font-weight:800;color:var(--green);letter-spacing:.04em}
-  details.accw summary .body b{display:block;font-size:14.5px}details.accw summary .body small{color:var(--muted);font-size:12.5px}
-  details.accw summary .status{flex:none;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;padding:4px 9px;border-radius:999px}
-  details.accw summary .chev{flex:none;color:var(--faint);transition:transform .3s;width:18px;height:18px}
-  details.accw[open] summary .chev{transform:rotate(90deg);color:var(--green)}
-  .acc-inner{padding:0 0 20px 84px;color:var(--muted);font-size:13px;line-height:1.65}
-  .acc-inner .lab{color:var(--faint);text-transform:uppercase;font-size:10.5px;letter-spacing:.1em;font-weight:800;display:block;margin:12px 0 4px}
-  .acc-inner .lab:first-child{margin-top:0}
-  .acc-inner .tags{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}
-  .acc-inner .tag{font-size:11px;font-weight:700;color:var(--green);background:var(--green-soft);padding:4px 10px;border-radius:999px}
-
-  .qtable{width:100%;border-collapse:collapse;font-size:13px}
-  .qtable th{text-align:left;color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;font-weight:800;padding:0 12px 12px}
-  .qtable td{padding:12px;border-top:1px solid var(--line)}
-  .qtable tbody tr{transition:background .15s}.qtable tbody tr:hover{background:var(--hover)}
-  .qtable .clip{color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-size:12px}
-  .qtable .word{font-weight:700}
-  .table-wrap{overflow-x:auto}
-  .ds-scroll{max-height:64vh;overflow:auto;border:1px solid var(--line);border-radius:12px}
-  .ds-scroll table{margin:0}
-  .ds-scroll thead th{position:sticky;top:0;z-index:2;background:#141613;padding:12px;border-bottom:1px solid var(--line-2)}
-  .ds-scroll td{white-space:nowrap}
-  .badge{font-size:11px;font-weight:800;padding:3px 10px;border-radius:999px}
-  .badge.sch{background:rgba(79,151,255,.14);color:var(--blue)}.badge.up{background:var(--green-soft);color:var(--green)}.badge.def{background:rgba(245,181,68,.15);color:var(--amber)}.badge.fail{background:rgba(255,93,120,.16);color:#ff5d78}.badge.wait{background:rgba(255,255,255,.06);color:var(--muted)}
-
-  .tt-day{margin-bottom:18px}
-  .tt-day .dh{display:flex;align-items:baseline;gap:10px;margin-bottom:11px}
-  .tt-day .dh h3{margin:0;font-size:15px}.tt-day .dh span{color:var(--faint);font-size:12px;font-weight:600}
-  .tt-day .dh .live{margin-left:auto;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--green);background:var(--green-soft);padding:3px 9px;border-radius:999px}
-  .tt-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-  .tt-card{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:14px;padding:15px;background:var(--panel)}
-  .tt-card::after{content:"";position:absolute;width:120px;height:120px;border-radius:50%;filter:blur(40px);top:-70px;right:-50px;opacity:.4;background:var(--rc,var(--green))}
-  .tt-card .rank{font-size:11px;font-weight:800;color:var(--rc,var(--green))}
-  .tt-card .w{font-size:16px;font-weight:800;margin:6px 0 2px}
-  .tt-card .c{color:var(--faint);font-family:ui-monospace,Menlo,monospace;font-size:11px}
-  .tt-card .m{display:flex;gap:14px;margin-top:12px;font-size:12px}
-  .tt-card .m b{display:block;font-size:15px}.tt-card .m span{color:var(--muted);font-size:11px}
-  .r1{--rc:#f5b544}.r2{--rc:#c8ccd2}.r3{--rc:#e08a4b}
-
+  .chip{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px 16px}
+  .chip .l{color:var(--muted);font-size:12px;font-weight:600}.chip .v{font-size:22px;font-weight:850;margin-top:7px}
+  .log{background:#06070688;border:1px solid var(--line);border-radius:12px;padding:14px 16px;font:500 12px ui-monospace,Menlo,monospace;color:#b7c0b7;margin-top:14px;max-height:210px;overflow:auto}
+  .log div{padding:2px 0}.log .t{color:var(--faint)}
+  .upzone{border:1.5px dashed var(--line);border-radius:14px;padding:18px;text-align:center;background:linear-gradient(180deg,rgba(30,215,96,.05),transparent)}
+  .now-card{border:1px solid rgba(30,215,96,.4);background:linear-gradient(180deg,rgba(30,215,96,.1),transparent);border-radius:16px;padding:18px;margin-bottom:16px;display:flex;align-items:center;gap:16px}
+  .now-card .big-np{width:52px;height:52px;border-radius:14px;background:var(--green);color:#04140a;display:grid;place-items:center;flex:none;animation:beat 3s infinite}
+  .now-card .big-np svg{width:24px;height:24px}
   .chipset{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
   .fchip{font-size:12px;font-weight:700;color:var(--muted);background:var(--panel);border:1px solid var(--line);padding:6px 12px;border-radius:999px}
   .fchip.active{background:var(--green-soft);color:var(--green);border-color:transparent}
-  .pager{display:flex;gap:6px;align-items:center;margin-top:16px;flex-wrap:wrap}
-  .pager a,.pager span{font-size:12.5px;font-weight:700;padding:6px 11px;border-radius:9px;color:var(--muted);border:1px solid var(--line)}
-  .pager a:hover{background:var(--hover);color:var(--text)}
-  .pager .cur{background:var(--green-soft);color:var(--green);border-color:transparent}
-  .pager .off{opacity:.35}
-  .log{background:#06070688;border:1px solid var(--line);border-radius:12px;padding:14px 16px;font:500 12px ui-monospace,Menlo,monospace;color:#b7c0b7;margin-top:14px;max-height:220px;overflow:auto}
-  .log div{padding:2px 0}.log .t{color:var(--faint)}
-  .upload-zone{border:1.5px dashed var(--line-2);border-radius:14px;padding:20px;text-align:center;background:linear-gradient(180deg,rgba(30,215,96,.05),transparent)}
-  select.mini{background:var(--panel);color:var(--text);border:1px solid var(--line-2);border-radius:8px;padding:6px 10px;font:700 12px var(--font)}
+  .ds-scroll{max-height:64vh;overflow:auto;border:1px solid var(--line);border-radius:12px}
+  .ds-scroll table{margin:0;width:100%;border-collapse:collapse;font-size:13px}
+  .ds-scroll th{position:sticky;top:0;z-index:2;background:#141613;text-align:left;color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:800;padding:12px;border-bottom:1px solid var(--line)}
+  .ds-scroll td{padding:11px 12px;border-top:1px solid var(--line);white-space:nowrap}
+  .ds-scroll tbody tr:hover{background:rgba(255,255,255,.03)}
+  .ds-scroll .clip{color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-size:12px}.ds-scroll .word{font-weight:700}
   .placeholder{display:grid;place-items:center;min-height:220px;text-align:center;color:var(--muted)}
-  .note{text-align:center;color:var(--faint);font-size:12px;margin-top:34px}
-  @media(max-width:1150px){.kpis,.status-strip{grid-template-columns:1fr 1fr}.grid-3,.grid-2,.tt-grid{grid-template-columns:1fr}.auto-grid{grid-template-columns:1fr 1fr}}
-  @media(max-width:760px){.app{grid-template-columns:1fr}.sidebar{display:none}.main{padding:20px 16px 50px}.kpis,.status-strip,.auto-grid{grid-template-columns:1fr}.wave{left:0}.acc-inner{padding-left:0}}
+  .cbadge{position:fixed;left:14px;bottom:12px;z-index:9;color:rgba(255,255,255,.4);font-size:11px;font-weight:600}
 </style>"""
 
-BG_ART_V4 = """<div class="bg-art">
-  <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div>
-  <svg class="wave" viewBox="0 0 1200 340" preserveAspectRatio="none" fill="none">
-    <path d="M0 180 Q150 80 300 180 T600 180 T900 180 T1200 180" stroke="url(#wg)" stroke-width="2"/>
-    <path d="M0 220 Q150 300 300 220 T600 220 T900 220 T1200 220" stroke="url(#wg)" stroke-width="1.5" opacity=".5"/>
-    <defs><linearGradient id="wg" x1="0" y1="0" x2="1200" y2="0"><stop stop-color="#1ed760" stop-opacity="0"/><stop offset=".5" stop-color="#1ed760" stop-opacity=".5"/><stop offset="1" stop-color="#1ed760" stop-opacity="0"/></linearGradient></defs>
-  </svg>
+BG_MARKUP = """<div class="stage">
+  <div class="wash"></div>
+  <div class="blob g"></div><div class="blob v"></div><div class="blob b"></div>
+  <div class="keys" id="keys"></div>
   <div class="grain"></div>
 </div>"""
 
-# nav: (view-key, href, label, svg-inner)
-NAV_ITEMS = [
-    ("overview", "/", "Overview",
-     '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>', "Workspace"),
-    ("stats", "/stats", "YouTube Stats",
-     '<path d="M4 19V5m4 14V9m4 10V7m4 12v-6m4 6V4"/>', "Workspace"),
-    ("queue", "/queue", "Queue",
-     '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="16" y2="18"/><circle cx="3.5" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="3.5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="3.5" cy="18" r="1.3" fill="currentColor" stroke="none"/>', "Workspace"),
-    ("tiktok", "/tiktok-candidates", "TikTok Candidates",
-     '<path d="M9 18V5l3-1v10"/><circle cx="6" cy="18" r="3"/><path d="M14 7c1.5 2 4 2.5 6 2.5"/>', "Workspace"),
-    ("tracker", "/tracker", "Video Tracker",
-     '<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="20" x2="9" y2="9"/>', "Workspace"),
-    ("experiment", "/experiment", "12-Week Experiment",
-     '<circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>', "Project"),
-]
-
-
-# view-keys that live under the YouTube Stats dropdown
-STATS_CHILDREN = [("dsci", "/data-science", "Data-Science Tracker")]
-
-
-def _sidebar_v4(active: str) -> str:
-    out = ['<aside class="sidebar">']
-    out.append('<div class="brand"><div class="logo"><svg viewBox="0 0 24 24" fill="#04140a"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div><div><b>Piano Shorts</b><span>Creator Analytics</span></div></div>')
-    last_section = ""
-    for key, href, label, svg, section in NAV_ITEMS:
-        if section != last_section:
-            out.append(f'<div class="nav-label">{section}</div>')
-            last_section = section
-        if key == "stats":
-            # Parent with a drop-down arrow revealing sub-items.
-            group_open = " open" if active in ("stats", "dsci") else ""
-            parent_cls = "nav-item active" if active == "stats" else "nav-item"
-            children = "".join(
-                f'<a class="nav-sub{" active" if ck == active else ""}" href="{chref}">{html.escape(clabel)}</a>'
-                for ck, chref, clabel in STATS_CHILDREN
-            )
-            out.append(
-                f'<details class="nav-group"{group_open}>'
-                '<summary class="nav-item-summary">'
-                f'<a class="{parent_cls}" href="{href}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{svg}</svg>{html.escape(label)}</a>'
-                '<svg class="nav-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>'
-                '</summary>'
-                f'<div class="nav-children">{children}</div>'
-                '</details>'
-            )
-        else:
-            cls = "nav-item active" if key == active else "nav-item"
-            out.append(
-                f'<a class="{cls}" href="{href}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{svg}</svg>{html.escape(label)}</a>'
-            )
-    out.append('<div class="spacer"></div>')
-    out.append('<div class="owner-card"><div class="dot"></div><div><b>Owner mode</b><small>Full control · logged in</small></div></div>')
-    out.append('</aside>')
-    return "".join(out)
-
-
-def render_shell(active: str, eyebrow: str, title: str, sub: str, body: str,
-                 head_extra: str = "", top_actions: str = "") -> str:
-    """Wrap page body in the shared v4 layout (sidebar + bg art + topbar)."""
-    topbar = (
-        '<div class="topbar"><div>'
-        f'<p class="eyebrow">{html.escape(eyebrow)}</p>'
-        f'<h1>{html.escape(title)}</h1>'
-        + (f'<div class="sub">{sub}</div>' if sub else '')
-        + '</div>'
-        + (f'<div class="top-actions">{top_actions}</div>' if top_actions else '')
-        + '</div>'
-    )
-    return (
-        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f'<title>Piano Shorts — {html.escape(title)}</title>'
-        + FONT_HEAD + STYLE_V4 + head_extra
-        + '</head><body>' + BG_ART_V4
-        + '<div class="app">' + _sidebar_v4(active)
-        + '<main class="main">' + topbar + body + '</main></div></body></html>'
-    )
-
+BG_SCRIPT = r"""<script>
+(function(){
+  var keys=document.getElementById('keys');if(keys){var NK=30,cols=['g','v','b'],lit={},n=4+Math.floor(Math.random()*3);
+    while(Object.keys(lit).length<n){lit[Math.floor(Math.random()*NK)]=cols[Math.floor(Math.random()*3)];}
+    for(var i=0;i<NK;i++){var nb=(i%7===2||i%7===6);var k=document.createElement('div');k.className='key'+(nb?' nb':'')+(lit[i]?(' '+lit[i]):'');if(!nb){var b=document.createElement('div');b.className='bk';k.appendChild(b);}keys.appendChild(k);}}
+  var stage=document.querySelector('.stage');var gl=['♪','♫','♩','♬'];var live=0;
+  setInterval(function(){if(document.hidden||live>9||!stage)return;var e=document.createElement('div');e.className='note';e.textContent=gl[Math.random()*4|0];
+    e.style.left=(5+Math.random()*88)+'%';e.style.fontSize=(16+Math.random()*16)+'px';e.style.animation='rise '+(8+Math.random()*5).toFixed(1)+'s linear forwards';
+    stage.appendChild(e);live++;e.addEventListener('animationend',function(){e.remove();live--;});},1000);
+  window.addEventListener('mousemove',function(ev){var x=ev.clientX/innerWidth-.5,y=ev.clientY/innerHeight-.5;
+    var bl=document.querySelectorAll('.blob');for(var j=0;j<bl.length;j++){var d=(j+1)*12;bl[j].style.marginLeft=(-x*d)+'px';bl[j].style.marginTop=(-y*d)+'px';}
+    var g=document.getElementById('glass');if(g)g.style.transform='rotateX('+(-y*4).toFixed(2)+'deg) rotateY('+(x*5).toFixed(2)+'deg)';});
+})();
+</script>"""
 
 CHART_HEAD = '<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>'
 
+PILLS = [
+    ("overview", "/overview", "Overview"),
+    ("stats", "/stats", "Stats"),
+    ("tiktok", "/tiktok-candidates", "TikTok"),
+    ("tracker", "/tracker", "Tracker"),
+    ("experiment", "/experiment", "Experiment"),
+]
 
-def build_chart_payload() -> str:
-    """Build labels/data/colors per range from the real chart_view_gains()."""
-    ranges = {}
-    for rng in ("1d", "1w", "1m", "all"):
-        rows = chart_view_gains(rng)
-        ranges[rng] = {
-            "labels": [str(r.get("label", "")) for r in rows],
-            "data": [int(r.get("views", 0)) for r in rows],
-            "colors": [str(r["fill"]) if r.get("fill") else "#1ed760" for r in rows],
-            "tips": [str(r.get("tooltip", "")) for r in rows],
-        }
-    return json.dumps(ranges)
-
-
-def chart_script(canvas_id: str, tabset: str, default_range: str = "1d") -> str:
-    payload = build_chart_payload()
-    tmpl = r"""
-<script>
-function __init_chart___CID__(){
-  if(typeof Chart==='undefined'){return setTimeout(__init_chart___CID__,50);}
-  Chart.defaults.font.family="'Figtree', sans-serif";Chart.defaults.font.weight='600';Chart.defaults.color='#6a716a';
-  var RANGES=__PAYLOAD__;var cur='__DEF__';
-  var ctx=document.getElementById('__CID__');if(!ctx)return;
-  function set(r){var s=RANGES[r]||RANGES['__DEF__'];return s;}
-  var s0=set(cur);
-  var chart=new Chart(ctx,{type:'bar',data:{labels:s0.labels,datasets:[{data:s0.data,backgroundColor:s0.colors,borderRadius:6,maxBarThickness:30}]},
-    options:{plugins:{legend:{display:false},tooltip:{backgroundColor:'#0c0e0c',borderColor:'rgba(255,255,255,.12)',borderWidth:1,padding:10,displayColors:false,titleFont:{family:'Figtree',weight:'700'},bodyFont:{family:'Figtree'},callbacks:{title:function(it){var i=it[0].dataIndex;return set(cur).tips[i]||it[0].label;},label:function(x){return x.raw.toLocaleString()+' views';}}}},
-      scales:{x:{grid:{display:false},ticks:{font:{family:'Figtree',size:11,weight:'600'}}},y:{grid:{color:'rgba(255,255,255,.05)'},border:{display:false},ticks:{font:{family:'Figtree',size:11},callback:function(v){return v>=1000?(v/1000)+'k':v;}}}},
-      animation:{duration:900,easing:'easeOutQuart'},responsive:true,maintainAspectRatio:false}});
-  if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){chart.update();});
-  var tabs=document.querySelectorAll('[data-tabs="__TAB__"] .tab');
-  tabs.forEach(function(t){t.addEventListener('click',function(){
-    tabs.forEach(function(x){x.classList.remove('active');});t.classList.add('active');
-    cur=t.dataset.r;var s=set(cur);chart.data.labels=s.labels;chart.data.datasets[0].data=s.data;chart.data.datasets[0].backgroundColor=s.colors;chart.update();
-  });});
-}
-if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',__init_chart___CID__);}else{__init_chart___CID__();}
-</script>"""
-    return (tmpl.replace("__PAYLOAD__", payload).replace("__CID__", canvas_id)
-            .replace("__TAB__", tabset).replace("__DEF__", default_range))
-
-
-def _range_tabs(tabset: str, default_range: str = "1d") -> str:
-    out = [f'<div class="tabs" data-tabs="{tabset}">']
-    for r, lbl in (("1d", "1D"), ("1w", "1W"), ("1m", "1M"), ("all", "ALL")):
-        cls = "tab active" if r == default_range else "tab"
-        out.append(f'<button class="{cls}" data-r="{r}">{lbl}</button>')
-    out.append('</div>')
-    return "".join(out)
+BRAND_SVG = '<svg viewBox="0 0 24 24" fill="#04140a"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>'
+SOCIAL_HTML = (
+    '<div class="social">'
+    '<a href="#" aria-label="Instagram"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg></a>'
+    '<a href="#" aria-label="YouTube"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M23 12s0-3.6-.46-5.3a2.8 2.8 0 0 0-2-2C18.8 4.2 12 4.2 12 4.2s-6.8 0-8.54.5a2.8 2.8 0 0 0-2 2C1 8.4 1 12 1 12s0 3.6.46 5.3a2.8 2.8 0 0 0 2 2c1.74.5 8.54.5 8.54.5s6.8 0 8.54-.5a2.8 2.8 0 0 0 2-2C23 15.6 23 12 23 12zM9.8 15.3V8.7l5.7 3.3z"/></svg></a>'
+    '</div>'
+)
 
 
 def _clean_title(raw: str, fallback: str = "") -> str:
-    return raw.split("#", 1)[0].strip() or fallback
+    return (raw or "").split("#", 1)[0].strip() or fallback
 
 
 def _uploaded_today_count() -> int:
@@ -1923,251 +1812,463 @@ def _today_views_delta() -> int:
     return sum(int(r.get("views", 0)) for r in chart_view_gains("1d"))
 
 
+def _cap(raw: str, fallback: str = "") -> str:
+    """Clean caption (strip hashtags) and HTML-escape; keeps the leaf glyph if present."""
+    return html.escape(_clean_title(raw, fallback))
+
+
+def concept_chart(canvas_id: str, labels: list, data: list, colors: list) -> str:
+    payload = json.dumps({"l": labels, "d": data, "c": colors})
+    tmpl = r"""<script>
+(function(){function init(){if(typeof Chart==='undefined'){return setTimeout(init,60);}
+  var ctx=document.getElementById('__CID__');if(!ctx)return;var P=__P__;
+  Chart.defaults.font.family="'Figtree',sans-serif";Chart.defaults.color='#8892a3';
+  new Chart(ctx,{type:'bar',data:{labels:P.l,datasets:[{data:P.d,backgroundColor:P.c,borderRadius:6,maxBarThickness:34}]},
+    options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:function(x){return x.raw.toLocaleString()+' views';}}}},
+      scales:{x:{grid:{display:false},ticks:{font:{size:11}}},y:{grid:{color:'rgba(255,255,255,.05)'},ticks:{callback:function(v){return v>=1000?(v/1000)+'k':v;}}}},
+      responsive:true,maintainAspectRatio:false,animation:{duration:800}});}
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}})();
+</script>"""
+    return tmpl.replace("__CID__", canvas_id).replace("__P__", payload)
+
+
+def _topbar(active: str) -> str:
+    pills = "".join(
+        f'<a class="{"on" if (key == active or (active == "dsci" and key == "stats")) else ""}" href="{href}">{html.escape(label)}</a>'
+        for key, href, label in PILLS
+    )
+    return (
+        '<header class="bar">'
+        f'<a class="backhome" href="/"><span class="dot">{BRAND_SVG}</span>Piano Shorts</a>'
+        f'<nav class="pills">{pills}</nav>'
+        '</header>'
+    )
+
+
+def render_page(active: str, eyebrow: str, title: str, sub: str, body: str,
+                head_extra: str = "", top_actions: str = "") -> str:
+    """Full-page shell for a tab (aurora bg + top bar + page content)."""
+    topline = (
+        '<div class="topline"><div>'
+        f'<p class="eyebrow">{html.escape(eyebrow)}</p>'
+        f'<h2 class="h2">{html.escape(title)}</h2>'
+        + (f'<div class="sub">{sub}</div>' if sub else '')
+        + '</div>'
+        + (f'<div class="top-actions">{top_actions}</div>' if top_actions else '')
+        + '</div>'
+    )
+    return (
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f'<title>Piano Shorts — {html.escape(title)}</title>'
+        + FONT_HEAD + STYLE_V5 + head_extra
+        + '</head><body class="tab">' + BG_MARKUP + _topbar(active)
+        + '<main class="page shell">' + topline + body + '</main>'
+        + '<div class="cbadge">Piano Shorts · Creator Analytics</div>'
+        + BG_SCRIPT + '</body></html>'
+    )
+
+
 # ---------------------------------------------------------------------------
-# OVERVIEW  (/)
+# HOME  (/)
 # ---------------------------------------------------------------------------
 def render_dashboard() -> str:
+    """Home splash — choose a view."""
+    latest_rows = latest_video_stats()
+    total_views = sum(parse_stat_int(r.get("view_count", "")) for r in latest_rows)
+    tracked = len(latest_rows)
+    week = experiment_week()
+
+    tiles = [
+        ("t1", "/overview", "Overview", "Mission control",
+         '<rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/>', False),
+        ("t2", "/stats", "YouTube Stats", "Growth &amp; queue log", None, True),
+        ("t3", "/tiktok-candidates", "TikTok Candidates", "Top clips to repost",
+         '<path d="M9 18V5l3-1v10"/><circle cx="6" cy="18" r="3"/><path d="M14 7c1.5 2 4 2.5 6 2.5"/>', False),
+        ("t4", "/tracker", "Video Tracker", "Every clip logged",
+         '<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="20" x2="9" y2="9"/>', False),
+        ("t5", "/experiment", "12-Week Experiment", "Data-science project",
+         '<circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>', False),
+    ]
+    tile_html = []
+    for cls, href, label, small, svg, is_eq in tiles:
+        if is_eq:
+            icon = '<svg class="eq" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="9" width="3.4" height="12" rx="1"/><rect x="8.6" y="5" width="3.4" height="16" rx="1"/><rect x="14.2" y="11" width="3.4" height="10" rx="1"/><rect x="18" y="7" width="3.4" height="14" rx="1"/></svg>'
+        else:
+            icon = f'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">{svg}</svg>'
+        tile_html.append(
+            f'<a class="tile {cls}" href="{href}"><span class="go">→</span>'
+            f'<div class="ic">{icon}</div><b>{label}</b><small>{small}</small></a>'
+        )
+
+    body = (
+        '<div class="home">'
+        f'<div class="mark">{BRAND_SVG}</div>'
+        '<h1 class="big">Piano Shorts</h1>'
+        '<div class="kicker">Choose a view</div>'
+        f'<div class="stat-line"><b>{total_views:,}</b> views · <b>{tracked:,}</b> clips tracked · week <b>{week}</b> of {config.PROJECT_TOTAL_WEEKS}</div>'
+        f'<div class="glass" id="glass"><div class="grid5">{"".join(tile_html)}</div></div>'
+        + SOCIAL_HTML + '</div>'
+    )
+    return (
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<title>Piano Shorts</title>' + FONT_HEAD + STYLE_V5
+        + '</head><body>' + BG_MARKUP + body + BG_SCRIPT + '</body></html>'
+    )
+
+
+# ---------------------------------------------------------------------------
+# OVERVIEW  (/overview)
+# ---------------------------------------------------------------------------
+def render_overview() -> str:
     status = build_status()
     latest_rows = latest_video_stats()
     total_views = sum(parse_stat_int(r.get("view_count", "")) for r in latest_rows)
     hours = best_posting_hours()
     best_hour = str(hours[0]["hour"]) if hours else "—"
-    delta_today = _today_views_delta()
-
+    delta = _today_views_delta()
+    running = bool(status["run"]["running"])
     input_count = int(status["input_count"])
     clip_count = int(status["clip_count"])
     uploaded_today = _uploaded_today_count()
 
-    # next scheduled post
     now = datetime.now(ZoneInfo(config.TIMEZONE))
-    future = [
-        r for r in build_queue_rows()
-        if (p := parse_iso_datetime(r.get("scheduled_publish_time", ""))) and p > now
-    ]
-    future.sort(key=lambda r: parse_iso_datetime(r.get("scheduled_publish_time", "")))
+    future = sorted(
+        [r for r in build_queue_rows() if (p := parse_iso_datetime(r.get("scheduled_publish_time", ""))) and p > now],
+        key=lambda r: parse_iso_datetime(r.get("scheduled_publish_time", "")),
+    )
     next_post = html.escape(future[0]["display_time"]) if future else "None scheduled"
 
-    running = bool(status["run"]["running"])
-    run_label = "Running…" if running else "Clip + Upload"
+    rows1d = chart_view_gains("1d")
+    labels = [str(r.get("label", "")) for r in rows1d]
+    data = [int(r.get("views", 0)) for r in rows1d]
+    colors = ["#8b6cff" if r.get("fill") else "#1ed760" for r in rows1d]
 
-    chart = (
-        '<section class="panel chart-wrap"><div class="chart-glow"></div>'
-        '<div class="chart-top"><div>'
-        '<p class="eyebrow" style="color:var(--muted)">Channel Performance</p>'
-        f'<div class="metric-big">{total_views:,}</div>'
-        f'<div class="metric-cap">total views · <b>+{delta_today:,} today</b> · best hour {html.escape(best_hour)}</div>'
-        '</div>' + _range_tabs("ov") + '</div>'
-        '<canvas class="chart" id="chartOv"></canvas></section>'
-    )
-
-    strip = (
-        '<div class="status-strip">'
-        '<div class="chip"><div class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v12H4z"/><path d="M2 20h20"/></svg>Input videos</div>'
-        f'<div class="v">{input_count}</div></div>'
-        '<div class="chip b"><div class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3z"/></svg>Clips ready</div>'
-        f'<div class="v">{clip_count:,}</div></div>'
-        '<div class="chip t"><div class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Next post</div>'
-        f'<div class="v" style="font-size:16px">{next_post}</div></div>'
-        '<div class="chip a"><div class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0-12l-4 4m4-4l4 4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>Uploaded today</div>'
-        f'<div class="v">{uploaded_today}</div></div>'
-        '</div>'
-    )
-
-    autos = (
-        '<div class="panel-h" style="margin:4px 2px 14px"><h2 style="font-size:17px">Automation</h2><span class="hint">one-click creator pipeline</span></div>'
-        '<section class="auto-grid">'
-        # Clip + Upload (owner action)
-        '<form class="auto g1" action="/run" method="post" data-owner-only>'
-        '<button class="bare" type="submit"' + (' disabled' if running else '') + '>'
-        '<div class="a-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15V3m0 0l-4 4m4-4l4 4"/><path d="M4 15v4a2 2 0 002 2h12a2 2 0 002-2v-4"/></svg></div>'
-        f'<b>{html.escape(run_label)}</b><small>Clip, caption &amp; schedule</small></button></form>'
-        # YouTube Stats
-        '<a class="auto g2" href="/stats"><div class="a-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5m4 14V9m4 10V7m4 12v-6m4 6V4"/></svg></div><b>YouTube Stats</b><small>Views, likes &amp; growth</small></a>'
-        # Queue
-        '<a class="auto g3" href="/queue"><div class="a-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="13" y2="18"/></svg></div><b>Queue</b><small>Scheduled &amp; deferred</small></a>'
-        # TikTok
-        '<a class="auto g4" href="/tiktok-candidates"><div class="a-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l3-1v10"/><circle cx="6" cy="18" r="3"/><path d="M14 7c1.5 2 4 2.5 6 2.5"/></svg></div><b>TikTok Candidates</b><small>Top clips to repost</small></a>'
-        # Refresh (owner action)
-        '<form class="auto g5" action="/refresh-stats" method="post" data-owner-only>'
-        '<input type="hidden" name="redirect_to" value="/">'
-        '<button class="bare" type="submit"><div class="a-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg></div><b>Refresh Stats</b><small>Pull latest data</small></button></form>'
-        '</section>'
-    )
-
-    # experiment mini
-    exp_mini = "".join(
-        f'<div class="exp"><div class="wk">{html.escape(p["wk"])}</div>'
-        f'<div class="body"><b>{html.escape(p["t"])}</b><small>{html.escape(p["d"])}</small></div>'
-        f'<span class="status {experiment_status(p)[0]}">{experiment_status(p)[1]}</span></div>'
-        for p in EXPERIMENT_PHASES
-    )
-
-    # live activity (owner only)
-    log_lines = live_dashboard_log_lines(8)
+    log_lines = live_dashboard_log_lines(6)
     log_html = "".join(
-        f'<div><span class="t">{html.escape(l[:9])}</span> {html.escape(l[9:200])}</div>'
+        f'<div><span class="t">{html.escape(l[:9])}</span> {html.escape(l[9:180])}</div>'
         for l in reversed(log_lines[-6:])
     ) or '<div class="t">No dashboard activity yet.</div>'
 
-    activity = (
-        '<div class="panel"><div class="panel-h"><h2>Input &amp; Live Activity</h2>'
-        f'<span class="hint">{input_count} waiting</span></div>'
-        '<form class="upload-zone" action="/upload" method="post" enctype="multipart/form-data" data-owner-only>'
-        '<b style="font-size:14px">Drop videos into input</b>'
-        '<small style="display:block;color:var(--muted);font-size:12px;margin:6px 0 14px">.mp4 / .mov — then run Clip + Upload</small>'
+    body = (
+        '<div class="row r-2 mt">'
+        '<div class="panel"><p class="eyebrow" style="color:var(--muted)">Total channel views</p>'
+        f'<div class="hero-num">{total_views:,}</div>'
+        f'<div class="sub" style="margin-top:8px">+<b style="color:var(--green)">{delta:,}</b> overnight · best hour <b style="color:var(--green)">{html.escape(best_hour)}</b> · today’s gains below</div>'
+        '<canvas id="ovChart" class="mt"></canvas></div>'
+        '<div class="panel"><h3>Live activity</h3>'
+        '<div class="now-card"><div class="big-np"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>'
+        f'<div><b style="font-size:15px">{"Pipeline running…" if running else "Pipeline idle · ready"}</b><div class="sub" style="margin-top:2px">Drop videos in input, then Clip + Upload</div></div></div>'
+        '<form class="upzone" action="/upload" method="post" enctype="multipart/form-data" data-owner-only>'
         '<input type="hidden" name="upload_action" value="upload_and_clip">'
-        '<input type="file" name="videos" accept=".mp4,.mov" multiple style="margin-bottom:12px;color:var(--muted);font-size:12px">'
-        '<br><button class="btn primary" type="submit" style="margin:0 auto">Upload &amp; clip</button></form>'
-        f'<div class="log" data-owner-only>{log_html}</div>'
+        '<input type="file" name="videos" accept=".mp4,.mov" multiple style="color:var(--muted);font-size:12px;margin-bottom:10px"><br>'
+        '<button class="btn primary" type="submit">Upload &amp; clip</button></form>'
+        f'<div class="log" data-owner-only>{log_html}</div></div>'
+        '</div>'
+        '<div class="row r-4 mt">'
+        f'<div class="chip"><div class="l">Input videos</div><div class="v">{input_count}</div></div>'
+        f'<div class="chip"><div class="l">Clips ready</div><div class="v">{clip_count:,}</div></div>'
+        f'<div class="chip"><div class="l">Next post</div><div class="v" style="font-size:15px">{next_post}</div></div>'
+        f'<div class="chip"><div class="l">Uploaded today</div><div class="v">{uploaded_today}</div></div>'
         '</div>'
     )
-
-    body = (
-        chart + strip + autos
-        + '<section class="grid-2">'
-        + f'<div class="panel"><div class="panel-h"><h2>12-Week Experiment</h2><span class="hint">week {experiment_week()} of {config.PROJECT_TOTAL_WEEKS}</span></div>{exp_mini}</div>'
-        + activity
-        + '</section>'
+    ready = '<span class="pill ready"><span class="d"></span>' + ("Running" if running else "Ready") + '</span>'
+    top_actions = ready + (
+        '<form class="inline" action="/run" method="post" data-owner-only>'
+        '<button class="btn primary" type="submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>Clip + Upload</button></form>'
+        '<form class="inline" action="/refresh-stats" method="post" data-owner-only><input type="hidden" name="redirect_to" value="/overview">'
+        '<button class="btn" type="submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>Refresh</button></form>'
     )
-
-    head = CHART_HEAD
-    ready = '<span class="pill ready"><span class="dot"></span>' + ('Running' if running else 'Ready') + '</span>'
-    top_actions = ready + '<form class="inline" action="/run" method="post" data-owner-only><button class="btn primary" type="submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>Clip + Upload</button></form>'
-    return render_shell(
+    return render_page(
         "overview", "Mission Control", "Overview",
-        "Clip, schedule, and run your Shorts pipeline — one quiet studio interface.",
-        body, head_extra=head + chart_script("chartOv", "ov"), top_actions=top_actions,
+        "Your whole Shorts studio at a glance.", body,
+        head_extra=CHART_HEAD + concept_chart("ovChart", labels, data, colors),
+        top_actions=top_actions,
     )
 
 
 # ---------------------------------------------------------------------------
 # YOUTUBE STATS  (/stats)
 # ---------------------------------------------------------------------------
-def render_stats_page(
-    selected_range: str = "1d",
-    selected_project_week: str = "",
-    selected_project_sort: str = "recent",
-    selected_stats_page: int = 1,
-    auto_refresh_started: bool = False,
-) -> str:
-    selected_range = normalize_stats_range(selected_range)
+def render_stats_page(selected_range: str = "1d", *_ignore, **_kw) -> str:
     latest_rows = latest_video_stats()
     total_views = sum(parse_stat_int(r.get("view_count", "")) for r in latest_rows)
     total_likes = sum(parse_stat_int(r.get("like_count", "")) for r in latest_rows)
     total_comments = sum(parse_stat_int(r.get("comment_count", "")) for r in latest_rows)
     engagement = ((total_likes + total_comments) / total_views * 100) if total_views else 0.0
     tracked = len(latest_rows)
-    hours = best_posting_hours()
-    best_hour = str(hours[0]["hour"]) if hours else "—"
-    delta_today = _today_views_delta()
-    upload_records = count_upload_records()
+    delta = _today_views_delta()
+    uploads = count_upload_records()
     clips_ready = int(build_status()["clip_count"])
     uploaded_today = _uploaded_today_count()
 
-    chart = (
-        '<section class="panel chart-wrap"><div class="chart-glow"></div>'
-        '<div class="chart-top"><div>'
-        '<p class="eyebrow" style="color:var(--muted)">Channel Performance</p>'
-        f'<div class="metric-big">{total_views:,}</div>'
-        f'<div class="metric-cap">total views · <b>best hour {html.escape(best_hour)}</b> · {tracked:,} tracked clips</div>'
-        '</div>' + _range_tabs("st", selected_range) + '</div>'
-        '<canvas class="chart" id="chartSt"></canvas>'
-        '<div class="metric-cap" style="margin-top:10px">Views gained per hour today (9 AM–9 PM) plus the overnight bar.</div>'
-        '</section>'
-    )
+    rows1w = chart_view_gains("1w")
+    labels = [str(r.get("label", "")) for r in rows1w]
+    data = [int(r.get("views", 0)) for r in rows1w]
+    colors = ["#1ed760"] * len(data)
 
-    def kpi(cls, label, ic, value, delta, delta_cls="up"):
-        return (
-            f'<div class="kpi {cls}"><div class="k-top"><span class="k-label">{label}</span>'
-            f'<span class="k-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{ic}</svg></span></div>'
-            f'<div class="k-value">{value}</div><div class="k-delta {delta_cls}">{delta}</div></div>'
-        )
+    def kpi(cls, lab, val, delta_txt, dcolor=""):
+        style = f' style="color:{dcolor}"' if dcolor else ""
+        return f'<div class="kpi {cls}"><div class="lab">{lab}</div><div class="val">{val}</div><div class="d"{style}>{delta_txt}</div></div>'
 
     kpis = (
-        '<section class="kpis">'
-        + kpi("g", "Total Views", '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>',
-              f'{total_views:,}', f'▲ {delta_today:,} today')
-        + kpi("b", "Tracked Clips", '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 9l5 3-5 3z"/>',
-              f'{tracked:,}', f'▲ {clips_ready:,} clips ready')
-        + kpi("t", "Upload Records", '<path d="M12 3v12m0-12l-4 4m4-4l4 4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/>',
-              f'{upload_records:,}', f'▲ {uploaded_today} today')
-        + kpi("a", "Engagement", '<path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l9 9 8-8.2a5.5 5.5 0 000-7.6z"/>',
-              f'{engagement:.2f}%', f'{total_likes:,} likes · {total_comments:,} comments', "flat")
-        + '</section>'
+        '<div class="row r-4 mt">'
+        + kpi("kc-g", "Total Views", f"{total_views:,}", f"▲ {delta:,} today")
+        + kpi("kc-b", "Tracked Clips", f"{tracked:,}", f"{clips_ready:,} clips ready")
+        + kpi("kc-t", "Upload Records", f"{uploads:,}", f"▲ {uploaded_today} today")
+        + kpi("kc-a", "Engagement", f"{engagement:.2f}%", f"{total_likes:,} likes · {total_comments:,} comments", "var(--faint)")
+        + '</div>'
     )
 
-    # bars
-    hour_bars = "".join(_bar_row(str(h["hour"]), f'{float(h["average_views"]):,.0f} avg · {int(h["video_count"])} vids', float(h["average_views"]), max(float(x["average_views"]) for x in hours[:5]) or 1, "green") for h in hours[:5])
-    days = best_posting_days()
-    max_day = max(float(x["average_views"]) for x in days) or 1
-    day_bars = "".join(_bar_row(str(d["day"]), f'{float(d["average_views"]):,.0f} avg · {int(d["video_count"])} vids', float(d["average_views"]), max_day, "teal") for d in days)
-    top_videos = _top_videos_markup(latest_rows)
+    # top performers
+    ranked = sorted(latest_rows, key=lambda r: parse_stat_int(r.get("view_count", "")), reverse=True)[:6]
+    top_rows = []
+    for i, r in enumerate(ranked, 1):
+        cap = _cap(r.get("title", ""), r.get("clip_filename", ""))
+        top_rows.append(
+            f'<div class="lead"><div class="rk">{i}</div><div class="nm"><b>{cap}</b><small>{html.escape(r.get("clip_filename", ""))}</small></div>'
+            f'<div class="nu"><b>{parse_stat_int(r.get("view_count", "")):,}</b><small>{parse_stat_int(r.get("like_count", "")):,} likes</small></div></div>'
+        )
+    top_html = "".join(top_rows) or '<p class="sub">No ranked videos yet.</p>'
 
-    grid = (
-        '<section class="grid-3">'
-        f'<div class="panel"><div class="panel-h"><h2>Best Posting Hours</h2><span class="hint">Top 5 · avg</span></div>{hour_bars}</div>'
-        f'<div class="panel"><div class="panel-h"><h2>Top Days to Post</h2><span class="hint">avg views</span></div>{day_bars}</div>'
-        f'<div class="panel"><div class="panel-h"><h2>Top Videos</h2><span class="hint">by views</span></div>{top_videos}</div>'
-        '</section>'
+    # piano-key hours
+    hours = best_posting_hours()[:8]
+    maxv = max((float(h["average_views"]) for h in hours), default=1) or 1
+    pk = "".join(
+        f'<div class="pk {"best" if i == 0 else ""}"><div class="v">{float(h["average_views"]):,.0f}</div>'
+        f'<div class="col" style="height:{max(6, round(float(h["average_views"]) / maxv * 100))}%"></div><div class="h">{html.escape(str(h["hour"]))}</div></div>'
+        for i, h in enumerate(hours)
     )
 
-    ds_link = (
-        '<a class="panel ds-teaser" href="/data-science">'
-        '<div><h2>Data-Science Tracker</h2>'
-        '<span class="hint">Per-clip experiment dataset — week filter, sorting &amp; exports</span></div>'
-        '<svg class="go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg></a>'
-    )
+    # upcoming queue log
+    from collections import Counter
+    qrows = build_queue_rows()
+    counts = Counter(queue_status(r.get("status", ""), r.get("scheduled_publish_time", "")) for r in qrows)
+    now = datetime.now(ZoneInfo(config.TIMEZONE))
+    upcoming = sorted(
+        [r for r in qrows if (p := parse_iso_datetime(r.get("scheduled_publish_time", ""))) and p > now],
+        key=lambda r: parse_iso_datetime(r.get("scheduled_publish_time", "")),
+    )[:8]
+    play = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'
+    qlog_rows = []
+    for i, r in enumerate(upcoming):
+        np = play if i == 0 else f'<b style="font-size:13px">{i + 1}</b>'
+        cap = _cap(r.get("title", ""), r.get("clip_filename", ""))
+        qlog_rows.append(
+            f'<div class="set"><div class="np">{np}</div>'
+            f'<div class="mid"><b>{cap}</b><small>{html.escape(r.get("clip_filename", ""))}</small></div>'
+            f'<div class="time">{html.escape(r.get("display_time", ""))}</div><span class="badge sch">Scheduled</span></div>'
+        )
+    qlog = "".join(qlog_rows) or '<p class="sub">Nothing scheduled ahead.</p>'
 
-    body = chart + kpis + grid + ds_link
-    top_actions = '<form class="inline" action="/refresh-stats" method="post" data-owner-only><input type="hidden" name="redirect_to" value="/stats"><button class="btn primary" type="submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>Refresh YouTube Stats</button></form>'
-    return render_shell(
+    ds_btn = '<a class="btn" href="/data-science"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Data-Science Tracker</a>'
+
+    body = (
+        kpis
+        + '<div class="row r-2 mt">'
+        '<div class="panel"><h3>Views gained · last 7 days</h3><canvas id="stChart"></canvas></div>'
+        f'<div class="panel"><h3>Top performers</h3>{top_html}</div>'
+        '</div>'
+        f'<div class="panel mt"><h3>Best posting hours <span style="color:var(--faint);font-weight:600;font-size:12px">· taller key = more avg views</span></h3><div class="pk-wrap">{pk}</div></div>'
+        '<div class="panel mt"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
+        '<h3 style="margin:0">Upcoming queue <span style="color:var(--faint);font-weight:600;font-size:12px">· next tracks cued to post</span></h3>'
+        f'<span style="color:var(--muted);font-size:12.5px;font-weight:700"><span style="color:var(--green)">{counts.get("uploaded", 0)}</span> uploaded · <span style="color:var(--blue)">{counts.get("scheduled", 0)}</span> scheduled</span></div>'
+        f'{qlog}</div>'
+    )
+    top_actions = ds_btn + (
+        '<form class="inline" action="/refresh-stats" method="post" data-owner-only><input type="hidden" name="redirect_to" value="/stats">'
+        '<button class="btn primary" type="submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>Refresh Stats</button></form>'
+    )
+    return render_page(
         "stats", "Performance Center", "YouTube Stats",
-        "Every clip's growth, best windows, and top performers.",
-        body, head_extra=CHART_HEAD + chart_script("chartSt", "st", selected_range),
+        "Where and when your clips actually land.", body,
+        head_extra=CHART_HEAD + concept_chart("stChart", labels, data, colors),
         top_actions=top_actions,
     )
 
 
+# ---------------------------------------------------------------------------
+# TIKTOK CANDIDATES  (/tiktok-candidates)
+# ---------------------------------------------------------------------------
+def render_tiktok_candidates_page(selected_date: str = "") -> str:
+    _ = selected_date
+    today = datetime.now(ZoneInfo(config.TIMEZONE)).date()
+    medal = ["\U0001f947", "\U0001f948", "\U0001f949"]
+    cls = ["gold", "silver", "bronze"]
+    blocks = []
+    for day in tiktok_candidate_days():
+        try:
+            d = datetime.fromisoformat(str(day["date"])).date()
+        except ValueError:
+            continue
+        if (today - d).days > 6:
+            continue
+        cand = list(day["candidates"])[:3]
+        pods = []
+        for i, c in enumerate(cand):
+            title = _cap(str(c["title"]), str(c["clip_filename"]))
+            pods.append(
+                f'<div class="pod {cls[i]}"><div class="medal">{medal[i]}</div><div class="w">{title}</div>'
+                f'<div class="c">{html.escape(str(c["clip_filename"]))}</div>'
+                f'<div class="met"><b>{int(c["views"]):,}</b> views · <b>{int(c["likes"]):,}</b> likes</div></div>'
+            )
+        while len(pods) < 3:
+            pods.append('<div class="pod"><div class="met sub">—</div></div>')
+        ordered = pods[1] + pods[0] + pods[2]
+        label = "Today · " + format_stats_date(str(day["date"])) if d == today else format_stats_date(str(day["date"]))
+        blocks.append(f'<div class="day-block"><h4>{html.escape(label)}</h4><div class="podium">{ordered}</div></div>')
+
+    body = "".join(blocks) or '<div class="panel"><div class="placeholder"><h3>No candidates in the past week</h3><div>Once clips have 24h of stats they appear here.</div></div></div>'
+    top_actions = '<a class="btn primary" href="/tiktok-candidates.csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>Download CSV of all weeks</a>'
+    return render_page(
+        "tiktok", "YouTube winners → TikTok", "TikTok Candidates",
+        "The daily podium of clips worth reposting.", body, top_actions=top_actions,
+    )
+
+
+# ---------------------------------------------------------------------------
+# VIDEO TRACKER  (/tracker)
+# ---------------------------------------------------------------------------
+def _recent_tracker_clips(limit: int = 14) -> list:
+    rows = [r for r in build_queue_rows() if r.get("youtube_video_id") and r.get("status") == "uploaded"]
+    rows.sort(key=lambda r: r.get("upload_time", ""), reverse=True)
+    views = {r.get("youtube_video_id", ""): parse_stat_int(r.get("view_count", "")) for r in latest_video_stats()}
+    out = []
+    for r in rows[:limit]:
+        vid = r.get("youtube_video_id", "")
+        out.append({
+            "caption": _clean_title(r.get("title", ""), r.get("clip_filename", "")),
+            "clip": r.get("clip_filename", ""), "vid": vid, "views": views.get(vid, 0),
+        })
+    return out
+
+
+def render_tracker_page() -> str:
+    clips = _recent_tracker_clips(14)
+    project = summarize_project_dataset(read_project_dataset())
+    cards = "".join(
+        f'<a class="alb" href="https://www.youtube.com/shorts/{html.escape(c["vid"])}" target="_blank" rel="noopener">'
+        f'<div class="cover" style="background-image:url(\'https://i.ytimg.com/vi/{html.escape(c["vid"])}/mqdefault.jpg\')">'
+        '<span class="play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span></div>'
+        f'<div class="meta"><b>{html.escape(c["caption"])}</b><small>{html.escape(c["clip"])} · {c["views"]:,} views</small></div></a>'
+        for c in clips
+    ) or '<p class="sub">No uploaded clips yet.</p>'
+
+    body = (
+        '<div class="row r-4 mt" style="grid-template-columns:repeat(3,1fr)">'
+        f'<div class="chip"><div class="l">Clips in library</div><div class="v">{int(build_status()["clip_count"]):,}</div></div>'
+        f'<div class="chip"><div class="l">Tracked on YouTube</div><div class="v">{len(latest_video_stats()):,}</div></div>'
+        f'<div class="chip"><div class="l">With 24h data</div><div class="v">{project.get("completed_24h", 0):,}</div></div>'
+        '</div>'
+        '<div class="panel mt"><h3>Recent clips <span style="color:var(--faint);font-weight:600;font-size:12px">· latest 14 · click a cover to watch on YouTube</span></h3>'
+        f'<div class="lib">{cards}</div></div>'
+    )
+    top_actions = (
+        '<a class="dlbtn" href="/tracker.csv" data-owner-only><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>Download tracker CSV</a>'
+    )
+    return render_page(
+        "tracker", "Automation records", "Video Tracker · Library",
+        "Every clip as an album — click any cover to open it on YouTube.", body, top_actions=top_actions,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 12-WEEK EXPERIMENT  (/experiment)
+# ---------------------------------------------------------------------------
+EXPERIMENT_PHASES = [
+    {"wk": "Wk 1–2", "lo": 1, "hi": 2, "t": "Baseline",
+     "d": "Establish per-clip 24h view & engagement rates",
+     "goal": "Build a clean control set so every later test has a benchmark.",
+     "method": "Record 24h views, likes, comments per clip; compute engagement = (likes+comments)/views. Summarize mean &amp; variance and the distribution of 24h views.",
+     "tags": ["Descriptive stats", "24h view distribution", "Control baseline"]},
+    {"wk": "Wk 3–4", "lo": 3, "hi": 4, "t": "Posting-time test",
+     "d": "9 AM–3 PM vs 4 PM–9 PM windows",
+     "goal": "Find whether morning/afternoon or evening posting drives more 24h views.",
+     "method": "Randomly assign clips to each window to remove content bias. Compare mean 24h views with a two-sample t-test (Mann-Whitney if skewed); report effect size + 95% CI.",
+     "tags": ["A/B test", "t-test", "Effect size", "Confidence interval"]},
+    {"wk": "Wk 5–6", "lo": 5, "hi": 6, "t": "Caption test",
+     "d": "Emotional vs energy caption words",
+     "goal": "Test if emotional (PEACE, SERENE) vs energy (FLOW, VIBE) captions change reach.",
+     "method": "Balance caption family across posting times. Compare group means; fit a logistic regression on a high-performer flag controlling for hour.",
+     "tags": ["A/B test", "Logistic regression", "Confounder control"]},
+    {"wk": "Wk 7–8", "lo": 7, "hi": 8, "t": "Frequency test",
+     "d": "1 / hour vs 2× in best windows",
+     "goal": "See if denser posting in peak windows lifts total views without cannibalizing per-clip views.",
+     "method": "Compare per-day total views and per-clip views between cadences. Paired comparison across matched days; watch diminishing returns.",
+     "tags": ["Paired test", "Cannibalization check", "Per-day totals"]},
+    {"wk": "Wk 9–12", "lo": 9, "hi": 12, "t": "Content type + capstone",
+     "d": "Solo / church / jazz · predictive model",
+     "goal": "Predict which clips will perform from their features, and write the capstone.",
+     "method": "Tag clips by type, shot, orientation. Fit a gradient-boosted model to predict high performers; report feature importance and a final writeup.",
+     "tags": ["Feature engineering", "Regression", "Gradient boosting", "Feature importance"]},
+]
+
+
+def experiment_week() -> int:
+    start = datetime.fromisoformat(config.PROJECT_WEEK_1_START_DATE).date()
+    today = datetime.now(ZoneInfo(config.TIMEZONE)).date()
+    if today < start:
+        return 1
+    return max(1, (today - start).days // 7 + 1)
+
+
+def experiment_status(phase: dict):
+    wk = experiment_week()
+    if wk > phase["hi"]:
+        return ("done", "Done")
+    if phase["lo"] <= wk <= phase["hi"]:
+        return ("live", "Live")
+    return ("next", "Next")
+
+
+def render_experiment_page() -> str:
+    wk = experiment_week()
+    total = config.PROJECT_TOTAL_WEEKS
+    octave = "".join(
+        f'<div class="wkey {"done" if w < wk else ("live" if w == wk else "")}"><span class="n">{w}</span></div>'
+        for w in range(1, total + 1)
+    )
+    pct = min(100, round(wk / total * 100))
+    phase_html = []
+    for p in EXPERIMENT_PHASES:
+        scls, slbl = experiment_status(p)
+        tags = "".join(f'<span class="tag">{html.escape(t)}</span>' for t in p["tags"])
+        open_attr = "open" if scls == "live" else ""
+        phase_html.append(
+            f'<details class="phase" {open_attr}>'
+            f'<summary><span class="wk">{p["wk"]}</span><div class="pt"><b>{html.escape(p["t"])}</b><small>{p["d"]}</small></div>'
+            f'<span class="st {scls}">{slbl}</span></summary>'
+            f'<div class="body"><span class="l">Goal</span>{p["goal"]}<span class="l">How we analyze</span>{p["method"]}'
+            f'<div>{tags}</div></div></details>'
+        )
+    phases = "".join(phase_html)
+    body = (
+        '<div class="panel mt"><h3>The octave <span style="color:var(--faint);font-weight:600;font-size:12px">· each key is a week</span></h3>'
+        f'<div class="octave">{octave}</div><div class="prog"><i style="width:{pct}%"></i></div>'
+        f'<div class="sub">Week {wk} of {total} · primary metric: 24h views</div></div>'
+        f'<div class="mt">{phases}</div>'
+    )
+    return render_page(
+        "experiment", "Data-Science Project", "12-Week Experiment",
+        f"Twelve weeks, twelve keys — currently on week {wk}.", body,
+    )
+
+
+# ---------------------------------------------------------------------------
+# DATA-SCIENCE TRACKER  (/data-science)  — scrollable full dataset
+# ---------------------------------------------------------------------------
 def render_data_science_page(selected_week: str = "", selected_sort: str = "recent",
                              stats_page: int = 1, selected_range: str = "1d") -> str:
-    """Data-Science Tracker as its own sub-page under YouTube Stats."""
-    section = render_project_tracker_section(selected_week, selected_sort, stats_page, selected_range,
-                                             base_path="/data-science")
+    section = render_project_tracker_section(selected_week, selected_sort, stats_page, selected_range)
     back = '<a class="btn" href="/stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>Back to Stats</a>'
-    return render_shell(
+    return render_page(
         "dsci", "Performance Center · Experiment data", "Data-Science Tracker",
         "Every clip tagged for the 12-week experiment — filter by week, sort, and export.",
         section, top_actions=back,
     )
 
 
-def _bar_row(label: str, sub: str, value: float, max_v: float, cls: str) -> str:
-    pct = max(4, round(value / max_v * 100)) if max_v else 4
-    return (
-        f'<div class="bar-row"><div class="bar-head"><b>{html.escape(label)}</b><span>{html.escape(sub)}</span></div>'
-        f'<div class="track"><div class="fill {cls}" style="width:{pct}%"></div></div></div>'
-    )
-
-
-def _top_videos_markup(rows: list) -> str:
-    ranked = sorted(rows, key=lambda r: parse_stat_int(r.get("view_count", "")), reverse=True)[:5]
-    if not ranked:
-        return '<p class="metric-cap">No ranked videos yet.</p>'
-    out = []
-    for i, r in enumerate(ranked, 1):
-        views = parse_stat_int(r.get("view_count", ""))
-        likes = parse_stat_int(r.get("like_count", ""))
-        title = _clean_title(r.get("title", ""), r.get("clip_filename", ""))
-        clip = r.get("clip_filename", "")
-        out.append(
-            f'<div class="vrow"><div class="vrank">{i}</div>'
-            f'<div class="vname"><b>{html.escape(title[:28])}</b><small>{html.escape(clip)}</small></div>'
-            f'<div class="vnum"><b>{views:,}</b><small>{likes} likes</small></div></div>'
-        )
-    return "".join(out)
-
-
-# ---- project dataset tracker (kept functional, restyled to v4) ----
 def render_project_tracker_section(selected_week: str, selected_sort: str,
                                    stats_page: int, selected_range: str,
                                    base_path: str = "/data-science") -> str:
@@ -2179,7 +2280,7 @@ def render_project_tracker_section(selected_week: str, selected_sort: str,
     summary = summarize_project_dataset(rows)
 
     def week_href(token: str) -> str:
-        return f'{base_path}?project_week={token.replace(" ", "%20")}&project_sort={selected_sort}&range={selected_range}'
+        return f'{base_path}?project_week={token.replace(" ", "%20")}&project_sort={selected_sort}'
 
     weeks = planned_project_weeks()
     chips = ['<div class="chipset">']
@@ -2198,20 +2299,12 @@ def render_project_tracker_section(selected_week: str, selected_sort: str,
     total = len(visible)
 
     columns = [
-        ("Week", "project_week", "plain"),
-        ("Clip", "clip_id", "clip"),
-        ("Platform", "platform", "plain"),
-        ("Caption", "caption_word", "word"),
-        ("Style", "caption_style", "plain"),
-        ("Group", "posting_time_group", "plain"),
-        ("Length", "clip_length_seconds", "secs"),
-        ("Orientation", "video_orientation", "plain"),
-        ("Content Type", "content_type", "plain"),
-        ("Live Views", "current_views", "int"),
-        ("Live Like Rate", "current_like_rate", "rate"),
-        ("24h Views", "views_24h", "int"),
-        ("24h Like Rate", "like_rate_24h", "rate"),
-        ("High Performer", "high_performing", "flag"),
+        ("Week", "project_week", "plain"), ("Clip", "clip_id", "clip"), ("Platform", "platform", "plain"),
+        ("Caption", "caption_word", "word"), ("Style", "caption_style", "plain"), ("Group", "posting_time_group", "plain"),
+        ("Length", "clip_length_seconds", "secs"), ("Orientation", "video_orientation", "plain"),
+        ("Content Type", "content_type", "plain"), ("Live Views", "current_views", "int"),
+        ("Live Like Rate", "current_like_rate", "rate"), ("24h Views", "views_24h", "int"),
+        ("24h Like Rate", "like_rate_24h", "rate"), ("High Performer", "high_performing", "flag"),
         ("Last Updated", "last_checked_at", "time"),
     ]
 
@@ -2246,197 +2339,25 @@ def render_project_tracker_section(selected_week: str, selected_sort: str,
     trs = []
     for r in visible:
         cells = []
-        for _label, key, kind in columns:
+        for _lab, key, kind in columns:
             css = ' class="clip"' if kind == "clip" else (' class="word"' if kind == "word" else "")
             cells.append(f"<td{css}>{fmt(kind, r.get(key, ''))}</td>")
         trs.append("<tr>" + "".join(cells) + "</tr>")
-    tbody = "".join(trs) or f'<tr><td colspan="{len(columns)}" class="metric-cap">No rows for this week yet.</td></tr>'
-    thead = "".join(f"<th>{html.escape(label)}</th>" for label, _k, _kind in columns)
+    tbody = "".join(trs) or f'<tr><td colspan="{len(columns)}" class="sub">No rows for this week yet.</td></tr>'
+    thead = "".join(f"<th>{html.escape(lab)}</th>" for lab, _k, _kd in columns)
+    scope = "all weeks" if show_all else html.escape(str(selected_week))
 
-    scope_label = "all weeks" if show_all else html.escape(str(selected_week))
     downloads = (
-        '<div class="top-actions" data-owner-only>'
+        '<div class="top-actions" data-owner-only style="margin-bottom:14px">'
         '<a class="btn" href="/project-data.csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>CSV</a>'
-        '<a class="btn" href="/project-data.xlsx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>XLSX</a>'
-        '</div>'
+        '<a class="btn" href="/project-data.xlsx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>XLSX</a></div>'
     )
-
     return (
-        '<section class="panel"><div class="panel-h"><h2>Data-Science Tracker</h2>'
-        f'<span class="hint">{total:,} rows · {scope_label} · scroll to see all</span></div>'
+        '<div class="panel mt"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">'
+        '<h3 style="margin:0">Data-Science Tracker</h3>'
+        f'<span class="sub" style="margin:0">{total:,} rows · {scope} · scroll to see all</span></div>'
         + downloads + chips
-        + f'<div class="ds-scroll"><table class="qtable"><thead><tr>{thead}</tr></thead>'
-        + f'<tbody>{tbody}</tbody></table></div>'
-        + '</section>'
-    )
-
-
-def _simple_pager(page: int, total_pages: int, href) -> str:
-    if total_pages <= 1:
-        return ""
-    out = ['<div class="pager">']
-    prev_cls = "off" if page <= 1 else ""
-    out.append(f'<a class="{prev_cls}" href="{href(max(1, page-1))}">‹ Prev</a>')
-    for p in queue_page_numbers(page, total_pages):
-        if p == page:
-            out.append(f'<span class="cur">{p}</span>')
-        else:
-            out.append(f'<a href="{href(p)}">{p}</a>')
-    next_cls = "off" if page >= total_pages else ""
-    out.append(f'<a class="{next_cls}" href="{href(min(total_pages, page+1))}">Next ›</a>')
-    out.append('</div>')
-    return "".join(out)
-
-
-# ---------------------------------------------------------------------------
-# QUEUE  (/queue)
-# ---------------------------------------------------------------------------
-def render_queue_page(page: int = 1, sort_order: str = "oldest") -> str:
-    sort_order = parse_queue_sort(sort_order)
-    rows = sort_queue_rows(build_queue_rows(), sort_order)
-    total = len(rows)
-    total_pages = max(1, (total + QUEUE_PAGE_SIZE - 1) // QUEUE_PAGE_SIZE)
-    page = max(1, min(page, total_pages))
-    start = (page - 1) * QUEUE_PAGE_SIZE
-    visible = rows[start:start + QUEUE_PAGE_SIZE]
-
-    trs = []
-    for r in visible:
-        clip = r.get("clip_filename", "")
-        title = _clean_title(r.get("title", ""), clip)
-        display = r.get("display_time", "") or "Not scheduled"
-        st = queue_status(r.get("status", ""), r.get("scheduled_publish_time", ""))
-        badge_cls, badge_txt = _queue_badge(st)
-        trs.append(
-            f'<tr><td class="clip">{html.escape(clip)}</td>'
-            f'<td class="word">{html.escape(title[:30])}</td>'
-            f'<td>{html.escape(display)}</td>'
-            f'<td><span class="badge {badge_cls}">{badge_txt}</span>'
-            f'{_queue_privacy_control(r)}</td></tr>'
-        )
-    tbody = "".join(trs) or '<tr><td colspan="4" class="metric-cap">No queued uploads yet.</td></tr>'
-
-    pager = _simple_pager(page, total_pages, lambda p: f'/queue?page={p}&sort={sort_order}')
-    sort_toggle = (
-        '<select class="mini" onchange="location.href=this.value">'
-        f'<option value="/queue?sort=oldest" {"selected" if sort_order=="oldest" else ""}>Oldest first</option>'
-        f'<option value="/queue?sort=newest" {"selected" if sort_order=="newest" else ""}>Newest first</option>'
-        '</select>'
-    )
-
-    body = (
-        '<section class="panel"><div class="panel-h"><h2>Upcoming &amp; recent</h2>'
-        f'<span class="hint">showing {len(visible)} of {total:,} records</span></div>'
-        f'<div style="margin-bottom:14px">{sort_toggle}</div>'
-        '<div class="table-wrap"><table class="qtable"><thead><tr><th>Clip</th><th>Caption</th><th>Scheduled slot</th><th>Status</th></tr></thead>'
-        f'<tbody>{tbody}</tbody></table></div>{pager}'
-        '<div class="metric-cap" style="margin-top:14px">Download the CSV for the full record of all uploads.</div>'
-        '</section>'
-    )
-    top_actions = (
-        '<a class="btn" href="/queue.csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>Download CSV</a>'
-    )
-    return render_shell(
-        "queue", "Publishing schedule", "Queue",
-        "Your current upload schedule at a glance.", body, top_actions=top_actions,
-    )
-
-
-def _queue_badge(status: str):
-    mapping = {
-        "scheduled": ("sch", "Scheduled"),
-        "uploaded": ("up", "Uploaded"),
-        "deferred": ("def", "Deferred"),
-        "failed": ("fail", "Failed"),
-        "waiting": ("wait", "Waiting"),
-    }
-    return mapping.get(status, ("wait", status.title() or "Waiting"))
-
-
-def _queue_privacy_control(row: dict) -> str:
-    """Owner-only inline privacy switcher (hidden from public viewers)."""
-    video_id = row.get("youtube_video_id", "")
-    if not video_id:
-        return ""
-    current = row.get("privacy_status", "") or "private"
-    options = "".join(
-        f'<option value="{p}"{" selected" if p == current else ""}>{p.title()}</option>'
-        for p in ("public", "unlisted", "private")
-    )
-    return (
-        '<form action="/queue/privacy" method="post" data-owner-only '
-        'style="display:inline-block;margin-left:10px">'
-        f'<input type="hidden" name="youtube_video_id" value="{html.escape(video_id)}">'
-        f'<input type="hidden" name="row_anchor" value="{queue_row_anchor(row)}">'
-        f'<select class="mini" name="privacy_status" onchange="this.form.submit()">{options}</select>'
-        '</form>'
-    )
-
-
-def queue_csv() -> str:
-    import io
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(["clip_filename", "youtube_video_id", "caption", "scheduled_slot", "status"])
-    for r in sort_queue_rows(build_queue_rows(), "oldest"):
-        st = queue_status(r.get("status", ""), r.get("scheduled_publish_time", ""))
-        writer.writerow([
-            r.get("clip_filename", ""), r.get("youtube_video_id", ""),
-            _clean_title(r.get("title", ""), r.get("clip_filename", "")),
-            r.get("display_time", ""), st,
-        ])
-    return buf.getvalue()
-
-
-# ---------------------------------------------------------------------------
-# TIKTOK CANDIDATES  (/tiktok-candidates)
-# ---------------------------------------------------------------------------
-def render_tiktok_candidates_page(selected_date: str = "") -> str:
-    _ = selected_date
-    today = datetime.now(ZoneInfo(config.TIMEZONE)).date()
-    all_days = tiktok_candidate_days()
-    # past week only
-    week_days = []
-    for day in all_days:
-        try:
-            d = datetime.fromisoformat(str(day["date"])).date()
-        except ValueError:
-            continue
-        if (today - d).days <= 6:
-            week_days.append(day)
-
-    cards = []
-    for day in week_days:
-        date_str = str(day["date"])
-        candidates = list(day["candidates"])[:3]
-        is_today = date_str == today.isoformat()
-        grid = []
-        for i, c in enumerate(candidates, 1):
-            title = _clean_title(str(c["title"]), str(c["clip_filename"]))
-            grid.append(
-                f'<div class="tt-card r{i}"><div class="rank">#{i} candidate</div>'
-                f'<div class="w">{html.escape(title)}</div>'
-                f'<div class="c">{html.escape(str(c["clip_filename"]))}</div>'
-                f'<div class="m"><div><b>{int(c["views"]):,}</b><span>views</span></div>'
-                f'<div><b>{int(c["likes"]):,}</b><span>likes</span></div>'
-                f'<div><b>{float(c["like_rate"]):.1f}%</b><span>like rate</span></div></div></div>'
-            )
-        live = '<span class="live">Updates daily</span>' if is_today else ''
-        label = "Today" if is_today else format_stats_date(date_str)
-        cards.append(
-            f'<div class="tt-day panel" id="day-{html.escape(date_str)}"><div class="dh"><h3>{html.escape(label)}</h3>'
-            f'<span>{html.escape(format_stats_date(date_str))} · {len(candidates)} clips</span>{live}</div>'
-            f'<div class="tt-grid">{"".join(grid)}</div></div>'
-        )
-
-    body = "".join(cards) or '<div class="panel"><div class="placeholder"><h3>No candidates in the past week</h3><div>Once clips have 24h of stats they appear here.</div></div></div>'
-    top_actions = (
-        '<a class="btn primary" href="/tiktok-candidates.csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>Download CSV of all weeks</a>'
-    )
-    return render_shell(
-        "tiktok", "YouTube winners for TikTok", "TikTok Candidates",
-        "Top 3 performing clips per day over the past week — refreshed automatically to repost on TikTok.",
-        body, top_actions=top_actions,
+        + f'<div class="ds-scroll"><table><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table></div></div>'
     )
 
 
@@ -2457,118 +2378,18 @@ def tiktok_all_weeks_csv() -> str:
     return buf.getvalue()
 
 
-# ---------------------------------------------------------------------------
-# VIDEO TRACKER  (/tracker)
-# ---------------------------------------------------------------------------
-def render_tracker_page() -> str:
-    rows = read_tracker_rows()
-    total = len(rows)
-    preferred = ["clip_filename", "title", "youtube_video_id", "scheduled_publish_time", "view_count", "like_count", "comment_count"]
-    headers = [h for h in preferred if rows and h in rows[0]]
-    if not headers and rows:
-        headers = list(rows[0].keys())[:7]
-
-    def cell(row, key):
-        val = row.get(key, "")
-        if key == "title":
-            val = _clean_title(val, row.get("clip_filename", ""))[:30]
-        cls = ' class="clip"' if key in ("clip_filename", "youtube_video_id") else ''
-        return f'<td{cls}>{html.escape(str(val))}</td>'
-
-    thead = "".join(f'<th>{html.escape(h.replace("_", " ").title())}</th>' for h in headers)
-    trs = "".join('<tr>' + "".join(cell(r, h) for h in headers) + '</tr>' for r in rows[:200])
-    tbody = trs or f'<tr><td colspan="{max(1,len(headers))}" class="metric-cap">No tracker rows yet.</td></tr>'
-
-    body = (
-        '<section class="panel"><div class="panel-h"><h2>Clip &amp; metadata tracker</h2>'
-        f'<span class="hint">{total:,} records · showing first {min(200,total)}</span></div>'
-        f'<div class="table-wrap"><table class="qtable"><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table></div>'
-        '<div class="metric-cap" style="margin-top:14px">Download the full CSV or XLSX for every tracked clip.</div>'
-        '</section>'
-    )
-    top_actions = (
-        '<div class="top-actions" data-owner-only>'
-        '<a class="btn" href="/tracker.csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>CSV</a>'
-        '<a class="btn" href="/tracker.xlsx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>XLSX</a></div>'
-    )
-    return render_shell(
-        "tracker", "Automation records", "Video Tracker",
-        "Every clip, its metadata, and its YouTube identifiers.", body, top_actions=top_actions,
-    )
-
-
-# ---------------------------------------------------------------------------
-# 12-WEEK EXPERIMENT  (/experiment)
-# ---------------------------------------------------------------------------
-EXPERIMENT_PHASES = [
-    {"wk": "Wk 1–2", "lo": 1, "hi": 2, "t": "Baseline",
-     "d": "Establish per-clip 24h view & engagement rates",
-     "goal": "Build a clean control set so every later test has a benchmark.",
-     "method": "For each clip, record 24h views, likes, comments; compute engagement = (likes+comments)/views. Summarize mean &amp; variance and the distribution of 24h views.",
-     "tags": ["Descriptive stats", "24h view distribution", "Control baseline"]},
-    {"wk": "Wk 3–4", "lo": 3, "hi": 4, "t": "Posting-time test",
-     "d": "9 AM–3 PM vs 4 PM–9 PM windows",
-     "goal": "Find whether morning/afternoon or evening posting drives more 24h views.",
-     "method": "Randomly assign clips to each window to remove content bias. Compare mean 24h views with a two-sample t-test (Mann-Whitney if skewed); report effect size + 95% CI.",
-     "tags": ["A/B test", "t-test", "Effect size", "Confidence interval"]},
-    {"wk": "Wk 5–6", "lo": 5, "hi": 6, "t": "Caption test",
-     "d": "Emotional vs energy caption words",
-     "goal": "Test if emotional (PEACE, SERENE, STILL) vs energy (FLOW, VIBE, FREE) captions change reach.",
-     "method": "Balance caption family across posting times. Compare group means; fit a logistic regression on a \"high performer\" flag controlling for hour to isolate caption effect.",
-     "tags": ["A/B test", "Logistic regression", "Confounder control"]},
-    {"wk": "Wk 7–8", "lo": 7, "hi": 8, "t": "Frequency test",
-     "d": "1 / hour vs 2× in best windows",
-     "goal": "See if posting denser in peak windows lifts total views without cannibalizing per-clip views.",
-     "method": "Compare per-day total views and per-clip views between cadences. Paired comparison across matched days; watch for diminishing returns.",
-     "tags": ["Paired test", "Cannibalization check", "Per-day totals"]},
-    {"wk": "Wk 9–12", "lo": 9, "hi": 12, "t": "Content type + capstone model",
-     "d": "Solo / church / jazz · predictive model",
-     "goal": "Predict which clips will perform from their features, and write the capstone.",
-     "method": "Tag clips by type, shot, orientation. Fit multivariate regression / gradient-boosted model to predict high performers; report feature importance and a final writeup.",
-     "tags": ["Feature engineering", "Regression", "Gradient boosting", "Feature importance"]},
-]
-
-
-def experiment_week() -> int:
-    start = datetime.fromisoformat(config.PROJECT_WEEK_1_START_DATE).date()
-    today = datetime.now(ZoneInfo(config.TIMEZONE)).date()
-    if today < start:
-        return 1
-    return max(1, (today - start).days // 7 + 1)
-
-
-def experiment_status(phase: dict):
-    wk = experiment_week()
-    if wk > phase["hi"]:
-        return ("st-done", "Done")
-    if phase["lo"] <= wk <= phase["hi"]:
-        return ("st-live", "Live")
-    return ("st-next", "Next")
-
-
-def render_experiment_page() -> str:
-    wk = experiment_week()
-    rows_out = []
-    for p in EXPERIMENT_PHASES:
-        s_cls, s_lbl = experiment_status(p)
-        tags = "".join(f'<span class="tag">{html.escape(t)}</span>' for t in p["tags"])
-        rows_out.append(
-            f'<details class="accw"{" open" if s_cls=="st-live" else ""}>'
-            f'<summary><div class="wk">{html.escape(p["wk"])}</div>'
-            f'<div class="body" style="flex:1"><b>{html.escape(p["t"])}</b><small>{html.escape(p["d"])}</small></div>'
-            f'<span class="status {s_cls}">{s_lbl}</span>'
-            '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg></summary>'
-            f'<div class="acc-inner"><span class="lab">Goal</span>{p["goal"]}'
-            f'<span class="lab">How we analyze</span>{p["method"]}'
-            f'<div class="tags">{tags}</div></div></details>'
-        )
-    body = (
-        '<div class="panel"><div class="panel-h"><h2>Experiment roadmap</h2>'
-        '<span class="hint">click a phase to expand the analysis plan</span></div>'
-        + "".join(rows_out) + '</div>'
-    )
-    sub = f'Currently week {wk} of {config.PROJECT_TOTAL_WEEKS} · primary metric: 24h views'
-    return render_shell("experiment", "Data Science Project", "12-Week Experiment", sub, body)
+def queue_csv() -> str:
+    import io
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["clip_filename", "youtube_video_id", "caption", "scheduled_slot", "status"])
+    for r in sort_queue_rows(build_queue_rows(), "oldest"):
+        writer.writerow([
+            r.get("clip_filename", ""), r.get("youtube_video_id", ""),
+            _clean_title(r.get("title", ""), r.get("clip_filename", "")),
+            r.get("display_time", ""), queue_status(r.get("status", ""), r.get("scheduled_publish_time", "")),
+        ])
+    return buf.getvalue()
 
 
 def run_server() -> None:
