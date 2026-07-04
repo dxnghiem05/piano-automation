@@ -231,6 +231,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if path == "/experiment":
+            self.send_html(viewer_mode_html(render_experiment_page(), owner))
+            return
+
+        # Generated CSV exports (public — they only expose already-visible showcase data).
+        if path == "/queue.csv":
+            self.send_download_text("upload_queue.csv", queue_csv())
+            return
+
+        if path == "/tiktok-candidates.csv":
+            self.send_download_text("tiktok_candidates_all_weeks.csv", tiktok_all_weeks_csv())
+            return
+
         # Data-file downloads are owner-only (they are raw exports, not part of the showcase).
         if path in {"/tracker.csv", "/tracker.xlsx", "/project-data.csv", "/project-data.xlsx"}:
             if not owner:
@@ -475,6 +488,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     break
                 self.wfile.write(chunk)
 
+    def send_download_text(self, filename: str, text: str) -> None:
+        """Send generated text (CSV) as a file download."""
+        encoded = text.encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/csv; charset=utf-8")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(encoded)
+
     def redirect(self, location: str) -> None:
         """Redirect to another dashboard page."""
         self.send_response(HTTPStatus.SEE_OTHER)
@@ -516,1527 +540,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
         logger.info("dashboard: " + format, *args)
 
 
-def render_dashboard() -> str:
-    """Render the dashboard HTML."""
-    status = build_status()
-    clips = list_clip_files()[:HOME_PREVIEW_CLIP_LIMIT]
-    upload_running = bool(status["run"]["running"])
-    run_label = "Running..." if upload_running else "Clip + Upload Videos"
-    run_disabled = "disabled" if upload_running else ""
-
-    hero_preview = render_hero_preview(clips)
-
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Piano Shorts Dashboard</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <style>
-    :root {{
-      color-scheme: light;
-      --ink: #1d1d1f;
-      --muted: #6e6e73;
-      --line: rgba(29, 29, 31, .12);
-      --paper: #f5f5f7;
-      --panel: rgba(255, 255, 255, .82);
-      --panel-solid: #ffffff;
-      --accent: #0071e3;
-      --accent-dark: #0077ed;
-      --ok: #008f7a;
-      --warn: #b26a00;
-      --stage: #0b0b0d;
-    }}
-    * {{ box-sizing: border-box; }}
-    html {{ scroll-behavior: smooth; }}
-    body {{
-      margin: 0;
-      font-family: {APP_FONT_STACK};
-      color: var(--ink);
-      background: var(--paper);
-      letter-spacing: 0;
-    }}
-    header {{
-      position: sticky;
-      top: 0;
-      z-index: 20;
-      border-bottom: 1px solid rgba(255, 255, 255, .12);
-      background: rgba(22, 22, 24, .82);
-      backdrop-filter: saturate(180%) blur(22px);
-      -webkit-backdrop-filter: saturate(180%) blur(22px);
-      color: #f5f5f7;
-    }}
-    .shell {{
-      max-width: 1240px;
-      margin: 0 auto;
-      padding: 18px 28px;
-    }}
-    .top {{
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-    }}
-    .brand {{
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 14px;
-      font-weight: 560;
-      letter-spacing: 0;
-    }}
-    .brand-mark {{
-      width: 28px;
-      height: 28px;
-      display: grid;
-      place-items: center;
-      border-radius: 999px;
-      background: linear-gradient(145deg, #ffffff, #d7d7dc);
-      color: #111;
-      box-shadow: inset 0 -1px 2px rgba(0, 0, 0, .18);
-      font-weight: 560;
-    }}
-    h1 {{
-      font-size: clamp(42px, 7vw, 88px);
-      line-height: .96;
-      margin: 0;
-      font-weight: 620;
-      letter-spacing: 0;
-    }}
-    h2 {{
-      font-size: 17px;
-      line-height: 1.2;
-      margin: 0 0 16px;
-      font-weight: 620;
-    }}
-    .section-heading {{
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 14px;
-      margin-bottom: 16px;
-    }}
-    .section-heading h2 {{ margin: 0; }}
-    .section-heading span {{
-      color: var(--muted);
-      font-size: 12px;
-      white-space: nowrap;
-    }}
-    .hero {{
-      color: #f5f5f7;
-      background:
-        radial-gradient(circle at 50% 18%, rgba(255,255,255,.22), transparent 16%),
-        radial-gradient(circle at 78% 34%, rgba(0,113,227,.28), transparent 24%),
-        linear-gradient(180deg, #09090b 0%, #121318 78%, #f5f5f7 78%);
-      min-height: 520px;
-      overflow: hidden;
-    }}
-    .hero .shell {{
-      padding-top: 58px;
-      padding-bottom: 42px;
-      text-align: center;
-    }}
-    .hero-copy {{
-      max-width: 780px;
-      margin: 0 auto;
-    }}
-    .kicker {{
-      margin: 0 0 12px;
-      color: rgba(245,245,247,.68);
-      font-size: 18px;
-      font-weight: 430;
-    }}
-    .subtitle {{
-      margin: 18px auto 0;
-      max-width: 720px;
-      color: rgba(245,245,247,.82);
-      font-size: clamp(19px, 2vw, 27px);
-      line-height: 1.18;
-      font-weight: 430;
-    }}
-    .hero-actions {{
-      display: flex;
-      justify-content: center;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-top: 28px;
-    }}
-    .hero-actions .button, .hero-actions button {{
-      width: auto;
-      min-width: 132px;
-      padding: 0 20px;
-      border-radius: 999px;
-    }}
-    .ghost {{
-      background: transparent;
-      border-color: #2997ff;
-      color: #2997ff;
-    }}
-    .ghost:hover {{ background: rgba(41, 151, 255, .12); }}
-    .hero-preview {{
-      position: relative;
-      display: flex;
-      justify-content: center;
-      align-items: flex-end;
-      gap: clamp(12px, 4vw, 44px);
-      min-height: 270px;
-      margin-top: 46px;
-      perspective: 900px;
-    }}
-    .device {{
-      width: clamp(120px, 18vw, 220px);
-      padding: 8px;
-      border-radius: 28px;
-      background: linear-gradient(145deg, #313138, #060607);
-      box-shadow: 0 26px 80px rgba(0, 0, 0, .52), inset 0 0 0 1px rgba(255,255,255,.12);
-      transition: transform .28s ease, filter .28s ease;
-    }}
-    .device:hover {{ transform: translateY(-10px) rotateX(2deg); filter: brightness(1.08); }}
-    .device:nth-child(1) {{ transform: rotate(-5deg) translateY(22px); }}
-    .device:nth-child(2) {{ width: clamp(150px, 21vw, 260px); }}
-    .device:nth-child(3) {{ transform: rotate(5deg) translateY(22px); }}
-    .device video {{
-      border-radius: 20px;
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
-    }}
-    main .shell {{
-      display: grid;
-      grid-template-columns: 340px 1fr;
-      gap: 22px;
-      align-items: start;
-      padding-top: 8px;
-      padding-bottom: 48px;
-    }}
-    main section, .clip-card {{
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 24px;
-      box-shadow: 0 18px 46px rgba(0, 0, 0, .06);
-      backdrop-filter: blur(18px);
-      -webkit-backdrop-filter: blur(18px);
-    }}
-    main section {{ padding: 20px; }}
-    .stack {{
-      display: grid;
-      gap: 16px;
-      position: sticky;
-      top: 84px;
-    }}
-    .stats {{
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-    }}
-    .stat {{
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 13px;
-      min-height: 74px;
-      background: rgba(255, 255, 255, .68);
-    }}
-    .stat strong {{
-      display: block;
-      font-size: 28px;
-      line-height: 1;
-      letter-spacing: 0;
-    }}
-    .stat span, .muted {{
-      color: var(--muted);
-      font-size: 13px;
-    }}
-    .actions {{
-      display: grid;
-      gap: 10px;
-    }}
-    button, .button {{
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 44px;
-      width: 100%;
-      border: 1px solid var(--accent);
-      border-radius: 14px;
-      background: var(--accent);
-      color: #fff;
-      font-size: 14px;
-      font-weight: 560;
-      text-decoration: none;
-      cursor: pointer;
-      transition: transform .18s ease, background .18s ease, border-color .18s ease, box-shadow .18s ease;
-    }}
-    button:hover, .button:hover {{
-      background: var(--accent-dark);
-      transform: translateY(-1px);
-      box-shadow: 0 12px 26px rgba(0, 113, 227, .24);
-    }}
-    button:disabled {{
-      cursor: wait;
-      opacity: .6;
-    }}
-    .secondary {{
-      background: #fff;
-      color: var(--accent);
-    }}
-    .secondary:hover {{
-      background: #eef4ff;
-    }}
-    input[type="file"] {{
-      width: 100%;
-      border: 1px dashed var(--line);
-      border-radius: 18px;
-      padding: 18px;
-      background: rgba(255, 255, 255, .66);
-    }}
-    .clips {{
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-      gap: 16px;
-    }}
-    .clip-card {{
-      overflow: hidden;
-      min-width: 0;
-      transition: transform .22s ease, box-shadow .22s ease;
-    }}
-    .clip-card:hover {{
-      transform: translateY(-6px);
-      box-shadow: 0 24px 56px rgba(0, 0, 0, .12);
-    }}
-    video {{
-      display: block;
-      width: 100%;
-      aspect-ratio: 9 / 16;
-      background: #111;
-      object-fit: contain;
-    }}
-    .clip-name {{
-      padding: 12px 14px;
-      font-size: 12px;
-      color: var(--muted);
-      overflow-wrap: anywhere;
-    }}
-    .status-line {{
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      font-size: 13px;
-      color: rgba(245,245,247,.72);
-    }}
-    .pill {{
-      color: #fff;
-      background: var(--ok);
-      border-radius: 999px;
-      padding: 6px 10px;
-      font-size: 12px;
-      white-space: nowrap;
-    }}
-    .pill.warn {{ background: var(--warn); }}
-    .run-meta {{
-      margin-top: 12px;
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      color: var(--muted);
-      font-size: 12px;
-    }}
-    pre {{
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-      margin: 0;
-      color: var(--muted);
-      font-size: 12px;
-      max-height: 180px;
-      overflow: auto;
-      padding: 12px;
-      border-radius: 16px;
-      background: rgba(0, 0, 0, .045);
-    }}
-    @media (max-width: 820px) {{
-      main .shell {{ grid-template-columns: 1fr; }}
-      .stack {{ position: static; }}
-      .top {{ align-items: flex-start; flex-direction: column; }}
-      .hero .shell {{ padding-top: 38px; }}
-      .hero-preview {{ min-height: 220px; }}
-    }}
-    :root {{
-      color-scheme: dark;
-      --ink: #f5f5f5;
-      --muted: #b3b3b3;
-      --line: rgba(255, 255, 255, .09);
-      --paper: #121212;
-      --panel: #181818;
-      --panel-solid: #181818;
-      --accent: #1ed760;
-      --accent-dark: #1fdf64;
-      --ok: #1ed760;
-      --warn: #ffa42b;
-      --stage: #121212;
-    }}
-    body {{
-      font-family: {APP_FONT_STACK};
-      font-weight: 430;
-      color: var(--ink);
-      background:
-        radial-gradient(circle at 20% 0%, rgba(30, 215, 96, .18), transparent 30%),
-        linear-gradient(180deg, #1f2b29 0, #121212 360px);
-    }}
-    header {{
-      border-bottom: 1px solid rgba(255,255,255,.06);
-      background: rgba(0, 0, 0, .78);
-    }}
-    .brand-mark {{
-      background: #1ed760;
-      color: #050505;
-      font-weight: 560;
-    }}
-    .hero {{
-      min-height: 460px;
-      background:
-        radial-gradient(circle at 50% 8%, rgba(255,255,255,.12), transparent 18%),
-        radial-gradient(circle at 68% 34%, rgba(30, 215, 96, .22), transparent 30%),
-        linear-gradient(180deg, #15201d 0%, #121212 100%);
-    }}
-    .hero .shell {{
-      text-align: left;
-      display: grid;
-      grid-template-columns: minmax(0, .9fr) minmax(360px, 1.1fr);
-      gap: 42px;
-      align-items: center;
-    }}
-    .hero-copy {{ max-width: 620px; margin: 0; }}
-    .kicker {{ color: #1ed760; font-weight: 560; font-size: 14px; text-transform: uppercase; }}
-    h1 {{ font-size: clamp(46px, 6vw, 82px); font-weight: 620; }}
-    .subtitle {{ margin-left: 0; color: #d7d7d7; font-size: clamp(18px, 1.6vw, 24px); }}
-    .hero-actions {{ justify-content: flex-start; }}
-    .hero-actions .button, .hero-actions button {{
-      background: #1ed760;
-      border-color: #1ed760;
-      color: #050505;
-      font-weight: 560;
-    }}
-    .hero-actions .ghost {{
-      background: rgba(255,255,255,.08);
-      border-color: rgba(255,255,255,.12);
-      color: #fff;
-    }}
-    .hero-preview {{
-      justify-content: flex-end;
-      min-height: 330px;
-      margin-top: 0;
-    }}
-    .device {{
-      border-radius: 16px;
-      background: #000;
-      box-shadow: 0 30px 90px rgba(0,0,0,.65);
-    }}
-    .device video {{ border-radius: 10px; }}
-    main .shell {{
-      max-width: 1440px;
-      grid-template-columns: 360px 1fr;
-      padding-top: 26px;
-    }}
-    main section, .clip-card {{
-      background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.025));
-      border-color: rgba(255,255,255,.08);
-      border-radius: 14px;
-      box-shadow: none;
-    }}
-    h2 {{ color: #fff; font-size: 22px; }}
-    .stat {{
-      background: #242424;
-      border-color: rgba(255,255,255,.06);
-      border-radius: 10px;
-    }}
-    .stat strong {{ color: #fff; }}
-    .stat span, .muted, .clip-name {{ color: var(--muted); }}
-    button, .button {{
-      border-radius: 999px;
-      background: #1ed760;
-      border-color: #1ed760;
-      color: #050505;
-      font-weight: 560;
-    }}
-    button:hover, .button:hover {{
-      background: #3be477;
-      transform: scale(1.02);
-      box-shadow: none;
-    }}
-    .secondary {{
-      background: #242424;
-      border-color: #242424;
-      color: #fff;
-    }}
-    .secondary:hover {{ background: #303030; }}
-    input[type="file"] {{
-      color: #d7d7d7;
-      background: #242424;
-      border-color: rgba(255,255,255,.12);
-    }}
-    .album-actions {{
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-      margin-bottom: 12px;
-    }}
-    .album-action {{
-      position: relative;
-      display: block;
-      width: 100%;
-      padding: 14px;
-      border: 0;
-      border-radius: 10px;
-      color: #fff;
-      text-align: left;
-      text-decoration: none;
-      background: #181818;
-      cursor: pointer;
-      font-family: inherit;
-      transition: background .25s ease;
-    }}
-    .album-action:hover {{ background: #282828; }}
-    .album-action .cover {{
-      display: block;
-      width: 100%;
-      aspect-ratio: 1 / 1;
-      border-radius: 6px;
-      overflow: hidden;
-      margin-bottom: 14px;
-      box-shadow: 0 8px 24px rgba(0,0,0,.5);
-      background: var(--cover, linear-gradient(135deg, #1ed760, #005c38));
-    }}
-    .album-action .cover svg {{ display: block; width: 100%; height: 100%; }}
-    .album-action .name {{
-      display: block;
-      font-size: 15px;
-      font-weight: 700;
-      letter-spacing: -0.01em;
-      margin-bottom: 5px;
-    }}
-    .album-action .desc {{
-      display: block;
-      font-size: 12.5px;
-      font-weight: 500;
-      color: #b3b3b3;
-      line-height: 1.35;
-    }}
-    .album-action .play {{
-      position: absolute;
-      right: 22px;
-      bottom: 78px;
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      background: #1ed760;
-      display: grid;
-      place-items: center;
-      box-shadow: 0 8px 16px rgba(0,0,0,.4);
-      opacity: 0;
-      transform: translateY(8px);
-      transition: opacity .2s ease, transform .2s ease;
-    }}
-    .album-action:hover .play {{ opacity: 1; transform: translateY(0); }}
-    .album-action .play svg {{ width: 20px; height: 20px; }}
-    .cover-run {{ --cover: linear-gradient(135deg, #1ed760, #0a5c2e); }}
-    .cover-stats {{ --cover: linear-gradient(135deg, #3b8bff, #0b2a6b); }}
-    .cover-refresh {{ --cover: linear-gradient(135deg, #e93cc0, #5b2e91); }}
-    .cover-queue {{ --cover: linear-gradient(135deg, #1fd9b4, #0c4a45); }}
-    .cover-tiktok {{ --cover: linear-gradient(135deg, #ff2d55, #25f4ee); }}
-    .album-action:disabled {{ opacity: .55; cursor: wait; }}
-    .album-action:disabled .play {{ opacity: 0; }}
-    .upload-album {{
-      display: grid;
-      gap: 12px;
-    }}
-    .upload-drop {{
-      min-height: 128px;
-      display: grid;
-      place-items: center;
-      gap: 8px;
-      border-radius: 12px;
-      background:
-        linear-gradient(135deg, rgba(255,255,255,.10), rgba(255,255,255,.02)),
-        linear-gradient(135deg, #3b2f63, #10251c);
-      cursor: pointer;
-      text-align: center;
-      padding: 14px;
-    }}
-    .upload-drop.is-dragging {{
-      outline: 2px solid #1ed760;
-      outline-offset: 4px;
-      filter: brightness(1.08);
-    }}
-    .upload-drop input {{ width: 100%; max-width: 220px; }}
-    .upload-title {{ font-size: 16px; font-weight: 560; }}
-    .upload-copy {{
-      max-width: 260px;
-      color: #d7d7d7;
-      font-size: 12px;
-      line-height: 1.35;
-    }}
-    .upload-buttons {{
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 10px;
-    }}
-    .upload-status {{
-      min-height: 20px;
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.35;
-    }}
-    .upload-status.ok {{ color: #1ed760; }}
-    .upload-status.warn {{ color: #ffa42b; }}
-    .upload-status.error {{ color: #ff6b6b; }}
-    .clips {{ grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }}
-    .clip-card {{
-      border-radius: 10px;
-      background: #181818;
-      padding: 10px;
-    }}
-    .clip-card video {{ border-radius: 8px; }}
-    .clip-name {{ padding: 10px 2px 0; }}
-    pre {{ background: #0b0b0b; color: #c7c7c7; }}
-    @media (max-width: 980px) {{
-      .hero .shell {{ grid-template-columns: 1fr; text-align: center; }}
-      .hero-copy {{ margin: 0 auto; }}
-      .subtitle {{ margin-left: auto; }}
-      .hero-actions {{ justify-content: center; }}
-      .hero-preview {{ justify-content: center; }}
-    }}
-    @media (max-width: 820px) {{
-      .album-actions {{ grid-template-columns: 1fr; }}
-    }}
-    .dashboard-grid {{
-      display: grid;
-      gap: 18px;
-    }}
-    main .shell {{
-      display: block;
-      max-width: 1440px;
-    }}
-    .control-row {{
-      display: grid;
-      grid-template-columns: minmax(260px, .95fr) minmax(420px, 1.65fr) minmax(260px, .85fr);
-      gap: 18px;
-      align-items: stretch;
-    }}
-    .control-row section {{
-      min-width: 0;
-    }}
-    .automation-wide {{
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 16px;
-      margin-bottom: 12px;
-    }}
-    .automation-wide .run-form,
-    .automation-wide .refresh-form {{
-      display: contents;
-    }}
-    .status-card pre {{
-      margin-top: 14px;
-      background: rgba(0,0,0,.18);
-    }}
-    .live-heading {{
-      margin-top: 14px;
-      color: #1ed760;
-      font-size: 12px;
-      font-weight: 560;
-      text-transform: uppercase;
-    }}
-    @media (max-width: 1120px) {{
-      .control-row {{ grid-template-columns: 1fr 1fr; }}
-      .status-card {{ grid-column: 1 / -1; }}
-    }}
-    @media (max-width: 760px) {{
-      .control-row,
-      .automation-wide, .upload-buttons {{ grid-template-columns: 1fr; }}
-    }}
-  </style>
-</head>
-<body>
-  <header>
-    <div class="shell top">
-      <div class="brand"><span class="brand-mark">♪</span><span>Piano Shorts</span></div>
-      <div class="status-line">
-        <span>{html.escape(str(config.INPUT_DIR))}</span>
-        <span class="pill {'warn' if upload_running else ''}" data-run-pill>{'Running' if upload_running else 'Ready'}</span>
-      </div>
-    </div>
-  </header>
-  <section class="hero">
-    <div class="shell">
-      <div class="hero-copy">
-        <p class="kicker">Creator automation for your piano videos</p>
-        <h1>Piano Shorts Dashboard</h1>
-        <p class="subtitle">Clip, schedule, track, and study your YouTube Shorts from one quiet studio interface.</p>
-        <div class="hero-actions">
-          <form action="/run" method="post" class="run-form">
-            <button type="submit" data-run-primary {run_disabled}>{run_label}</button>
-          </form>
-          <a class="button ghost" href="/stats">View Stats</a>
-          <a class="button ghost" href="/queue">Browse Queue</a>
-        </div>
-      </div>
-      <div class="hero-preview">
-        {hero_preview}
-      </div>
-    </div>
-  </section>
-  <main>
-    <div class="shell">
-      <div class="dashboard-grid">
-      <div class="control-row">
-        <section>
-          <h2>Input Folder</h2>
-          <form action="/upload" method="post" enctype="multipart/form-data" class="upload-album">
-            <label class="upload-drop">
-              <span class="upload-title">Drop videos into input</span>
-              <span class="upload-copy">Drag files here or choose .mp4/.mov videos. Then press Clip + Upload Videos to schedule them.</span>
-              <input type="file" name="videos" accept=".mp4,.mov,video/mp4,video/quicktime" multiple>
-            </label>
-            <div class="upload-buttons">
-              <button type="submit" name="upload_action" value="input_only">Save To Input</button>
-            </div>
-            <div class="upload-status" data-upload-status></div>
-          </form>
-        </section>
-        <section>
-          <h2>Automation</h2>
-          <div class="automation-wide">
-            <form action="/run" method="post" class="run-form">
-              <button class="album-action cover-run" type="submit" data-run-primary {run_disabled}>
-                <span class="cover"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="acRun" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1ed760"/><stop offset="1" stop-color="#0a5c2e"/></linearGradient></defs><rect width="100" height="100" fill="url(#acRun)"/><g fill="none" stroke="rgba(0,0,0,.35)" stroke-width="3"><circle cx="30" cy="66" r="9"/><circle cx="54" cy="66" r="9"/><line x1="38" y1="61" x2="76" y2="32"/><line x1="62" y1="61" x2="76" y2="52"/></g><path d="M74 18 l0 28 M63 29 l11 -11 l11 11" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-                <span class="play"><svg viewBox="0 0 24 24" fill="#000"><path d="M8 5v14l11-7z"/></svg></span>
-                <span class="name">{run_label}</span>
-                <span class="desc">Clip, caption &amp; schedule Shorts</span>
-              </button>
-            </form>
-            <a class="album-action cover-stats" href="/stats">
-              <span class="cover"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="acStats" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b8bff"/><stop offset="1" stop-color="#0b2a6b"/></linearGradient></defs><rect width="100" height="100" fill="url(#acStats)"/><g fill="rgba(255,255,255,.92)"><rect x="24" y="58" width="10" height="22" rx="2"/><rect x="42" y="46" width="10" height="34" rx="2"/><rect x="60" y="34" width="10" height="46" rx="2"/></g><path d="M22 52 L38 42 L54 48 L78 24" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/><circle cx="78" cy="24" r="4" fill="#fff"/></svg></span>
-              <span class="play"><svg viewBox="0 0 24 24" fill="#000"><path d="M8 5v14l11-7z"/></svg></span>
-              <span class="name">YouTube Stats</span>
-              <span class="desc">Views, likes &amp; growth</span>
-            </a>
-            <a class="album-action cover-queue" href="/queue">
-              <span class="cover"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="acQueue" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1fd9b4"/><stop offset="1" stop-color="#0c4a45"/></linearGradient></defs><rect width="100" height="100" fill="url(#acQueue)"/><g stroke="rgba(0,0,0,.4)" stroke-width="4" stroke-linecap="round"><line x1="30" y1="34" x2="78" y2="34"/><line x1="30" y1="50" x2="78" y2="50"/><line x1="30" y1="66" x2="62" y2="66"/></g><path d="M70 60 v18 l14 -9 z" fill="#ffffff"/></svg></span>
-              <span class="play"><svg viewBox="0 0 24 24" fill="#000"><path d="M8 5v14l11-7z"/></svg></span>
-              <span class="name">Queue</span>
-              <span class="desc">Scheduled &amp; deferred clips</span>
-            </a>
-            <a class="album-action cover-tiktok" href="/tiktok-candidates">
-              <span class="cover"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="acTok" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff2d55"/><stop offset=".55" stop-color="#111"/><stop offset="1" stop-color="#25f4ee"/></linearGradient></defs><rect width="100" height="100" fill="url(#acTok)"/><g fill="none" stroke="#25f4ee" stroke-width="4" transform="translate(2,-1)"><circle cx="38" cy="66" r="9"/><path d="M47 66 V30 c8 6 14 7 20 7" stroke-linecap="round" stroke-linejoin="round"/></g><g fill="none" stroke="#ff2d55" stroke-width="4" transform="translate(-3,2)"><circle cx="38" cy="66" r="9"/><path d="M47 66 V30 c8 6 14 7 20 7" stroke-linecap="round" stroke-linejoin="round"/></g></svg></span>
-              <span class="play"><svg viewBox="0 0 24 24" fill="#000"><path d="M8 5v14l11-7z"/></svg></span>
-              <span class="name">TikTok Candidates</span>
-              <span class="desc">Top clips to repost</span>
-            </a>
-            <form action="/refresh-stats" method="post" class="refresh-form">
-              <input type="hidden" name="redirect_to" value="/">
-              <button class="album-action cover-refresh" type="submit" data-run-lock {run_disabled}>
-                <span class="cover"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="acRef" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e93cc0"/><stop offset="1" stop-color="#5b2e91"/></linearGradient></defs><rect width="100" height="100" fill="url(#acRef)"/><g fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round"><path d="M68 40 a20 20 0 1 0 4 16"/></g><path d="M68 26 l2 16 l-16 -3 z" fill="#ffffff"/></svg></span>
-                <span class="play"><svg viewBox="0 0 24 24" fill="#000"><path d="M8 5v14l11-7z"/></svg></span>
-                <span class="name">Refresh Stats</span>
-                <span class="desc">Pull latest YouTube data</span>
-              </button>
-            </form>
-          </div>
-        </section>
-        <section class="status-card">
-          <h2>Status</h2>
-          <div class="stats">
-            <div class="stat"><strong data-status-count="input_count">{status['input_count']}</strong><span>input videos</span></div>
-            <div class="stat"><strong data-status-count="clip_count">{status['clip_count']}</strong><span>clips</span></div>
-            <div class="stat"><strong data-status-count="uploaded_sources">{status['uploaded_sources']}</strong><span>processed videos</span></div>
-            <div class="stat"><strong data-status-count="upload_records">{status['upload_records']}</strong><span>upload records</span></div>
-          </div>
-          <div class="run-meta">
-            <span data-run-started>{'Started ' + html.escape(str(status['run']['started_at'])) if status['run']['started_at'] else 'Not started'}</span>
-            <span data-run-finished>{'Finished ' + html.escape(str(status['run']['finished_at'])) if status['run']['finished_at'] else ''}</span>
-          </div>
-          <div class="live-heading">Live activity</div>
-          <pre data-live-log>{html.escape(live_dashboard_log_text())}</pre>
-        </section>
-      </div>
-      </div>
-    </div>
-  </main>
-  <script>
-    async function refreshStatus() {{
-      try {{
-        const response = await fetch('/api/status', {{ cache: 'no-store' }});
-        if (!response.ok) return;
-        const status = await response.json();
-        const run = status.run || {{}};
-        const pill = document.querySelector('[data-run-pill]');
-        const log = document.querySelector('[data-live-log]');
-        const started = document.querySelector('[data-run-started]');
-        const finished = document.querySelector('[data-run-finished]');
-        const message = run.last_output || run.last_error || 'No dashboard run yet.';
-
-        if (pill) {{
-          pill.textContent = run.running ? 'Running' : 'Ready';
-          pill.classList.toggle('warn', Boolean(run.running));
-        }}
-        document.querySelectorAll('[data-status-count]').forEach((element) => {{
-          const key = element.getAttribute('data-status-count');
-          if (key && Object.prototype.hasOwnProperty.call(status, key)) {{
-            element.textContent = status[key];
-          }}
-        }});
-        document.querySelectorAll('[data-run-primary]').forEach((button) => {{
-          button.disabled = Boolean(run.running);
-          const label = run.running ? 'Running...' : 'Clip + Upload Videos';
-          const span = button.querySelector('.name') || button.querySelector('span');
-          if (span) span.textContent = label;
-          else button.textContent = label;
-        }});
-        document.querySelectorAll('[data-run-lock]').forEach((button) => {{
-          button.disabled = Boolean(run.running);
-        }});
-        if (started) started.textContent = run.started_at ? `Started ${{run.started_at}}` : 'Not started';
-        if (finished) finished.textContent = run.finished_at ? `Finished ${{run.finished_at}}` : '';
-        if (log && !log.dataset.liveFeedReady && log.textContent !== message) {{
-          log.textContent = message;
-          log.scrollTop = log.scrollHeight;
-        }}
-      }} catch (error) {{
-        console.error(error);
-      }}
-    }}
-    async function refreshLiveLog() {{
-      try {{
-        const response = await fetch('/api/logs', {{ cache: 'no-store' }});
-        if (!response.ok) return;
-        const payload = await response.json();
-        const log = document.querySelector('[data-live-log]');
-        const text = payload.text || 'No dashboard activity yet.';
-        if (log && log.textContent !== text) {{
-          log.dataset.liveFeedReady = '1';
-          log.textContent = text;
-          log.scrollTop = log.scrollHeight;
-        }}
-      }} catch (error) {{
-        console.error(error);
-      }}
-    }}
-    refreshStatus();
-    refreshLiveLog();
-    window.setInterval(refreshStatus, 2000);
-    window.setInterval(refreshLiveLog, 1000);
-    document.querySelectorAll('.run-form').forEach((form) => {{
-      form.addEventListener('submit', async (event) => {{
-        event.preventDefault();
-        const button = form.querySelector('button');
-        const labelEl = button ? (button.querySelector('.name') || button) : null;
-        const previousLabel = labelEl ? labelEl.textContent : '';
-        if (button) button.disabled = true;
-        if (labelEl) labelEl.textContent = 'Starting...';
-        try {{
-          await fetch(form.action, {{
-            method: 'POST',
-            headers: {{ 'X-Requested-With': 'fetch' }},
-          }});
-          await refreshStatus();
-          await refreshLiveLog();
-        }} catch (error) {{
-          console.error(error);
-        }} finally {{
-          if (labelEl) labelEl.textContent = previousLabel || 'Clip + Upload Videos';
-        }}
-      }});
-    }});
-    document.querySelectorAll('.refresh-form').forEach((form) => {{
-      form.addEventListener('submit', async (event) => {{
-        event.preventDefault();
-        const button = form.querySelector('button');
-        const labelEl = button ? (button.querySelector('.name') || button) : null;
-        const label = labelEl ? labelEl.textContent : '';
-        if (button) button.disabled = true;
-        if (labelEl) labelEl.textContent = 'Refreshing...';
-        try {{
-          await fetch(form.action, {{
-            method: 'POST',
-            body: new URLSearchParams(new FormData(form)),
-            headers: {{ 'X-Requested-With': 'fetch' }},
-          }});
-          await refreshStatus();
-        }} catch (error) {{
-          console.error(error);
-        }} finally {{
-          if (button) button.disabled = false;
-          if (labelEl) labelEl.textContent = label;
-        }}
-      }});
-    }});
-    document.querySelectorAll('.upload-album').forEach((form) => {{
-      const input = form.querySelector('input[type="file"]');
-      const status = form.querySelector('[data-upload-status]');
-      const buttons = Array.from(form.querySelectorAll('button[type="submit"]'));
-      let clickedButton = null;
-      buttons.forEach((button) => {{
-        button.addEventListener('click', () => {{
-          clickedButton = button;
-        }});
-      }});
-      const setUploadStatus = (message, tone = '') => {{
-        if (!status) return;
-        status.textContent = message;
-        status.className = `upload-status ${{tone}}`.trim();
-      }};
-      input?.addEventListener('change', () => {{
-        const files = Array.from(input.files || []);
-        if (!files.length) {{
-          setUploadStatus('');
-          return;
-        }}
-        const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
-        const totalMb = totalBytes / 1024 / 1024;
-        const cloudflareHost = location.hostname.includes('trycloudflare.com');
-        if (cloudflareHost && totalMb > 95) {{
-          setUploadStatus(`Selected ${{files.length}} file(s), ${{totalMb.toFixed(1)}} MB. Large Cloudflare uploads may fail; localhost is safer for big phone videos.`, 'warn');
-        }} else {{
-          setUploadStatus(`Selected ${{files.length}} file(s), ${{totalMb.toFixed(1)}} MB.`, '');
-        }}
-      }});
-      const drop = form.querySelector('.upload-drop');
-      ['dragenter', 'dragover'].forEach((eventName) => {{
-        drop?.addEventListener(eventName, (event) => {{
-          event.preventDefault();
-          drop.classList.add('is-dragging');
-        }});
-      }});
-      drop?.addEventListener('dragleave', () => {{
-        drop.classList.remove('is-dragging');
-      }});
-      drop?.addEventListener('drop', (event) => {{
-        event.preventDefault();
-        drop.classList.remove('is-dragging');
-        if (input && event.dataTransfer?.files?.length) {{
-          input.files = event.dataTransfer.files;
-          input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-        }}
-      }});
-      ['dragend'].forEach((eventName) => {{
-        drop?.addEventListener(eventName, () => {{
-          drop.classList.remove('is-dragging');
-        }});
-      }});
-      form.addEventListener('submit', async (event) => {{
-        event.preventDefault();
-        const files = Array.from(input?.files || []);
-        if (!files.length) {{
-          setUploadStatus('Choose at least one .mp4 or .mov first.', 'error');
-          return;
-        }}
-        const submitter = event.submitter || clickedButton || buttons[0];
-        const originalLabels = new Map(buttons.map((button) => [button, button.textContent]));
-        const formData = new FormData(form);
-        if (submitter?.name) {{
-          formData.set(submitter.name, submitter.value || '');
-        }}
-        const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
-        const totalMb = totalBytes / 1024 / 1024;
-        buttons.forEach((button) => {{
-          button.disabled = true;
-        }});
-        if (submitter) submitter.textContent = 'Uploading...';
-        setUploadStatus('Uploading to input folder. Keep this page open until it finishes.', 'warn');
-        const startedAt = Date.now();
-        let sawProgress = false;
-        let lastProgressText = '';
-        const uploadTimer = window.setInterval(() => {{
-          const elapsed = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
-          if (sawProgress && lastProgressText) {{
-            setUploadStatus(`${{lastProgressText}} · ${{elapsed}}s elapsed`, 'warn');
-          }} else {{
-            setUploadStatus(`Uploading ${{totalMb.toFixed(1)}} MB file(s)... ${{elapsed}}s elapsed. Keep this page open.`, 'warn');
-          }}
-        }}, 1000);
-        try {{
-          const payload = await new Promise((resolve, reject) => {{
-            const request = new XMLHttpRequest();
-            request.open('POST', form.action);
-            request.setRequestHeader('X-Requested-With', 'fetch');
-            request.upload.addEventListener('progress', (progress) => {{
-              sawProgress = true;
-              if (progress.lengthComputable) {{
-                const percent = Math.max(1, Math.min(99, Math.round((progress.loaded / progress.total) * 100)));
-                lastProgressText = `Uploading ${{percent}}%`;
-              }} else {{
-                lastProgressText = `Uploading ${{(progress.loaded / 1024 / 1024).toFixed(1)}} MB`;
-              }}
-              setUploadStatus(`${{lastProgressText}}... Keep this page open.`, 'warn');
-            }});
-            request.addEventListener('load', () => {{
-              let payload = null;
-              try {{
-                payload = JSON.parse(request.responseText || '{{}}');
-              }} catch (_error) {{
-                payload = null;
-              }}
-              if (request.status < 200 || request.status >= 300 || !payload?.ok) {{
-                reject(new Error(payload?.error || `Upload failed with status ${{request.status}}`));
-                return;
-              }}
-              resolve(payload);
-            }});
-            request.addEventListener('error', () => reject(new Error('Upload connection failed')));
-            request.addEventListener('timeout', () => reject(new Error('Upload timed out')));
-            request.send(formData);
-          }});
-          setUploadStatus(payload.message || `Saved ${{payload.saved}} file(s) to input.`, payload.saved ? 'ok' : 'error');
-          form.reset();
-          await refreshStatus();
-        }} catch (error) {{
-          console.error(error);
-          setUploadStatus(`${{error.message}}. If this is a large iPhone video through Cloudflare, try localhost or add it directly to the input folder.`, 'error');
-        }} finally {{
-          window.clearInterval(uploadTimer);
-          buttons.forEach((button) => {{
-            button.disabled = false;
-            button.textContent = originalLabels.get(button) || button.textContent;
-          }});
-          clickedButton = null;
-        }}
-      }});
-    }});
-  </script>
-</body>
-</html>"""
-
-
-def render_hero_preview(paths: list[Path]) -> str:
-    """Render floating clip previews for the dashboard hero."""
-    if not paths:
-        return """
-          <div class="device"><video controls preload="metadata"></video></div>
-          <div class="device"><video controls preload="metadata"></video></div>
-          <div class="device"><video controls preload="metadata"></video></div>
-        """
-
-    cards = []
-    for path in paths:
-        name = html.escape(path.name)
-        cards.append(f'<div class="device"><video src="/clips/{name}" controls muted preload="metadata"></video></div>')
-    return "\n".join(cards)
-
-
-def render_tracker_page() -> str:
-    """Render a browser-readable tracker table."""
-    rows = read_tracker_rows()
-    if not rows:
-        body = '<p class="muted">No tracker rows yet. Run the automation first.</p>'
-    else:
-        headers = list(rows[0].keys())
-        head = "".join(f"<th>{html.escape(header)}</th>" for header in headers)
-        rendered_rows = []
-        for row in rows[:300]:
-            rendered_rows.append(
-                "<tr>"
-                + "".join(f"<td>{html.escape(str(row.get(header, '')))}</td>" for header in headers)
-                + "</tr>"
-            )
-        body = f"""
-          <div class="table-wrap">
-            <table>
-              <thead><tr>{head}</tr></thead>
-              <tbody>{''.join(rendered_rows)}</tbody>
-            </table>
-          </div>
-        """
-
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Video Tracker</title>
-  {FONT_HEAD}
-  <style>
-    :root {{
-      color-scheme: dark;
-      --ink: #f5f5f5;
-      --muted: #b3b3b3;
-      --line: rgba(255, 255, 255, .09);
-      --paper: #121212;
-      --panel: #181818;
-      --accent: #1ed760;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
-      margin: 0;
-      font-family: {APP_FONT_STACK};
-      font-weight: 430;
-      color: var(--ink);
-      background:
-        radial-gradient(circle at 20% 0%, rgba(30, 215, 96, .18), transparent 30%),
-        linear-gradient(180deg, #1f2b29 0, #121212 360px);
-    }}
-    .shell {{ max-width: 1440px; margin: 0 auto; padding: 58px 24px; }}
-    .top {{
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 20px;
-      margin-bottom: 28px;
-    }}
-    .eyebrow {{
-      margin: 0 0 8px;
-      color: var(--accent);
-      font-size: 13px;
-      font-weight: 560;
-      text-transform: uppercase;
-    }}
-    h1 {{
-      font-size: clamp(46px, 6vw, 78px);
-      line-height: .96;
-      margin: 0;
-      letter-spacing: 0;
-    }}
-    a {{
-      color: var(--ink);
-      font-weight: 560;
-      text-decoration: none;
-    }}
-    .links {{
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      padding: 8px;
-      border-radius: 999px;
-      background: rgba(255,255,255,.08);
-      border: 1px solid rgba(255,255,255,.08);
-    }}
-    .links form {{ margin: 0; }}
-    .links a {{
-      min-height: 38px;
-      display: inline-flex;
-      align-items: center;
-      padding: 0 16px;
-      border-radius: 999px;
-      background: #242424;
-    }}
-    .links a:hover {{ background: #303030; transform: translateY(-1px); }}
-    .links a:nth-child(2),
-    .links a:nth-child(3) {{
-      background: var(--accent);
-      color: #050505;
-    }}
-    .table-wrap {{
-      overflow: auto;
-      background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.025));
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      box-shadow: 0 24px 70px rgba(0,0,0,.32);
-    }}
-    table {{
-      border-collapse: collapse;
-      width: 100%;
-      min-width: 1600px;
-      font-size: 12px;
-    }}
-    th, td {{
-      border-bottom: 1px solid rgba(255,255,255,.07);
-      padding: 11px 12px;
-      text-align: left;
-      white-space: nowrap;
-    }}
-    th {{
-      position: sticky;
-      top: 0;
-      background: #242424;
-      color: var(--muted);
-      z-index: 1;
-      font-weight: 560;
-    }}
-    td {{ color: #d7d7d7; }}
-    .muted {{
-      color: var(--muted);
-      padding: 24px;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: var(--panel);
-    }}
-    @media (max-width: 820px) {{
-      .top {{ align-items: flex-start; flex-direction: column; }}
-      .shell {{ padding-top: 36px; }}
-    }}
-  </style>
-</head>
-<body>
-  <div class="shell">
-    <div class="top">
-      <div>
-        <p class="eyebrow">Automation records</p>
-        <h1>Video Tracker</h1>
-      </div>
-      <div class="links">
-        <a href="/">Dashboard</a>
-        <a href="/queue">Queue</a>
-        <a href="/tiktok-candidates">TikTok Candidates</a>
-        <a href="/tracker.xlsx">Download Excel</a>
-        <a href="/tracker.csv">Download CSV</a>
-      </div>
-    </div>
-    {body}
-  </div>
-</body>
-</html>"""
-
-
-def render_queue_page(page: int = 1, sort_order: str = "oldest") -> str:
-    """Render uploaded and pending video queue."""
-    sort_order = parse_queue_sort(sort_order)
-    rows = sort_queue_rows(build_queue_rows(), sort_order)
-    total_rows = len(rows)
-    total_pages = max(1, (total_rows + QUEUE_PAGE_SIZE - 1) // QUEUE_PAGE_SIZE)
-    page = max(1, min(page, total_pages))
-    start_index = (page - 1) * QUEUE_PAGE_SIZE
-    end_index = min(start_index + QUEUE_PAGE_SIZE, total_rows)
-    visible_rows = rows[start_index:end_index]
-    deferred_count = sum(1 for row in rows if row.get("status") == "deferred")
-    run_running = bool(RUN_STATE["running"])
-    retry_label = f"Retry Deferred ({deferred_count})" if deferred_count else "Run Uploads"
-    retry_disabled = "disabled" if run_running else ""
-    table_rows = "".join(render_queue_row(row) for row in visible_rows)
-    if not table_rows:
-        table_rows = '<tr><td colspan="7" class="muted">No queue items yet.</td></tr>'
-    message = render_queue_message(deferred_count)
-    pagination = render_queue_pagination(page, total_pages, start_index, end_index, total_rows, sort_order)
-
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Video Queue</title>
-  {FONT_HEAD}
-  <style>
-    :root {{
-      color-scheme: dark;
-      --ink: #f5f5f5;
-      --muted: #b3b3b3;
-      --line: rgba(255, 255, 255, .09);
-      --panel: #181818;
-      --accent: #1fd9b4;
-      --warn: #ffa42b;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
-      margin: 0;
-      font-family: {APP_FONT_STACK};
-      font-weight: 430;
-      color: var(--ink);
-      background:
-        radial-gradient(circle at 20% 0%, rgba(31, 217, 180, .20), transparent 30%),
-        linear-gradient(180deg, #123029 0, #121212 360px);
-    }}
-    .shell {{ max-width: 1440px; margin: 0 auto; padding: 58px 24px; }}
-    .top {{
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 20px;
-      margin-bottom: 28px;
-    }}
-    .eyebrow {{
-      margin: 0 0 8px;
-      color: var(--accent);
-      font-size: 13px;
-      font-weight: 560;
-      text-transform: uppercase;
-    }}
-    h1 {{
-      font-size: clamp(46px, 6vw, 78px);
-      line-height: .96;
-      margin: 0;
-    }}
-    .links {{
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      padding: 8px;
-      border-radius: 999px;
-      background: rgba(255,255,255,.08);
-      border: 1px solid rgba(255,255,255,.08);
-    }}
-    .links form {{ margin: 0; }}
-    .links a, .links button {{
-      min-height: 38px;
-      display: inline-flex;
-      align-items: center;
-      padding: 0 16px;
-      border-radius: 999px;
-      background: #242424;
-      color: var(--ink);
-      font-weight: 560;
-      text-decoration: none;
-    }}
-    .links button {{
-      border: 0;
-      background: var(--accent);
-      color: #050505;
-      cursor: pointer;
-    }}
-    .links a:hover, .links button:hover {{ background: #303030; transform: translateY(-1px); }}
-    .links button:hover {{ background: #33e6c4; }}
-    .links button:disabled {{ cursor: wait; opacity: .72; transform: none; }}
-    .queue-panel {{
-      overflow: auto;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.025));
-      box-shadow: 0 24px 70px rgba(0,0,0,.32);
-    }}
-    table {{
-      border-collapse: collapse;
-      width: 100%;
-      min-width: 1120px;
-      font-size: 13px;
-    }}
-    th, td {{
-      border-bottom: 1px solid rgba(255,255,255,.07);
-      padding: 13px 14px;
-      text-align: left;
-      vertical-align: middle;
-      white-space: nowrap;
-    }}
-    th {{
-      position: sticky;
-      top: 0;
-      background: #242424;
-      color: var(--muted);
-      z-index: 1;
-      font-weight: 560;
-    }}
-    td {{ color: #d7d7d7; }}
-    tr {{ scroll-margin-top: 24px; }}
-    tr:target {{
-      background: rgba(31,217,180,.10);
-      outline: 1px solid rgba(31,217,180,.35);
-    }}
-    tr.saved-row {{
-      background: rgba(31,217,180,.10);
-    }}
-    .title-cell {{
-      max-width: 340px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }}
-    .badge {{
-      display: inline-flex;
-      align-items: center;
-      min-height: 28px;
-      padding: 0 10px;
-      border-radius: 999px;
-      background: #242424;
-      color: #fff;
-      font-size: 12px;
-      font-weight: 560;
-    }}
-    .badge.future {{ background: rgba(31,217,180,.16); color: var(--accent); }}
-    .badge.issue {{ background: rgba(255,164,43,.16); color: var(--warn); }}
-    .youtube-link {{ color: var(--accent); font-weight: 560; text-decoration: none; }}
-    form.privacy-form {{ display: flex; align-items: center; gap: 8px; margin: 0; }}
-    select {{
-      min-height: 36px;
-      border: 1px solid rgba(255,255,255,.12);
-      border-radius: 999px;
-      background: #242424;
-      color: #fff;
-      padding: 0 12px;
-      font: inherit;
-    }}
-    button {{
-      min-height: 36px;
-      border: 1px solid var(--accent);
-      border-radius: 999px;
-      background: var(--accent);
-      color: #050505;
-      font-weight: 560;
-      padding: 0 14px;
-      cursor: pointer;
-    }}
-    button:hover {{ background: #33e6c4; transform: scale(1.02); }}
-    button:disabled {{ cursor: wait; opacity: .72; transform: none; }}
-    .inline-status {{
-      color: var(--muted);
-      font-size: 12px;
-      min-width: 48px;
-    }}
-    .inline-status.ok {{ color: var(--accent); }}
-    .inline-status.error {{ color: var(--warn); }}
-    .message {{
-      margin: 0 0 18px;
-      padding: 14px 16px;
-      border: 1px solid rgba(255,255,255,.1);
-      border-radius: 14px;
-      background: rgba(31,217,180,.12);
-      color: #d7d7d7;
-    }}
-    .message.error {{
-      background: rgba(255,164,43,.14);
-      color: #ffd9a0;
-    }}
-    .queue-meta {{
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 14px;
-      margin: 0 0 14px;
-      color: var(--muted);
-      font-size: 14px;
-    }}
-    .queue-tools {{
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 12px;
-      flex-wrap: wrap;
-    }}
-    .sort-form {{
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin: 0;
-    }}
-    .sort-form label {{
-      color: var(--muted);
-      font-size: 13px;
-    }}
-    .pagination {{
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 8px;
-      flex-wrap: wrap;
-    }}
-    .page-link {{
-      min-width: 36px;
-      min-height: 36px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0 12px;
-      border-radius: 999px;
-      border: 1px solid rgba(255,255,255,.1);
-      background: #242424;
-      color: var(--ink);
-      text-decoration: none;
-      font-weight: 560;
-    }}
-    .page-link:hover {{ border-color: rgba(31,217,180,.45); color: var(--accent); }}
-    .page-link.active {{
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #050505;
-    }}
-    .page-link.disabled {{
-      pointer-events: none;
-      opacity: .42;
-    }}
-    .muted {{ color: var(--muted); }}
-    @media (max-width: 820px) {{
-      .top {{ align-items: flex-start; flex-direction: column; }}
-      .queue-meta {{ align-items: flex-start; flex-direction: column; }}
-      .queue-tools {{ justify-content: flex-start; }}
-      .pagination {{ justify-content: flex-start; }}
-      .shell {{ padding-top: 36px; padding-left: 16px; padding-right: 16px; }}
-      .table-wrap {{ max-width: 100%; }}
-    }}
-    html, body {{ overflow-x: hidden; }}
-  </style>
-</head>
-<body>
-  <div class="shell">
-    <div class="top">
-      <div>
-        <p class="eyebrow">Publishing schedule</p>
-        <h1>Video Queue</h1>
-      </div>
-      <div class="links">
-        <a href="/">Dashboard</a>
-        <a href="/stats">YouTube Stats</a>
-        <a href="/tiktok-candidates">TikTok Candidates</a>
-        <form action="/run" method="post">
-          <button type="submit" {retry_disabled}>{html.escape('Running...' if run_running else retry_label)}</button>
-        </form>
-      </div>
-    </div>
-    {message}
-    {pagination}
-    <div class="queue-panel">
-      <table>
-        <thead>
-          <tr>
-            <th>Clip</th>
-            <th>Title</th>
-            <th>Scheduled</th>
-            <th>Status</th>
-            <th>Privacy</th>
-            <th>YouTube</th>
-            <th>Edit Privacy</th>
-          </tr>
-        </thead>
-        <tbody>{table_rows}</tbody>
-      </table>
-    </div>
-    {pagination}
-  </div>
-  <script>
-    document.querySelectorAll('.privacy-form').forEach((form) => {{
-      form.addEventListener('submit', async (event) => {{
-        event.preventDefault();
-        const button = form.querySelector('button');
-        const select = form.querySelector('select');
-        const status = form.querySelector('.inline-status');
-        const row = form.closest('tr');
-        const privacyCell = row ? row.querySelector('[data-privacy-cell]') : null;
-        const previousText = button.textContent;
-        const selectedLabel = select.options[select.selectedIndex].text;
-
-        button.disabled = true;
-        button.textContent = 'Saving';
-        status.textContent = '';
-        status.className = 'inline-status';
-
-        try {{
-          const response = await fetch(form.action, {{
-            method: 'POST',
-            body: new URLSearchParams(new FormData(form)),
-            headers: {{ 'X-Requested-With': 'fetch' }},
-          }});
-          const data = await response.json();
-          if (!response.ok || !data.ok) {{
-            throw new Error(data.error || 'Save failed');
-          }}
-
-          if (privacyCell) privacyCell.textContent = data.privacy_status;
-          select.value = data.privacy_status;
-          status.textContent = 'Saved';
-          status.classList.add('ok');
-          if (row) {{
-            row.classList.add('saved-row');
-            window.setTimeout(() => row.classList.remove('saved-row'), 1400);
-          }}
-        }} catch (error) {{
-          status.textContent = 'Error';
-          status.classList.add('error');
-          console.error(error);
-        }} finally {{
-          button.disabled = false;
-          button.textContent = previousText;
-        }}
-      }});
-    }});
-  </script>
-</body>
-</html>"""
-
-
 def parse_page(value: str) -> int:
     """Parse a positive page number from a query value."""
     try:
@@ -2053,41 +556,6 @@ def parse_queue_sort(value: str) -> str:
     return "oldest"
 
 
-def render_queue_pagination(
-    page: int,
-    total_pages: int,
-    start_index: int,
-    end_index: int,
-    total_rows: int,
-    sort_order: str,
-) -> str:
-    """Render queue pagination controls."""
-    if not total_rows:
-        summary = "Showing 0 clips"
-    else:
-        summary = f"Showing {start_index + 1}-{end_index} of {total_rows} clips"
-
-    page_numbers = queue_page_numbers(page, total_pages)
-    links = [
-        page_link("Previous", page - 1, sort_order, disabled=page <= 1),
-        *[page_link(str(number), number, sort_order, active=number == page) for number in page_numbers],
-        page_link("Next", page + 1, sort_order, disabled=page >= total_pages),
-    ]
-    sort_form = render_queue_sort_form(sort_order)
-
-    return f"""
-      <div class="queue-meta">
-        <span>{html.escape(summary)}</span>
-        <div class="queue-tools">
-          {sort_form}
-          <nav class="pagination" aria-label="Queue pages">
-            {''.join(links)}
-          </nav>
-        </div>
-      </div>
-    """
-
-
 def queue_page_numbers(page: int, total_pages: int) -> list[int]:
     """Return compact page numbers around the current queue page."""
     if total_pages <= 7:
@@ -2100,41 +568,6 @@ def queue_page_numbers(page: int, total_pages: int) -> list[int]:
         candidates.update({total_pages - 3, total_pages - 2, total_pages - 1})
 
     return [number for number in sorted(candidates) if 1 <= number <= total_pages]
-
-
-def render_queue_sort_form(sort_order: str) -> str:
-    """Render the queue sort selector."""
-    options = [
-        ("recent", "Most recent"),
-        ("latest", "Latest scheduled"),
-        ("oldest", "Oldest"),
-    ]
-    rendered_options = []
-    for value, label in options:
-        selected = " selected" if value == sort_order else ""
-        rendered_options.append(f'<option value="{value}"{selected}>{html.escape(label)}</option>')
-
-    return f"""
-      <form class="sort-form" action="/queue" method="get">
-        <input type="hidden" name="page" value="1">
-        <label for="queue-sort">Sort</label>
-        <select id="queue-sort" name="sort" onchange="this.form.submit()">
-          {''.join(rendered_options)}
-        </select>
-      </form>
-    """
-
-
-def page_link(label: str, page: int, sort_order: str, active: bool = False, disabled: bool = False) -> str:
-    """Render one queue pagination link."""
-    classes = ["page-link"]
-    if active:
-        classes.append("active")
-    if disabled:
-        classes.append("disabled")
-    href = "#" if disabled else f"/queue?sort={html.escape(sort_order)}&page={page}"
-    aria_current = ' aria-current="page"' if active else ""
-    return f'<a class="{" ".join(classes)}" href="{html.escape(href)}"{aria_current}>{html.escape(label)}</a>'
 
 
 def sort_queue_rows(rows: list[dict[str, str]], sort_order: str) -> list[dict[str, str]]:
@@ -2159,33 +592,6 @@ def queue_latest_key(row: dict[str, str]) -> tuple[int, str, int]:
     if dated_value:
         return (1, dated_value, queue_clip_number(row))
     return (0, "", queue_clip_number(row))
-
-
-def render_queue_message(deferred_count: int = 0) -> str:
-    """Render queue action feedback."""
-    error = str(RUN_STATE.get("last_error") or "")
-    output = str(RUN_STATE.get("last_output") or "")
-    if "Privacy update failed" in error:
-        friendly = (
-            "Privacy update needs a fresh Google login. I reset the saved token when possible; "
-            "click Save again and approve the YouTube permissions if Google asks."
-        )
-        return f'<div class="message error">{html.escape(friendly)}</div>'
-    if "YOUTUBE DAILY UPLOAD LIMIT HIT" in output or "uploadLimitExceeded" in output or "exceeded the number of videos" in output:
-        friendly = (
-            "YouTube daily upload limit hit. Stop uploading for today; tomorrow, press Run Now "
-            "to continue uploading the waiting clips."
-        )
-        return f'<div class="message error">{html.escape(friendly)}</div>'
-    if deferred_count:
-        friendly = (
-            f"YouTube stopped accepting uploads before. {deferred_count} clip(s) are deferred; "
-            "press Run Now tomorrow to retry them and continue the queue."
-        )
-        return f'<div class="message error">{html.escape(friendly)}</div>'
-    if output.startswith("Updated "):
-        return f'<div class="message">{html.escape(output)}</div>'
-    return ""
 
 
 def append_privacy_override(video_id: str, privacy_status: str) -> None:
@@ -2271,57 +677,11 @@ def build_queue_rows() -> list[dict[str, str]]:
     return sorted(rows, key=lambda row: row["sort_key"])
 
 
-def render_queue_row(row: dict[str, str]) -> str:
-    """Render one queue row."""
-    video_id = row.get("youtube_video_id", "")
-    row_anchor = queue_row_anchor(row)
-    privacy = row.get("privacy_status", "unknown")
-    status = row.get("status", "")
-    status_class = "future" if status == "scheduled" else "issue" if status in {"failed", "deferred", "waiting"} else ""
-    youtube_link = (
-        f'<a class="youtube-link" href="https://youtu.be/{html.escape(video_id)}" target="_blank">Open</a>'
-        if video_id
-        else '<span class="muted">Not uploaded</span>'
-    )
-    privacy_form = render_privacy_form(video_id, privacy, row_anchor) if video_id else '<span class="muted">Unavailable</span>'
-    title = row.get("title") or "No title yet"
-
-    return f"""
-      <tr id="{html.escape(row_anchor)}">
-        <td>{html.escape(row.get("clip_filename", ""))}</td>
-        <td class="title-cell" title="{html.escape(title)}">{html.escape(title)}</td>
-        <td>{html.escape(row.get("display_time", ""))}</td>
-        <td><span class="badge {status_class}">{html.escape(status)}</span></td>
-        <td data-privacy-cell>{html.escape(privacy)}</td>
-        <td>{youtube_link}</td>
-        <td>{privacy_form}</td>
-      </tr>
-    """
-
-
 def queue_row_anchor(row: dict[str, str]) -> str:
     """Return a stable HTML anchor id for a queue row."""
     raw_value = row.get("youtube_video_id") or row.get("clip_filename") or "item"
     safe = "".join(char if char.isalnum() else "-" for char in raw_value).strip("-")
     return f"queue-{safe or 'item'}"
-
-
-def render_privacy_form(video_id: str, current_privacy: str, row_anchor: str) -> str:
-    """Render privacy edit form for a YouTube video."""
-    options = []
-    for value in ("private", "unlisted", "public"):
-        selected = " selected" if value == current_privacy else ""
-        options.append(f'<option value="{value}"{selected}>{value.title()}</option>')
-
-    return f"""
-      <form class="privacy-form" action="/queue/privacy" method="post">
-        <input type="hidden" name="youtube_video_id" value="{html.escape(video_id)}">
-        <input type="hidden" name="row_anchor" value="{html.escape(row_anchor)}">
-        <select name="privacy_status">{"".join(options)}</select>
-        <button type="submit">Save</button>
-        <span class="inline-status" aria-live="polite"></span>
-      </form>
-    """
 
 
 def queue_status(status: str, scheduled_time: str) -> str:
@@ -2354,312 +714,6 @@ def read_tracker_rows() -> list[dict[str, str]]:
         return []
     with tracker_path.open("r", newline="", encoding="utf-8") as file:
         return list(csv.DictReader(file))
-
-
-def render_tiktok_candidates_page(selected_date: str = "") -> str:
-    """Render daily YouTube-filtered TikTok candidate schedules."""
-    _ = selected_date
-    days = tiktok_candidate_days()
-    scheduled_by_date = read_tiktok_schedule_by_date()
-    day_rows = "".join(render_tiktok_day_row(day, scheduled_by_date.get(day["date"], [])) for day in days)
-    if not day_rows:
-        day_rows = '<p class="muted">No candidates yet. Refresh YouTube Stats after a posting day to rank clips.</p>'
-
-    scheduled_count = sum(len(rows) for rows in scheduled_by_date.values())
-    ready_count = sum(1 for day in days if not scheduled_by_date.get(day["date"], []))
-
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TikTok Candidates</title>
-  {FONT_HEAD}
-  <style>
-    :root {{
-      color-scheme: dark;
-      --ink: #f5f5f5;
-      --muted: #b3b3b3;
-      --line: rgba(255, 255, 255, .09);
-      --accent: #ff2d55;
-      --panel: #181818;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
-      margin: 0;
-      font-family: {APP_FONT_STACK};
-      color: var(--ink);
-      background:
-        radial-gradient(circle at 18% 0%, rgba(255, 45, 85, .18), transparent 32%),
-        radial-gradient(circle at 88% 6%, rgba(37, 244, 238, .14), transparent 34%),
-        linear-gradient(180deg, #241521 0, #121212 360px);
-    }}
-    .shell {{ max-width: 1440px; margin: 0 auto; padding: 48px 24px 64px; }}
-    .top {{
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 20px;
-      margin-bottom: 26px;
-    }}
-    .eyebrow {{
-      margin: 0 0 8px;
-      color: var(--accent);
-      font-size: 13px;
-      font-weight: 560;
-      text-transform: uppercase;
-    }}
-    h1 {{
-      font-size: clamp(42px, 5.8vw, 76px);
-      line-height: .96;
-      margin: 0;
-    }}
-    h2 {{ margin: 0; font-size: 22px; }}
-    a {{ color: var(--ink); text-decoration: none; font-weight: 560; }}
-    .links {{
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      padding: 8px;
-      border-radius: 999px;
-      background: rgba(255,255,255,.08);
-      border: 1px solid rgba(255,255,255,.08);
-    }}
-    .links a {{
-      min-height: 38px;
-      display: inline-flex;
-      align-items: center;
-      padding: 0 16px;
-      border-radius: 999px;
-      background: #242424;
-    }}
-    .hero-grid {{
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 420px;
-      gap: 24px;
-      align-items: start;
-      margin-bottom: 24px;
-    }}
-    .strategy, .summary {{
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.025));
-      padding: 22px;
-    }}
-    .strategy p {{
-      margin: 12px 0 0;
-      color: #d7d7d7;
-      font-size: 17px;
-      max-width: 820px;
-    }}
-    .formula {{
-      display: inline-flex;
-      margin-top: 18px;
-      padding: 10px 14px;
-      border-radius: 999px;
-      background: #242424;
-      color: var(--accent);
-      font-weight: 560;
-    }}
-    .summary-grid {{
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-      margin-top: 14px;
-    }}
-    .summary-stat {{
-      padding: 14px;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: rgba(255,255,255,.04);
-    }}
-    .summary-stat strong {{ display: block; font-size: 24px; }}
-    .summary-stat span {{ color: var(--muted); font-size: 12px; }}
-    .day-list {{
-      display: grid;
-      gap: 18px;
-    }}
-    .day-row {{
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: #101010;
-      overflow: hidden;
-    }}
-    .day-head {{
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 18px;
-      border-bottom: 1px solid rgba(255,255,255,.07);
-    }}
-    .day-title strong {{
-      display: block;
-      font-size: 22px;
-      margin-bottom: 4px;
-    }}
-    .day-title span {{ color: var(--muted); font-size: 13px; }}
-    .candidate-strip {{
-      display: grid;
-      grid-template-columns: repeat(5, minmax(150px, 1fr));
-      gap: 12px;
-      padding: 18px;
-    }}
-    .candidate {{
-      min-width: 0;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: #181818;
-      padding: 12px;
-    }}
-    .rank {{
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 28px;
-      height: 28px;
-      border-radius: 999px;
-      background: var(--accent);
-      color: #050505;
-      font-weight: 700;
-      margin-bottom: 10px;
-    }}
-    .score {{ color: var(--accent); font-size: 12px; margin-top: 8px; }}
-    .score strong {{ display: block; font-size: 22px; }}
-    .score span {{ color: var(--muted); font-size: 12px; }}
-    .title {{
-      font-size: 15px;
-      font-weight: 560;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }}
-    .clip {{
-      color: var(--muted);
-      font-size: 12px;
-      margin-top: 5px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }}
-    .metrics {{
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      margin-top: 12px;
-    }}
-    .metric {{
-      border-radius: 10px;
-      background: #242424;
-      padding: 8px;
-    }}
-    .metric strong {{ font-size: 13px; }}
-    .metric span {{ color: var(--muted); font-size: 11px; }}
-    .metric strong {{ display: block; }}
-    .schedule-box {{
-      min-width: 230px;
-      display: grid;
-      gap: 10px;
-      justify-items: end;
-    }}
-    .schedule-times {{
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-      color: var(--muted);
-      font-size: 12px;
-    }}
-    .time-chip {{
-      padding: 6px 9px;
-      border-radius: 999px;
-      background: #242424;
-      color: #d7d7d7;
-    }}
-    .status-chip {{
-      padding: 7px 10px;
-      border-radius: 999px;
-      background: rgba(255,45,85,.14);
-      color: var(--accent);
-      font-size: 12px;
-      font-weight: 560;
-    }}
-    .button, button {{
-      min-height: 38px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0 14px;
-      border-radius: 999px;
-      background: #242424;
-      border: 0;
-      color: #fff;
-      font: inherit;
-      font-weight: 560;
-      cursor: pointer;
-    }}
-    .button.primary, button.primary {{
-      background: var(--accent);
-      color: #050505;
-    }}
-    button:disabled {{
-      cursor: default;
-      opacity: .58;
-    }}
-    .muted {{
-      color: var(--muted);
-      padding: 24px;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: var(--panel);
-    }}
-    @media (max-width: 980px) {{
-      .top, .hero-grid {{ grid-template-columns: 1fr; flex-direction: column; align-items: flex-start; }}
-      .summary-grid {{ grid-template-columns: 1fr; }}
-      .day-head {{ align-items: flex-start; flex-direction: column; }}
-      .candidate-strip {{ grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }}
-      .schedule-box {{ justify-items: start; }}
-      .schedule-times {{ justify-content: flex-start; }}
-      .shell {{ padding-left: 16px; padding-right: 16px; }}
-      .table-wrap {{ max-width: 100%; }}
-    }}
-    html, body {{ overflow-x: hidden; }}
-  </style>
-</head>
-<body>
-  <div class="shell">
-    <div class="top">
-      <div>
-        <p class="eyebrow">YouTube winners for TikTok</p>
-        <h1>TikTok Candidates</h1>
-      </div>
-      <div class="links">
-        <a href="/">Dashboard</a>
-        <a href="/stats">YouTube Stats</a>
-        <a href="/queue">Queue</a>
-      </div>
-    </div>
-    <div class="hero-grid">
-      <section class="strategy">
-        <h2>Daily TikTok export plan</h2>
-        <p>Each completed YouTube stats day gets a row of its top five Shorts. Press the schedule button for that row when you want those candidates queued for TikTok, one per hour starting at 10 AM.</p>
-        <div class="formula">score = views + likes x 25 + comments x 50</div>
-      </section>
-      <aside class="summary">
-        <h2>Schedule Queue</h2>
-        <div class="summary-grid">
-          <div class="summary-stat"><strong>{len(days)}</strong><span>ranked days</span></div>
-          <div class="summary-stat"><strong>{ready_count}</strong><span>ready days</span></div>
-          <div class="summary-stat"><strong>{scheduled_count}</strong><span>queued clips</span></div>
-        </div>
-      </aside>
-    </div>
-    <div class="day-list">
-      {day_rows}
-    </div>
-  </div>
-</body>
-</html>"""
 
 
 def stats_history_dates() -> list[str]:
@@ -2700,51 +754,6 @@ def tiktok_candidate_days() -> list[dict[str, object]]:
     return days
 
 
-def render_tiktok_day_row(day: dict[str, object], scheduled_rows: list[dict[str, str]]) -> str:
-    """Render one daily TikTok candidate row."""
-    stats_date = str(day["date"])
-    candidates = list(day["candidates"])  # type: ignore[arg-type]
-    candidate_markup = "".join(
-        render_tiktok_candidate_card(candidate, index) for index, candidate in enumerate(candidates, 1)
-    )
-    total_views = sum(int(candidate["views"]) for candidate in candidates)
-    total_likes = sum(int(candidate["likes"]) for candidate in candidates)
-    schedule_date = next_tiktok_schedule_date(stats_date)
-    time_chips = "".join(f'<span class="time-chip">{html.escape(label)}</span>' for label in tiktok_schedule_labels(schedule_date, len(candidates)))
-
-    if scheduled_rows:
-        times = ", ".join(format_tiktok_schedule_time(row.get("scheduled_time", "")) for row in scheduled_rows[:5])
-        action_markup = f"""
-          <div class="status-chip">Queued for TikTok</div>
-          <div class="schedule-times">{html.escape(times)}</div>
-        """
-    else:
-        action_markup = f"""
-          <form action="/tiktok-schedule" method="post">
-            <input type="hidden" name="stats_date" value="{html.escape(stats_date)}">
-            <button class="primary" type="submit">Schedule All To TikTok</button>
-          </form>
-          <div class="schedule-times">{time_chips}</div>
-        """
-
-    return f"""
-      <section class="day-row" id="day-{html.escape(stats_date)}">
-        <div class="day-head">
-          <div class="day-title">
-            <strong>{html.escape(format_stats_date(stats_date))}</strong>
-            <span>{len(candidates)} candidates • {total_views:,} views • {total_likes:,} likes</span>
-          </div>
-          <div class="schedule-box">
-            {action_markup}
-          </div>
-        </div>
-        <div class="candidate-strip">
-          {candidate_markup}
-        </div>
-      </section>
-    """
-
-
 def tiktok_candidates_for_date(selected_date: str) -> list[dict[str, str | int | float]]:
     """Return top TikTok candidates from videos posted on one YouTube date."""
     candidates = []
@@ -2771,26 +780,6 @@ def tiktok_candidates_for_date(selected_date: str) -> list[dict[str, str | int |
         )
 
     return sorted(candidates, key=lambda item: (int(item["score"]), int(item["views"])), reverse=True)[:5]
-
-
-def render_tiktok_candidate_card(candidate: dict[str, str | int | float], index: int) -> str:
-    """Render one TikTok candidate card."""
-    title = str(candidate["title"]).split("#", 1)[0].strip() or str(candidate["clip_filename"])
-    clip_filename = str(candidate["clip_filename"])
-
-    return f"""
-      <article class="candidate">
-        <div class="rank">{index}</div>
-        <div class="title" title="{html.escape(title)}">{html.escape(title)}</div>
-        <div class="clip">{html.escape(clip_filename)}</div>
-        <div class="metrics">
-          <div class="metric"><strong>{int(candidate["views"]):,}</strong><span>views</span></div>
-          <div class="metric"><strong>{int(candidate["likes"]):,}</strong><span>likes</span></div>
-          <div class="metric"><strong>{float(candidate["like_rate"]):.1f}%</strong><span>like rate</span></div>
-        </div>
-        <div class="score">{int(candidate["score"]):,} score</div>
-      </article>
-    """
 
 
 def read_tiktok_schedule() -> list[dict[str, str]]:
@@ -2914,661 +903,6 @@ STATS_RANGES = {
 }
 
 
-def render_stats_page(
-    selected_range: str = "1d",
-    selected_project_week: str = "",
-    selected_project_sort: str = "recent",
-    selected_stats_page: int = 1,
-    auto_refresh_started: bool = False,
-) -> str:
-    """Render YouTube stats dashboard."""
-    latest_rows = latest_video_stats()
-    hour_rows = best_posting_hours()[:5]
-    selected_range = normalize_stats_range(selected_range)
-    chart_rows = chart_view_gains(selected_range)
-
-    total_views = sum(parse_stat_int(row.get("view_count", "")) for row in latest_rows)
-    total_likes = sum(parse_stat_int(row.get("like_count", "")) for row in latest_rows)
-    total_comments = sum(parse_stat_int(row.get("comment_count", "")) for row in latest_rows)
-    public_count = sum(1 for row in latest_rows if row.get("privacy_status", "") == "public")
-    best_hour = str(hour_rows[0]["hour"]) if hour_rows else "No data"
-    top_video_markup = render_top_video_list(latest_rows)
-    top_day_markup = render_top_day_list(best_posting_days())
-    project_rows = read_project_dataset()
-    selected_project_week = normalize_project_week(project_rows, selected_project_week)
-    selected_project_sort = normalize_project_sort(selected_project_sort)
-    project_summary = summarize_project_dataset(project_rows)
-    project_tracker_markup = render_project_tracker_section(
-        project_rows,
-        project_summary,
-        selected_project_week,
-        selected_range,
-        selected_project_sort,
-    )
-
-    total_stats_rows = len(latest_rows)
-    total_stats_pages = max(1, (total_stats_rows + STATS_TABLE_PAGE_SIZE - 1) // STATS_TABLE_PAGE_SIZE)
-    selected_stats_page = max(1, min(selected_stats_page, total_stats_pages))
-    stats_start = (selected_stats_page - 1) * STATS_TABLE_PAGE_SIZE
-    stats_end = min(stats_start + STATS_TABLE_PAGE_SIZE, total_stats_rows)
-    visible_stats_rows = latest_rows[stats_start:stats_end]
-    table_rows = "".join(render_stats_table_row(row) for row in visible_stats_rows)
-    if not table_rows:
-        table_rows = '<tr><td colspan="9" class="muted">No YouTube stats yet. Upload videos, then click Refresh YouTube Stats.</td></tr>'
-    stats_pagination = render_stats_table_pagination(
-        selected_stats_page,
-        total_stats_pages,
-        stats_start,
-        stats_end,
-        total_stats_rows,
-        selected_range,
-        selected_project_week,
-        selected_project_sort,
-    )
-
-    hour_markup = "".join(render_hour_bar(row) for row in hour_rows)
-    if not hour_markup:
-        hour_markup = '<p class="muted">No posting-hour data yet.</p>'
-
-    chart_svg = render_views_chart(chart_rows, selected_range)
-    chart_note = (
-        "1D shows views gained during each hour of the day (9 AM-9 PM), from saved YouTube "
-        "stats snapshots. Keep the stats page open during the day so snapshots fill every hour."
-        if selected_range == "1d"
-        else "Longer ranges show daily gains from saved YouTube stats snapshots."
-    )
-    range_tabs = render_range_tabs(selected_range, selected_project_week, selected_project_sort)
-
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>YouTube Stats</title>
-  {FONT_HEAD}
-  <style>
-    :root {{
-      color-scheme: dark;
-      --ink: #f5f5f5;
-      --muted: #b3b3b3;
-      --line: rgba(255, 255, 255, .09);
-      --paper: #121212;
-      --panel: #181818;
-      --panel-soft: rgba(255,255,255,.045);
-      --accent: #3b8bff;
-      --orange: #ff5c00;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
-      margin: 0;
-      font-family: {APP_FONT_STACK};
-      color: var(--ink);
-      background:
-        radial-gradient(circle at 20% 0%, rgba(59, 139, 255, .20), transparent 30%),
-        linear-gradient(180deg, #142338 0, #121212 360px);
-      letter-spacing: 0;
-    }}
-    .shell {{ max-width: 1440px; margin: 0 auto; padding: 38px 24px 64px; }}
-    .top {{
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 20px;
-      margin-bottom: 20px;
-    }}
-    .headline {{ max-width: 760px; }}
-    .eyebrow {{
-      margin: 0 0 8px;
-      color: var(--accent);
-      font-size: 13px;
-      font-weight: 560;
-      text-transform: uppercase;
-    }}
-    h1 {{
-      font-size: clamp(34px, 4.8vw, 64px);
-      line-height: .96;
-      margin: 0;
-      letter-spacing: 0;
-    }}
-    h2 {{ color: #fff; font-size: 22px; margin: 0 0 18px; }}
-    a {{ color: var(--ink); font-weight: 560; text-decoration: none; }}
-    button {{
-      min-height: 42px;
-      border: 1px solid var(--accent);
-      border-radius: 999px;
-      background: var(--accent);
-      color: #050505;
-      font-weight: 560;
-      padding: 0 18px;
-      cursor: pointer;
-      transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
-    }}
-    button:hover {{ transform: scale(1.02); background: #3be477; box-shadow: none; }}
-    .links {{
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      align-items: center;
-      padding: 8px;
-      border-radius: 999px;
-      background: rgba(255,255,255,.08);
-      border: 1px solid rgba(255,255,255,.08);
-    }}
-    .links form {{ margin: 0; }}
-    .links a {{
-      min-height: 38px;
-      display: inline-flex;
-      align-items: center;
-      padding: 0 16px;
-      border-radius: 999px;
-      background: #242424;
-    }}
-    .links a:hover {{ background: #303030; transform: translateY(-1px); }}
-    .market {{
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 360px;
-      gap: 26px;
-      align-items: stretch;
-    }}
-    .side-column {{
-      display: flex;
-      flex-direction: column;
-      gap: 18px;
-      min-height: 0;
-    }}
-    .side-panel-grow {{ flex: 1 1 auto; display: flex; flex-direction: column; }}
-    .top-days {{
-      flex: 1 1 auto;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 16px 20px 20px;
-    }}
-    .top-day {{ display: block; }}
-    .top-day-head {{
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      gap: 10px;
-      margin-bottom: 7px;
-    }}
-    .top-day-head strong {{ font-size: 14px; color: #fff; }}
-    .top-day-head span {{ color: var(--muted); font-size: 12px; }}
-    .chart-panel {{
-      min-height: 540px;
-      padding: 0 0 20px;
-      background: transparent;
-      border: 0;
-    }}
-    .metric-header {{
-      display: flex;
-      justify-content: space-between;
-      gap: 18px;
-      align-items: flex-start;
-      margin-bottom: 10px;
-    }}
-    .metric-title {{ font-size: clamp(30px, 4vw, 48px); line-height: 1; margin: 0; }}
-    .metric-value {{
-      display: block;
-      margin-top: 4px;
-      font-size: clamp(34px, 5vw, 58px);
-      line-height: .96;
-      font-weight: 560;
-    }}
-    .metric-sub {{ margin-top: 8px; color: var(--accent); font-size: 15px; font-weight: 560; }}
-    .summary-pills {{ display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }}
-    .summary-pill {{
-      min-width: 116px;
-      padding: 12px 14px;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: rgba(255,255,255,.04);
-      text-align: right;
-    }}
-    .summary-pill strong {{ display: block; font-size: 18px; }}
-    .summary-pill span {{ color: var(--muted); font-size: 12px; }}
-    .range-tabs {{
-      display: flex;
-      gap: 24px;
-      align-items: center;
-      margin-top: 12px;
-      border-bottom: 1px solid var(--line);
-      padding-bottom: 12px;
-    }}
-    .range-tabs a {{
-      color: #fff;
-      font-size: 13px;
-      font-weight: 560;
-      text-decoration: none;
-    }}
-    .range-tabs a.active {{
-      color: var(--accent);
-      position: relative;
-    }}
-    .range-tabs a.active::after {{
-      content: "";
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: -13px;
-      height: 2px;
-      background: var(--accent);
-    }}
-    .side-panel {{
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: #101010;
-      overflow: hidden;
-    }}
-    .side-title {{
-      padding: 18px 20px;
-      border-bottom: 1px solid var(--line);
-      font-size: 18px;
-      font-weight: 560;
-    }}
-    .video-rank {{
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 12px;
-      align-items: center;
-      padding: 13px 20px;
-      border-bottom: 1px solid rgba(255,255,255,.055);
-    }}
-    .video-rank:last-child {{ border-bottom: 0; }}
-    .video-name strong {{ display: block; font-size: 13px; color: #fff; }}
-    .video-name span {{
-      display: block;
-      max-width: 160px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      color: var(--muted);
-      font-size: 12px;
-      margin-top: 3px;
-    }}
-    .mini-spark {{ width: 86px; height: 26px; }}
-    .video-numbers {{ text-align: right; font-size: 12px; }}
-    .video-numbers strong {{ display: block; color: #fff; }}
-    .video-numbers span {{ color: var(--accent); }}
-    .lower-grid {{
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 18px;
-      align-items: start;
-      margin-top: 26px;
-    }}
-    section {{
-      background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.025));
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 20px;
-      box-shadow: none;
-    }}
-    .wide {{ grid-column: 1 / -1; }}
-    .section-head {{
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 14px;
-      flex-wrap: wrap;
-      margin-bottom: 16px;
-    }}
-    .section-head h2 {{ margin: 0; }}
-    .table-wrap {{
-      overflow: auto;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: #181818;
-    }}
-    table {{ border-collapse: collapse; width: 100%; min-width: 1000px; font-size: 12px; }}
-    th, td {{ border-bottom: 1px solid rgba(255,255,255,.07); padding: 11px 12px; text-align: left; white-space: nowrap; }}
-    th {{ background: #242424; color: var(--muted); font-weight: 560; }}
-    td {{ color: #d7d7d7; }}
-    .muted {{ color: var(--muted); }}
-    .chart {{ width: 100%; min-height: 360px; display: block; }}
-    .chart-note {{
-      margin: -4px 0 0;
-      max-width: 720px;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.45;
-    }}
-    .chart-point .point-hit {{
-      cursor: crosshair;
-      fill: transparent;
-      pointer-events: all;
-    }}
-    .chart-point .point-dot {{
-      transition: r .16s ease, fill .16s ease;
-    }}
-    .chart-point .point-tooltip {{
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity .14s ease;
-    }}
-    .chart-point:hover .point-tooltip,
-    .chart-point:focus .point-tooltip {{
-      opacity: 1;
-    }}
-    .chart-point:hover .point-dot,
-    .chart-point:focus .point-dot {{
-      r: 5.5;
-      fill: #9cc9ff;
-    }}
-    .chart-point .bar {{ transition: fill .16s ease; }}
-    .chart-point:hover .bar,
-    .chart-point:focus .bar {{ fill: #7cb2ff; }}
-    .hour {{ margin: 0 0 16px; }}
-    .chart-hours {{ margin-top: 22px; border-top: 1px solid var(--line); padding-top: 16px; }}
-    .chart-hours-title {{ margin: 0 0 14px; font-size: 15px; font-weight: 700; color: #fff; }}
-    .hours-grid {{
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 14px 18px;
-    }}
-    .hours-grid .hour {{ margin: 0; }}
-    .hour-label {{ display: flex; justify-content: space-between; gap: 10px; font-size: 13px; margin-bottom: 5px; }}
-    .hour-label strong {{ color: #fff; }}
-    .hour-label span {{ color: var(--muted); }}
-    .track {{ height: 12px; background: #242424; border-radius: 999px; overflow: hidden; }}
-    .fill {{ height: 100%; background: linear-gradient(90deg, #3b8bff, #7cc4ff); }}
-    .project-grid {{
-      display: grid;
-      grid-template-columns: minmax(0, 1.2fr) minmax(320px, .8fr);
-      gap: 18px;
-      align-items: start;
-    }}
-    .question {{
-      color: #fff;
-      font-size: 22px;
-      line-height: 1.25;
-      margin: 0 0 16px;
-      max-width: 860px;
-    }}
-    .metric-tags {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 16px;
-    }}
-    .metric-tag {{
-      display: inline-flex;
-      align-items: center;
-      min-height: 34px;
-      padding: 0 12px;
-      border-radius: 999px;
-      background: #242424;
-      color: #d7d7d7;
-      font-size: 12px;
-      font-weight: 560;
-    }}
-    .project-card-grid {{
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 10px;
-    }}
-    .project-card {{
-      min-height: 82px;
-      padding: 14px;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: rgba(255,255,255,.045);
-    }}
-    .project-card strong {{ display: block; font-size: 24px; line-height: 1; }}
-    .project-card span {{ display: block; color: var(--muted); font-size: 12px; margin-top: 7px; }}
-    .download-row {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 16px;
-    }}
-    .download-row a {{
-      min-height: 38px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0 14px;
-      border-radius: 999px;
-      background: var(--accent);
-      color: #050505;
-    }}
-    .week-filter {{
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 14px;
-      flex-wrap: wrap;
-      margin-top: 20px;
-      margin-bottom: 12px;
-    }}
-    .week-pills {{
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }}
-    .week-pills a {{
-      min-height: 34px;
-      display: inline-flex;
-      align-items: center;
-      padding: 0 12px;
-      border-radius: 999px;
-      background: #242424;
-      color: #d7d7d7;
-      border: 1px solid rgba(255,255,255,.08);
-      font-size: 12px;
-    }}
-    .week-pills a.active {{
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #050505;
-    }}
-    .project-table {{
-      max-height: 520px;
-      overflow: auto;
-    }}
-    .sort-head {{
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      color: inherit;
-      font-weight: 560;
-    }}
-    .sort-arrow {{
-      width: 18px;
-      height: 18px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 50%;
-      background: rgba(255,255,255,.08);
-      color: var(--muted);
-      font-size: 11px;
-      line-height: 1;
-    }}
-    .sort-head.active {{ color: var(--accent); }}
-    .sort-head.active .sort-arrow {{
-      background: var(--accent);
-      color: #050505;
-    }}
-    .table-pagination {{
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-      color: var(--muted);
-      font-size: 12px;
-    }}
-    .table-pagination a {{
-      min-height: 32px;
-      min-width: 32px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0 10px;
-      border-radius: 999px;
-      background: #242424;
-      border: 1px solid rgba(255,255,255,.08);
-      color: #d7d7d7;
-      font-size: 12px;
-    }}
-    .table-pagination a.active {{
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #050505;
-    }}
-    .table-pagination a.disabled {{
-      opacity: .45;
-      pointer-events: none;
-    }}
-    @media (max-width: 980px) {{
-      .market, .lower-grid {{ grid-template-columns: 1fr; }}
-      .project-grid {{ grid-template-columns: 1fr; }}
-      .top {{ align-items: flex-start; flex-direction: column; }}
-      .metric-header {{ flex-direction: column; }}
-      .summary-pills {{ justify-content: flex-start; }}
-      .shell {{ padding-top: 36px; }}
-      /* Keep everything within the phone width; wide tables scroll inside their box. */
-      .market > *, .lower-grid > *, .project-grid > * {{ min-width: 0; }}
-      .table-wrap {{ max-width: 100%; }}
-      table {{ min-width: 640px; }}
-      .metric-title {{ font-size: 30px; }}
-      .metric-value {{ font-size: 40px; }}
-    }}
-    @media (max-width: 640px) {{
-      .shell {{ padding-left: 16px; padding-right: 16px; }}
-      .summary-pill {{ min-width: 96px; }}
-    }}
-    html, body {{ overflow-x: hidden; }}
-  </style>
-</head>
-<body>
-  <div class="shell">
-    <div class="top">
-      <div class="headline">
-        <p class="eyebrow">Performance center</p>
-        <h1>YouTube Stats</h1>
-      </div>
-      <div class="links">
-        <a href="/">Dashboard</a>
-        <a href="/queue">Queue</a>
-        <a href="/tiktok-candidates">TikTok Candidates</a>
-        <form action="/refresh-stats" method="post" class="stats-refresh-form">
-          <input type="hidden" name="redirect_to" value="/stats?range={html.escape(selected_range)}&project_week={html.escape(selected_project_week)}&project_sort={html.escape(selected_project_sort)}&stats_page={selected_stats_page}">
-          <button type="submit">Refresh YouTube Stats</button>
-        </form>
-      </div>
-    </div>
-    <div class="market">
-      <section class="chart-panel">
-        <div class="metric-header">
-          <div>
-            <p class="eyebrow">Channel performance</p>
-            <h2 class="metric-title">Total Views</h2>
-            <strong class="metric-value">{total_views:,}</strong>
-            <div class="metric-sub">{len(latest_rows):,} tracked clips • best window {html.escape(best_hour)} • {stats_range_label(selected_range)}</div>
-          </div>
-          <div class="summary-pills">
-            <div class="summary-pill"><strong>{total_likes:,}</strong><span>likes</span></div>
-            <div class="summary-pill"><strong>{total_comments:,}</strong><span>comments</span></div>
-            <div class="summary-pill"><strong>{public_count:,}</strong><span>public</span></div>
-          </div>
-        </div>
-        {chart_svg}
-        <p class="chart-note">{html.escape(chart_note)}</p>
-        {range_tabs}
-        <div class="chart-hours">
-          <h3 class="chart-hours-title">Best Posting Hours · Top 5</h3>
-          <div class="hours-grid">{hour_markup}</div>
-        </div>
-      </section>
-      <aside class="side-column">
-        <div class="side-panel">
-          <div class="side-title">Top videos</div>
-          {top_video_markup}
-        </div>
-        <div class="side-panel side-panel-grow">
-          <div class="side-title">Top Days to Post</div>
-          <div class="top-days">{top_day_markup}</div>
-        </div>
-      </aside>
-    </div>
-    <div class="lower-grid">
-      {project_tracker_markup}
-      <section id="video-stats">
-        <div class="section-head">
-          <h2>Video Stats</h2>
-          {stats_pagination}
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Clip</th>
-                <th>Title</th>
-                <th>Scheduled</th>
-                <th>Hour</th>
-                <th>Views</th>
-                <th>Likes</th>
-                <th>Comments</th>
-                <th>Privacy</th>
-                <th>Checked</th>
-              </tr>
-            </thead>
-            <tbody>{table_rows}</tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-  </div>
-  <script>
-    const AUTO_STATS_REFRESH_STARTED = {json.dumps(auto_refresh_started)};
-    async function getRunStatus() {{
-      const response = await fetch('/api/status', {{ cache: 'no-store' }});
-      if (!response.ok) return null;
-      return response.json();
-    }}
-    async function waitForStatsRefresh() {{
-      for (let index = 0; index < 180; index += 1) {{
-        const status = await getRunStatus();
-        if (status && status.run && !status.run.running) return;
-        await new Promise((resolve) => window.setTimeout(resolve, 2000));
-      }}
-    }}
-    document.querySelectorAll('.stats-refresh-form').forEach((form) => {{
-      form.addEventListener('submit', async (event) => {{
-        event.preventDefault();
-        const button = form.querySelector('button');
-        const label = button ? button.textContent : '';
-        if (button) {{
-          button.disabled = true;
-          button.textContent = 'Refreshing...';
-        }}
-        try {{
-          await fetch(form.action, {{
-            method: 'POST',
-            body: new URLSearchParams(new FormData(form)),
-            headers: {{ 'X-Requested-With': 'fetch' }},
-          }});
-          await waitForStatsRefresh();
-          window.location.reload();
-        }} catch (error) {{
-          console.error(error);
-          if (button) {{
-            button.disabled = false;
-            button.textContent = label;
-          }}
-        }}
-      }});
-    }});
-    if (AUTO_STATS_REFRESH_STARTED) {{
-      waitForStatsRefresh().then(() => window.location.reload());
-    }}
-  </script>
-</body>
-</html>"""
-
-
 def normalize_stats_range(value: str) -> str:
     """Normalize the selected stats range."""
     value = value.lower().strip()
@@ -3578,71 +912,6 @@ def normalize_stats_range(value: str) -> str:
 def stats_range_label(value: str) -> str:
     """Return user-facing label for chart range."""
     return STATS_RANGES.get(value, STATS_RANGES["1d"])[0]
-
-
-def render_range_tabs(
-    selected_range: str,
-    selected_project_week: str = "",
-    selected_project_sort: str = "recent",
-) -> str:
-    """Render clickable chart range tabs."""
-    tabs = []
-    for value, (label, _delta) in STATS_RANGES.items():
-        active = " active" if value == selected_range else ""
-        tabs.append(
-            f'<a class="{active.strip()}" href="/stats?range={value}&project_week={html.escape(selected_project_week)}&project_sort={html.escape(selected_project_sort)}">{label}</a>'
-        )
-    return f'<nav class="range-tabs" aria-label="Chart ranges">{"".join(tabs)}</nav>'
-
-
-def render_stats_table_pagination(
-    page: int,
-    total_pages: int,
-    start_index: int,
-    end_index: int,
-    total_rows: int,
-    selected_range: str,
-    selected_project_week: str,
-    selected_project_sort: str,
-) -> str:
-    """Render pagination controls for the Video Stats table."""
-    if not total_rows:
-        return '<div class="table-pagination">No videos</div>'
-
-    summary = f"Showing {start_index + 1}-{end_index} of {total_rows}"
-    page_numbers = queue_page_numbers(page, total_pages)
-    links = [
-        stats_page_link("Previous", page - 1, selected_range, selected_project_week, selected_project_sort, disabled=page <= 1),
-        *[
-            stats_page_link(str(number), number, selected_range, selected_project_week, selected_project_sort, active=number == page)
-            for number in page_numbers
-        ],
-        stats_page_link("Next", page + 1, selected_range, selected_project_week, selected_project_sort, disabled=page >= total_pages),
-    ]
-    return f'<nav class="table-pagination" aria-label="Video Stats pages"><span>{html.escape(summary)}</span>{"".join(links)}</nav>'
-
-
-def stats_page_link(
-    label: str,
-    page: int,
-    selected_range: str,
-    selected_project_week: str,
-    selected_project_sort: str,
-    active: bool = False,
-    disabled: bool = False,
-) -> str:
-    """Render one Video Stats pagination link."""
-    classes = ["active" if active else "", "disabled" if disabled else ""]
-    href = "#"
-    if not disabled:
-        href = (
-            f"/stats?range={html.escape(selected_range)}"
-            f"&project_week={html.escape(selected_project_week)}"
-            f"&project_sort={html.escape(selected_project_sort)}"
-            f"&stats_page={page}"
-            "#video-stats"
-        )
-    return f'<a class="{" ".join(cls for cls in classes if cls)}" href="{href}">{html.escape(label)}</a>'
 
 
 def chart_view_gains(selected_range: str) -> list[dict[str, int | str]]:
@@ -3868,62 +1137,6 @@ def parse_float(value: str) -> float:
         return 0.0
 
 
-def render_top_video_list(rows: list[dict[str, str]]) -> str:
-    """Render compact top-video list for the stats sidebar."""
-    ranked = sorted(rows, key=lambda row: parse_stat_int(row.get("view_count", "")), reverse=True)[:5]
-    if not ranked:
-        return '<p class="muted">No ranked videos yet.</p>'
-
-    max_views = max(parse_stat_int(row.get("view_count", "")) for row in ranked) or 1
-    return "".join(render_top_video_row(row, index, max_views) for index, row in enumerate(ranked, start=1))
-
-
-def render_top_video_row(row: dict[str, str], index: int, max_views: int) -> str:
-    """Render a compact top-video row (rank, title, views, likes)."""
-    views = parse_stat_int(row.get("view_count", ""))
-    likes = parse_stat_int(row.get("like_count", ""))
-    title = row.get("title", "").split("#", 1)[0].strip() or row.get("clip_filename", "")
-    clip = row.get("clip_filename", "")
-
-    return f"""
-      <div class="video-rank">
-        <div class="video-name">
-          <strong>{index}. {html.escape(title[:28])}</strong>
-          <span>{html.escape(clip)}</span>
-        </div>
-        <div class="video-numbers">
-          <strong>{views:,}</strong>
-          <span>{likes:,} likes</span>
-        </div>
-      </div>
-    """
-
-
-def render_top_day_list(rows: list[dict[str, int | float | str]]) -> str:
-    """Render the Top Days to Post panel (avg views by weekday, ranked)."""
-    if not rows:
-        return '<p class="muted" style="padding:16px 20px;">No day data yet.</p>'
-    max_average = max(float(row["average_views"]) for row in rows) or 1.0
-    return "".join(render_top_day_row(row, max_average) for row in rows)
-
-
-def render_top_day_row(row: dict[str, int | float | str], max_average: float) -> str:
-    """Render one weekday row with an average-views bar."""
-    day = str(row["day"])
-    average = float(row["average_views"])
-    videos = int(row["video_count"])
-    pct = max(3.0, min(100.0, (average / max_average) * 100))
-    return f"""
-      <div class="top-day">
-        <div class="top-day-head">
-          <strong>{html.escape(day)}</strong>
-          <span>{average:,.0f} avg • {videos} videos</span>
-        </div>
-        <div class="track"><div class="fill" style="width:{pct:.1f}%"></div></div>
-      </div>
-    """
-
-
 def summarize_project_dataset(rows: list[dict[str, str]]) -> dict[str, int | str]:
     """Summarize project dataset rows for the stats page."""
     week_zero = sum(1 for row in rows if row.get("project_week") == "Week 0")
@@ -4021,427 +1234,6 @@ def current_project_week_label() -> str:
     if week_number > config.PROJECT_TOTAL_WEEKS:
         return f"Week {config.PROJECT_TOTAL_WEEKS}"
     return f"Week {week_number}"
-
-
-def render_project_week_filter(
-    rows: list[dict[str, str]],
-    selected_week: str,
-    selected_range: str,
-    selected_sort: str,
-) -> str:
-    """Render week filter pills for the project dataset."""
-    weeks = project_weeks(rows)
-    if not weeks:
-        return ""
-
-    links = []
-    for week in weeks:
-        count = sum(1 for row in rows if row.get("project_week") == week)
-        active = " active" if week == selected_week else ""
-        href = (
-            f"/stats?range={html.escape(selected_range)}"
-            f"&project_week={html.escape(week)}"
-            f"&project_sort={html.escape(selected_sort)}"
-            "#project-foundation"
-        )
-        links.append(f'<a class="{active.strip()}" href="{href}">{html.escape(week)} <span>&nbsp;{count}</span></a>')
-
-    return f"""
-      <div class="week-filter">
-        <div>
-          <h2 style="margin:0;">Weekly Dataset View</h2>
-          <p class="muted" style="margin:6px 0 0;">Showing one project week at a time, not one continuous table.</p>
-        </div>
-        <nav class="week-pills" aria-label="Project week filter">
-          {''.join(links)}
-        </nav>
-      </div>
-    """
-
-
-def project_sort_header(
-    label: str,
-    sort_value: str,
-    selected_sort: str,
-    selected_week: str,
-    selected_range: str,
-) -> str:
-    """Render a sortable project table header."""
-    active = normalize_project_sort(selected_sort) == sort_value
-    href = (
-        f"/stats?range={html.escape(selected_range)}"
-        f"&project_week={html.escape(selected_week)}"
-        f"&project_sort={sort_value}"
-        "#project-foundation"
-    )
-    arrow = "↓" if active else "↕"
-    active_class = " active" if active else ""
-    return (
-        f'<a class="sort-head{active_class}" href="{href}">'
-        f"{html.escape(label)}"
-        f'<span class="sort-arrow">{html.escape(arrow)}</span>'
-        "</a>"
-    )
-
-
-def project_views_sort_header(selected_sort: str, selected_week: str, selected_range: str) -> str:
-    """Render the 24-hour views header with high/low toggle behavior."""
-    selected_sort = normalize_project_sort(selected_sort)
-    active = selected_sort in {"highest_views", "lowest_views"}
-    next_sort = "lowest_views" if selected_sort == "highest_views" else "highest_views"
-    arrow = "↑" if selected_sort == "lowest_views" else ("↓" if selected_sort == "highest_views" else "↕")
-    href = (
-        f"/stats?range={html.escape(selected_range)}"
-        f"&project_week={html.escape(selected_week)}"
-        f"&project_sort={next_sort}"
-        "#project-foundation"
-    )
-    active_class = " active" if active else ""
-    return (
-        f'<a class="sort-head{active_class}" href="{href}">'
-        "24h Views"
-        f'<span class="sort-arrow">{html.escape(arrow)}</span>'
-        "</a>"
-    )
-
-
-def render_project_tracker_section(
-    rows: list[dict[str, str]],
-    summary: dict[str, int | str],
-    selected_week: str,
-    selected_range: str,
-    selected_sort: str,
-) -> str:
-    """Render the data science project foundation inside YouTube Stats."""
-    filtered_rows = [row for row in rows if row.get("project_week") == selected_week]
-    sorted_rows = sort_project_rows(filtered_rows, selected_sort)
-    preview_rows = "".join(render_project_dataset_row(row) for row in sorted_rows)
-    if not preview_rows:
-        preview_rows = '<tr><td colspan="15" class="muted">No project dataset rows yet. Refresh YouTube Stats to build the tracker.</td></tr>'
-    week_filter = render_project_week_filter(rows, selected_week, selected_range, selected_sort)
-    views_header = project_views_sort_header(selected_sort, selected_week, selected_range)
-    like_rate_header = project_sort_header("Like Rate", "like_rate", selected_sort, selected_week, selected_range)
-    high_performer_header = project_sort_header("High Performer", "high_performer", selected_sort, selected_week, selected_range)
-
-    return f"""
-      <section class="wide" id="project-foundation">
-        <div class="project-grid">
-          <div>
-            <p class="eyebrow">12-week data science tracker</p>
-            <h2>Project Foundation</h2>
-            <p class="question">What posting times, captions, content types, and platform strategies produce the strongest audience growth for short-form piano/music videos?</p>
-            <div class="metric-tags">
-              <span class="metric-tag">Primary metric: 24h views</span>
-              <span class="metric-tag">Secondary: like rate</span>
-              <span class="metric-tag">Secondary: engagement rate</span>
-              <span class="metric-tag">A/B 1: 9 AM-3 PM vs 4 PM-9 PM</span>
-              <span class="metric-tag">A/B 2: emotional vs energy captions</span>
-            </div>
-            <div class="download-row">
-              <a href="/project-data.xlsx">Download Project Excel</a>
-              <a href="/project-data.csv">Download Project CSV</a>
-            </div>
-          </div>
-          <div class="project-card-grid">
-            <div class="project-card"><strong>{summary['week_zero']}</strong><span>Week 0 baseline clips</span></div>
-            <div class="project-card"><strong>{summary['official']}</strong><span>official Week 1+ clips</span></div>
-            <div class="project-card"><strong>{summary['completed_24h']}</strong><span>clips with 24h metrics</span></div>
-            <div class="project-card"><strong>{html.escape(str(summary['week_1_start']))}</strong><span>Week 1 starts</span></div>
-          </div>
-        </div>
-        {week_filter}
-        <p class="muted" style="margin:0 0 10px;">{html.escape(selected_week or 'No week selected')} • {len(sorted_rows)} clips shown • {html.escape(project_sort_label(selected_sort))}</p>
-        <div class="table-wrap project-table">
-          <table>
-            <thead>
-              <tr>
-                <th>Week</th>
-                <th>Clip</th>
-                <th>Platform</th>
-                <th>Caption</th>
-                <th>Style</th>
-                <th>Group</th>
-                <th>Length</th>
-                <th>Orientation</th>
-                <th>Content Type</th>
-                <th>Live Views</th>
-                <th>Live Like Rate</th>
-                <th>{views_header}</th>
-                <th>{like_rate_header}</th>
-                <th>{high_performer_header}</th>
-                <th>Last Updated</th>
-              </tr>
-            </thead>
-            <tbody>{preview_rows}</tbody>
-          </table>
-        </div>
-      </section>
-    """
-
-
-def render_project_dataset_row(row: dict[str, str]) -> str:
-    """Render a project dataset preview row."""
-    views_24h = row.get("views_24h", "") or "Pending"
-    like_rate_24h = row.get("like_rate_24h", "") or "Pending"
-    high_performing = row.get("high_performing", "") or "Pending"
-    checked_at = row.get("last_checked_at", "")
-    last_updated = checked_at.replace("T", " ")[:16] if checked_at else ""
-    cells = [
-        row.get("project_week", ""),
-        row.get("clip_id", ""),
-        row.get("platform", ""),
-        row.get("caption_word", ""),
-        row.get("caption_style", ""),
-        row.get("posting_time_group", ""),
-        row.get("clip_length_seconds", ""),
-        row.get("video_orientation", ""),
-        row.get("content_type", ""),
-        row.get("current_views", ""),
-        row.get("current_like_rate", ""),
-        views_24h,
-        like_rate_24h,
-        high_performing,
-        last_updated,
-    ]
-    return "<tr>" + "".join(f"<td>{html.escape(value)}</td>" for value in cells) + "</tr>"
-
-
-def render_mini_sparkline(seed: str, color: str) -> str:
-    """Render a deterministic tiny sparkline for compact ranked rows."""
-    values = []
-    total = sum(ord(char) for char in seed) or 1
-    for index in range(12):
-        total = (total * 37 + index * 17) % 97
-        values.append(total)
-
-    width = 86
-    height = 26
-    min_value = min(values)
-    max_value = max(values) or 1
-    spread = max(max_value - min_value, 1)
-    points = []
-    for index, value in enumerate(values):
-        x = index * (width / (len(values) - 1))
-        y = height - 4 - ((value - min_value) / spread) * (height - 8)
-        points.append(f"{x:.1f},{y:.1f}")
-
-    return f"""
-      <svg class="mini-spark" viewBox="0 0 {width} {height}" aria-hidden="true">
-        <line x1="0" y1="{height / 2:.1f}" x2="{width}" y2="{height / 2:.1f}" stroke="rgba(255,255,255,.18)" stroke-dasharray="1 2"/>
-        <polyline points="{' '.join(points)}" fill="none" stroke="{color}" stroke-width="2"/>
-      </svg>
-    """
-
-
-def render_stats_table_row(row: dict[str, str]) -> str:
-    """Render one row in the stats table."""
-    cells = [
-        row.get("clip_filename", ""),
-        row.get("title", ""),
-        row.get("scheduled_publish_time", ""),
-        row.get("scheduled_hour", ""),
-        row.get("view_count", ""),
-        row.get("like_count", ""),
-        row.get("comment_count", ""),
-        row.get("privacy_status", ""),
-        row.get("checked_at", ""),
-    ]
-    return "<tr>" + "".join(f"<td>{html.escape(value)}</td>" for value in cells) + "</tr>"
-
-
-def render_views_chart(rows: list[dict[str, int | str]], selected_range: str) -> str:
-    """Render a Robinhood-style SVG chart for view gains."""
-    if not rows:
-        return '<p class="muted">No view history yet. Click Refresh YouTube Stats over time to build the graph.</p>'
-
-    width = 980
-    height = 360
-    padding = 42
-    max_views = max(int(row["views"]) for row in rows) or 1
-
-    if normalize_stats_range(selected_range) == "1d":
-        return render_hourly_bar_chart(rows, width, height, padding, max_views)
-
-    points = []
-    for index, row in enumerate(rows):
-        x = width / 2 if len(rows) == 1 else padding + index * ((width - padding * 2) / (len(rows) - 1))
-        y = height - padding - (int(row["views"]) / max_views) * (height - padding * 2)
-        points.append((x, y, str(row["label"]), str(row.get("tooltip", row["label"])), int(row["views"])))
-
-    polyline = " ".join(f"{x:.1f},{y:.1f}" for x, y, _label, _tooltip, _views in points)
-    circles = "".join(
-        render_chart_point(x, y, tooltip, views, padding, width, height)
-        for x, y, _label, tooltip, views in points
-    )
-    label_points = chart_label_points(points)
-    labels = "".join(
-        f'<text x="{x:.1f}" y="{height - 10}" text-anchor="middle">{html.escape(label)}</text>'
-        for x, _y, label, _tooltip, _views in label_points
-    )
-
-    is_one_day = normalize_stats_range(selected_range) == "1d"
-    chart_title = "Views gained between saved refreshes today" if is_one_day else "Daily views gained"
-    max_label = "max views gained between refreshes" if is_one_day else "max views gained"
-
-    return f"""
-      <svg class="chart" viewBox="0 0 {width} {height}" role="img" aria-label="{html.escape(chart_title)}">
-        <line x1="{padding}" y1="{height / 2:.1f}" x2="{width - padding}" y2="{height / 2:.1f}" stroke="rgba(255,255,255,.22)" stroke-dasharray="1 7"/>
-        <line x1="{padding}" y1="{height - padding}" x2="{width - padding}" y2="{height - padding}" stroke="rgba(255,255,255,.14)"/>
-        <text x="{padding}" y="20" fill="#b3b3b3">{max_views:,} {html.escape(max_label)}</text>
-        <polyline points="{polyline}" fill="none" stroke="#3b8bff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
-        <g fill="#3b8bff">{circles}</g>
-        <g fill="#b3b3b3" font-size="11">{labels}</g>
-      </svg>
-    """
-
-
-def render_hourly_bar_chart(
-    rows: list[dict[str, int | str]],
-    width: int,
-    height: int,
-    padding: int,
-    max_views: int,
-) -> str:
-    """Render an hourly bar chart of views gained per posting hour (9 AM-9 PM)."""
-    count = len(rows) or 1
-    slot = (width - padding * 2) / count
-    bar_w = min(48.0, slot * 0.62)
-    baseline = height - padding
-    bars = []
-    labels = []
-    for index, row in enumerate(rows):
-        views = int(row["views"])
-        center_x = padding + slot * (index + 0.5)
-        bar_h = (views / max_views) * (height - padding * 2)
-        bar_x = center_x - bar_w / 2
-        bar_y = baseline - bar_h
-        tooltip_text = f"{row.get('tooltip', row['label'])} • {views:,} views"
-        bar_fill = str(row.get("fill", "#3b8bff"))
-        bars.append(
-            render_hour_bar_column(
-                center_x, bar_x, bar_y, bar_w, bar_h, slot, baseline, padding, height, width, tooltip_text, bar_fill
-            )
-        )
-        labels.append(
-            f'<text x="{center_x:.1f}" y="{height - 12}" text-anchor="middle">{html.escape(str(row["label"]))}</text>'
-        )
-
-    return f"""
-      <svg class="chart" viewBox="0 0 {width} {height}" role="img" aria-label="Views gained per hour today">
-        <line x1="{padding}" y1="{baseline:.1f}" x2="{width - padding}" y2="{baseline:.1f}" stroke="rgba(255,255,255,.14)"/>
-        <text x="{padding}" y="20" fill="#b3b3b3">{max_views:,} max views gained in a single hour</text>
-        <g>{''.join(bars)}</g>
-        <g fill="#b3b3b3" font-size="11">{''.join(labels)}</g>
-      </svg>
-    """
-
-
-def render_hour_bar_column(
-    center_x: float,
-    bar_x: float,
-    bar_y: float,
-    bar_w: float,
-    bar_h: float,
-    slot: float,
-    baseline: float,
-    padding: int,
-    height: int,
-    width: int,
-    tooltip_text: str,
-    bar_fill: str = "#3b8bff",
-) -> str:
-    """Render one hoverable hour bar with an exact-value tooltip."""
-    tooltip_width = max(120, min(260, 7 * len(tooltip_text) + 28))
-    tooltip_x = center_x - tooltip_width / 2
-    tooltip_y = max(4, bar_y - 40)
-    if tooltip_x < padding:
-        tooltip_x = padding
-    if tooltip_x + tooltip_width > width - padding:
-        tooltip_x = width - padding - tooltip_width
-    text_x = tooltip_x + tooltip_width / 2
-    text_y = tooltip_y + 20
-    hit_x = center_x - slot / 2
-
-    return f"""
-          <g class="chart-point" tabindex="0" aria-label="{html.escape(tooltip_text)}">
-            <rect class="point-hit" x="{hit_x:.1f}" y="{padding}" width="{slot:.1f}" height="{height - padding * 2:.1f}"></rect>
-            <rect class="bar" x="{bar_x:.1f}" y="{bar_y:.1f}" width="{bar_w:.1f}" height="{max(0.0, bar_h):.1f}" rx="4" fill="{bar_fill}"><title>{html.escape(tooltip_text)}</title></rect>
-            <g class="point-tooltip">
-              <line x1="{center_x:.1f}" y1="{padding}" x2="{center_x:.1f}" y2="{baseline:.1f}" stroke="rgba(255,255,255,.4)"></line>
-              <rect x="{tooltip_x:.1f}" y="{tooltip_y:.1f}" width="{tooltip_width:.1f}" height="28" rx="8" fill="#121212" stroke="rgba(255,255,255,.18)"></rect>
-              <text x="{text_x:.1f}" y="{text_y:.1f}" fill="#f5f5f5" text-anchor="middle" font-size="11" font-weight="560">{html.escape(tooltip_text)}</text>
-            </g>
-          </g>
-    """
-
-
-def render_chart_point(x: float, y: float, tooltip: str, views: int, padding: int, width: int, height: int) -> str:
-    """Render one hoverable chart point with a visible exact-value tooltip."""
-    label = f"{views:,} views"
-    tooltip_text = f"{tooltip} • {label}"
-    tooltip_width = max(112, min(260, 7 * len(tooltip_text) + 28))
-    tooltip_x = x - tooltip_width / 2
-    tooltip_y = max(4, y - 44)
-    if tooltip_x < padding:
-        tooltip_x = padding
-    if tooltip_x + tooltip_width > width - padding:
-        tooltip_x = width - padding - tooltip_width
-    text_x = tooltip_x + tooltip_width / 2
-    text_y = tooltip_y + 20
-
-    return f"""
-          <g class="chart-point" tabindex="0" aria-label="{html.escape(tooltip_text)}">
-            <circle class="point-hit" cx="{x:.1f}" cy="{y:.1f}" r="14"></circle>
-            <circle class="point-dot" cx="{x:.1f}" cy="{y:.1f}" r="3.5">
-              <title>{html.escape(tooltip_text)}</title>
-            </circle>
-            <g class="point-tooltip">
-              <line x1="{x:.1f}" y1="{padding}" x2="{x:.1f}" y2="{height - padding}" stroke="rgba(255,255,255,.54)"></line>
-              <rect x="{tooltip_x:.1f}" y="{tooltip_y:.1f}" width="{tooltip_width:.1f}" height="28" rx="8" fill="#121212" stroke="rgba(255,255,255,.18)"></rect>
-              <text x="{text_x:.1f}" y="{text_y:.1f}" fill="#f5f5f5" text-anchor="middle" font-size="11" font-weight="560">{html.escape(tooltip_text)}</text>
-            </g>
-          </g>
-    """
-
-
-def chart_label_points(points: list[tuple[float, float, str, str, int]]) -> list[tuple[float, float, str, str, int]]:
-    """Return a readable subset of x-axis labels."""
-    if len(points) <= 4:
-        return points
-    if len(points) <= 12:
-        return [points[0], points[len(points) // 2], points[-1]]
-    step = max(1, len(points) // 4)
-    labels = [points[index] for index in range(0, len(points), step)]
-    if labels[-1] != points[-1]:
-        labels.append(points[-1])
-    return labels
-
-
-def render_hour_bar(row: dict[str, int | float | str]) -> str:
-    """Render one posting-hour performance bar."""
-    average = float(row["average_views"])
-    max_width = max(float(item["average_views"]) for item in best_posting_hours()) or 1
-    width = max(4, round((average / max_width) * 100))
-    return f"""
-      <div class="hour">
-        <div class="hour-label">
-          <strong>{html.escape(str(row['hour']))}</strong>
-          <span>{average:g} avg views, {row['video_count']} videos</span>
-        </div>
-        <div class="track"><div class="fill" style="width:{width}%"></div></div>
-      </div>
-    """
-
-
-def render_clip_card(path: Path) -> str:
-    """Render one clip preview card."""
-    name = html.escape(path.name)
-    return f"""
-      <article class="clip-card">
-        <video src="/clips/{name}" controls preload="metadata"></video>
-        <div class="clip-name">{name}</div>
-      </article>
-    """
 
 
 def build_status() -> dict[str, object]:
@@ -4747,6 +1539,924 @@ def upload_message(saved: int, upload_action: str) -> str:
     if upload_action == "upload_and_clip":
         return f"Saved {saved} {noun} to input and started clipping."
     return f"Saved {saved} {noun} to input."
+
+
+# ============================================================================
+# v4 dashboard UI — real multi-page rebuild (matches dashboard_revamp_preview.html)
+# Every page is a real server-rendered route. Numbers come from the live data
+# functions above; owner-only actions stay inside forms hidden from public viewers.
+# ============================================================================
+
+STYLE_V4 = r"""<style>
+  :root{
+    --bg:#08090a;--panel:#121412;--panel-2:#171a17;--hover:#1d211d;
+    --line:rgba(255,255,255,.07);--line-2:rgba(255,255,255,.13);
+    --text:#f4f6f4;--muted:#98a098;--faint:#6a716a;
+    --green:#1ed760;--green-soft:rgba(30,215,96,.14);
+    --blue:#4f97ff;--teal:#24d6b6;--amber:#f5b544;--violet:#b18bff;--night:#6a5cff;
+    --radius:16px;--font:'Figtree',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg)}
+  body{font-family:var(--font);color:var(--text);-webkit-font-smoothing:antialiased;letter-spacing:-.011em;position:relative;overflow-x:hidden}
+  a{color:inherit;text-decoration:none}
+  ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:#2a2e2a;border-radius:8px}
+  .bg-art{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+  .blob{position:absolute;border-radius:50%;filter:blur(90px)}
+  .blob.b1{width:520px;height:520px;background:radial-gradient(circle,#1ed760,transparent 70%);top:-160px;left:180px;opacity:.26}
+  .blob.b2{width:460px;height:460px;background:radial-gradient(circle,#1f6bff,transparent 70%);top:120px;right:-140px;opacity:.15}
+  .blob.b3{width:420px;height:420px;background:radial-gradient(circle,#6a5cff,transparent 70%);bottom:-160px;left:40%;opacity:.13}
+  .blob.b4{width:360px;height:360px;background:radial-gradient(circle,#24d6b6,transparent 70%);bottom:120px;left:180px;opacity:.11}
+  .wave{position:absolute;top:0;left:248px;right:0;height:340px;opacity:.5}
+  .grain{position:absolute;inset:0;opacity:.035;background-image:radial-gradient(#fff 1px,transparent 1px);background-size:4px 4px}
+
+  .app{position:relative;z-index:1;display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+  .sidebar{background:linear-gradient(180deg,rgba(13,15,13,.92),rgba(8,9,10,.92));backdrop-filter:blur(8px);border-right:1px solid var(--line);padding:22px 16px;display:flex;flex-direction:column;gap:5px;position:sticky;top:0;height:100vh}
+  .brand{display:flex;align-items:center;gap:11px;padding:6px 10px 22px}
+  .brand .logo{width:34px;height:34px;border-radius:50%;background:var(--green);display:grid;place-items:center;flex:none;box-shadow:0 0 0 5px var(--green-soft),0 0 24px rgba(30,215,96,.35)}
+  .brand .logo svg{width:18px;height:18px}
+  .brand b{font-size:15px;font-weight:800;letter-spacing:-.02em}.brand span{display:block;font-size:11px;color:var(--faint);font-weight:600;margin-top:1px}
+  .nav-label{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);padding:14px 12px 6px;font-weight:700}
+  .nav-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:11px;color:var(--muted);font-size:13.5px;font-weight:600;cursor:pointer;transition:.18s;user-select:none}
+  .nav-item svg{width:18px;height:18px;flex:none}
+  .nav-item:hover{background:var(--hover);color:var(--text)}
+  .nav-item.active{background:var(--green-soft);color:var(--green)}
+  .sidebar .spacer{flex:1}
+  .owner-card{margin-top:8px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);display:flex;align-items:center;gap:10px}
+  .owner-card .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
+  .owner-card small{color:var(--faint);font-size:11px;display:block}.owner-card b{font-size:12.5px}
+
+  .main{padding:26px 34px 60px;max-width:1520px}
+  .topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:24px;flex-wrap:wrap}
+  .eyebrow{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--green);font-weight:700;margin:0 0 6px}
+  .topbar h1{margin:0;font-size:30px;font-weight:850;letter-spacing:-.03em}
+  .topbar .sub{color:var(--muted);font-size:13.5px;margin-top:4px}
+  .top-actions{display:flex;align-items:center;gap:10px}
+  .pill{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:999px;font-size:12.5px;font-weight:700}
+  .pill.ready{background:var(--green-soft);color:var(--green)}
+  .pill.ready .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:999px;font:700 13px var(--font);cursor:pointer;border:1px solid var(--line-2);background:rgba(255,255,255,.02);color:var(--text);transition:.15s}
+  .btn:hover{background:var(--hover)}
+  .btn.primary{background:var(--green);color:#04140a;border-color:var(--green)}
+  .btn.primary:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(30,215,96,.3)}
+  .btn svg{width:15px;height:15px}
+  form.inline{display:inline-flex;margin:0}
+
+  .panel{position:relative;background:linear-gradient(180deg,rgba(255,255,255,.028),rgba(255,255,255,.006)),var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;overflow:hidden}
+  .panel::before{content:"";position:absolute;top:0;left:24px;right:24px;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent)}
+  .panel-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px}
+  .panel-h h2{margin:0;font-size:16px;font-weight:750}.panel-h .hint{color:var(--faint);font-size:12px}
+
+  .status-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+  .chip{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px 16px;transition:.2s}
+  .chip:hover{border-color:var(--line-2);transform:translateY(-2px)}
+  .chip .l{color:var(--muted);font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .chip .l svg{width:15px;height:15px;color:var(--kp,var(--green))}
+  .chip .v{font-size:24px;font-weight:850;letter-spacing:-.03em;margin-top:8px}
+  .chip::after{content:"";position:absolute;width:120px;height:120px;border-radius:50%;filter:blur(40px);top:-70px;right:-50px;opacity:.4;background:var(--kp,var(--green))}
+  .chip.b{--kp:var(--blue)}.chip.t{--kp:var(--teal)}.chip.a{--kp:var(--amber)}
+
+  .auto-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px}
+  .auto{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius);padding:16px;cursor:pointer;transition:.18s;background:var(--panel);display:block}
+  .auto::after{content:"";position:absolute;width:150px;height:150px;border-radius:50%;filter:blur(44px);bottom:-80px;right:-50px;opacity:.5;background:var(--ac)}
+  .auto:hover{transform:translateY(-3px);border-color:var(--line-2)}
+  .auto .a-ic{position:relative;z-index:1;width:44px;height:44px;border-radius:12px;display:grid;place-items:center;margin-bottom:34px;background:color-mix(in srgb,var(--ac) 18%,transparent);color:var(--ac)}
+  .auto .a-ic svg{width:22px;height:22px}
+  .auto b{position:relative;z-index:1;display:block;font-size:14px;font-weight:750}
+  .auto small{position:relative;z-index:1;color:var(--muted);font-size:11.5px}
+  .auto button.bare{all:unset;cursor:pointer;display:block;width:100%}
+  .g1{--ac:#1ed760}.g2{--ac:#4f97ff}.g3{--ac:#24d6b6}.g4{--ac:#ff5d78}.g5{--ac:#b18bff}
+
+  .grid-2{display:grid;grid-template-columns:1.35fr 1fr;gap:16px;margin-bottom:20px}
+  .grid-3{display:grid;grid-template-columns:1fr 1fr 1.1fr;gap:16px;margin-bottom:20px}
+
+  .chart-wrap{margin-bottom:20px}
+  .chart-glow{position:absolute;width:420px;height:220px;background:radial-gradient(ellipse,rgba(30,215,96,.18),transparent 70%);top:-40px;left:-30px;pointer-events:none}
+  .chart-top{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:8px;position:relative}
+  .metric-big{font-size:44px;font-weight:850;letter-spacing:-.035em;line-height:1;background:linear-gradient(180deg,#fff,#cfeede);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .metric-cap{color:var(--muted);font-size:13px;margin-top:6px}.metric-cap b{color:var(--green)}
+  .tabs{display:inline-flex;gap:4px;background:rgba(0,0,0,.35);border:1px solid var(--line);border-radius:999px;padding:4px}
+  .tab{padding:6px 14px;border-radius:999px;font-size:12.5px;font-weight:700;color:var(--muted);cursor:pointer;border:none;background:transparent;transition:.16s}
+  .tab.active{background:var(--green);color:#04140a}
+  canvas.chart{max-height:280px;position:relative;z-index:1}
+
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}
+  .kpi{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;transition:.2s}
+  .kpi:hover{transform:translateY(-2px);border-color:var(--line-2)}
+  .kpi::after{content:"";position:absolute;width:180px;height:180px;border-radius:50%;filter:blur(50px);top:-90px;right:-70px;opacity:.5;background:var(--kp,var(--green))}
+  .kpi .k-top{display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1}
+  .kpi .k-label{color:var(--muted);font-size:12.5px;font-weight:600}
+  .kpi .k-ic{width:30px;height:30px;border-radius:9px;background:color-mix(in srgb,var(--kp,var(--green)) 16%,transparent);display:grid;place-items:center}
+  .kpi .k-ic svg{width:16px;height:16px;color:var(--kp,var(--green))}
+  .kpi .k-value{font-size:30px;font-weight:850;letter-spacing:-.03em;margin:12px 0 2px;position:relative;z-index:1}
+  .kpi .k-delta{font-size:12px;font-weight:700;position:relative;z-index:1}.kpi .k-delta.up{color:var(--kp,var(--green))}.kpi .k-delta.flat{color:var(--faint)}
+  .kpi.g{--kp:var(--green)}.kpi.b{--kp:var(--blue)}.kpi.t{--kp:var(--teal)}.kpi.a{--kp:var(--amber)}
+
+  .bar-row{margin-bottom:14px}.bar-row:last-child{margin-bottom:0}
+  .bar-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;font-size:13px}
+  .bar-head b{font-weight:700}.bar-head span{color:var(--muted);font-size:11.5px}
+  .track{height:9px;background:#1e211e;border-radius:999px;overflow:hidden}
+  .fill{height:100%;border-radius:999px}
+  .fill.green{background:linear-gradient(90deg,#1ed760,#8ef0ab)}.fill.teal{background:linear-gradient(90deg,#1aa7ff,#24d6b6)}
+  .vrow{display:grid;grid-template-columns:24px 1fr auto;gap:12px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line)}.vrow:last-child{border-bottom:0}
+  .vrank{font-weight:850;font-size:14px;text-align:center;background:linear-gradient(180deg,#fff,#9fdcb4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .vname b{display:block;font-size:13.5px}.vname small{color:var(--faint);font-size:11.5px}
+  .vnum{text-align:right}.vnum b{display:block;font-size:13.5px}.vnum small{color:var(--green);font-size:11.5px}
+
+  .exp{display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-bottom:1px solid var(--line)}.exp:last-child{border-bottom:0}
+  .exp .wk{flex:none;width:64px;font-size:11px;font-weight:800;color:var(--green);letter-spacing:.04em;padding-top:2px}
+  .exp .body b{display:block;font-size:13.5px}.exp .body small{color:var(--muted);font-size:12px}
+  .exp .status{margin-left:auto;flex:none;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;padding:4px 9px;border-radius:999px}
+  .st-live{background:var(--green-soft);color:var(--green);animation:glow 2.2s infinite}
+  @keyframes glow{0%,100%{box-shadow:0 0 0 1px rgba(30,215,96,.25)}50%{box-shadow:0 0 14px rgba(30,215,96,.5)}}
+  .st-next{background:rgba(79,151,255,.12);color:var(--blue)}.st-done{background:rgba(255,255,255,.05);color:var(--faint)}
+
+  details.accw{border-bottom:1px solid var(--line)}details.accw:last-child{border-bottom:0}
+  details.accw summary{list-style:none;display:flex;gap:14px;align-items:center;padding:16px 0;cursor:pointer}
+  details.accw summary::-webkit-details-marker{display:none}
+  details.accw summary .wk{flex:none;width:70px;font-size:11px;font-weight:800;color:var(--green);letter-spacing:.04em}
+  details.accw summary .body b{display:block;font-size:14.5px}details.accw summary .body small{color:var(--muted);font-size:12.5px}
+  details.accw summary .status{flex:none;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;padding:4px 9px;border-radius:999px}
+  details.accw summary .chev{flex:none;color:var(--faint);transition:transform .3s;width:18px;height:18px}
+  details.accw[open] summary .chev{transform:rotate(90deg);color:var(--green)}
+  .acc-inner{padding:0 0 20px 84px;color:var(--muted);font-size:13px;line-height:1.65}
+  .acc-inner .lab{color:var(--faint);text-transform:uppercase;font-size:10.5px;letter-spacing:.1em;font-weight:800;display:block;margin:12px 0 4px}
+  .acc-inner .lab:first-child{margin-top:0}
+  .acc-inner .tags{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}
+  .acc-inner .tag{font-size:11px;font-weight:700;color:var(--green);background:var(--green-soft);padding:4px 10px;border-radius:999px}
+
+  .qtable{width:100%;border-collapse:collapse;font-size:13px}
+  .qtable th{text-align:left;color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;font-weight:800;padding:0 12px 12px}
+  .qtable td{padding:12px;border-top:1px solid var(--line)}
+  .qtable tbody tr{transition:background .15s}.qtable tbody tr:hover{background:var(--hover)}
+  .qtable .clip{color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  .qtable .word{font-weight:700}
+  .table-wrap{overflow-x:auto}
+  .badge{font-size:11px;font-weight:800;padding:3px 10px;border-radius:999px}
+  .badge.sch{background:rgba(79,151,255,.14);color:var(--blue)}.badge.up{background:var(--green-soft);color:var(--green)}.badge.def{background:rgba(245,181,68,.15);color:var(--amber)}.badge.fail{background:rgba(255,93,120,.16);color:#ff5d78}.badge.wait{background:rgba(255,255,255,.06);color:var(--muted)}
+
+  .tt-day{margin-bottom:18px}
+  .tt-day .dh{display:flex;align-items:baseline;gap:10px;margin-bottom:11px}
+  .tt-day .dh h3{margin:0;font-size:15px}.tt-day .dh span{color:var(--faint);font-size:12px;font-weight:600}
+  .tt-day .dh .live{margin-left:auto;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--green);background:var(--green-soft);padding:3px 9px;border-radius:999px}
+  .tt-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .tt-card{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:14px;padding:15px;background:var(--panel)}
+  .tt-card::after{content:"";position:absolute;width:120px;height:120px;border-radius:50%;filter:blur(40px);top:-70px;right:-50px;opacity:.4;background:var(--rc,var(--green))}
+  .tt-card .rank{font-size:11px;font-weight:800;color:var(--rc,var(--green))}
+  .tt-card .w{font-size:16px;font-weight:800;margin:6px 0 2px}
+  .tt-card .c{color:var(--faint);font-family:ui-monospace,Menlo,monospace;font-size:11px}
+  .tt-card .m{display:flex;gap:14px;margin-top:12px;font-size:12px}
+  .tt-card .m b{display:block;font-size:15px}.tt-card .m span{color:var(--muted);font-size:11px}
+  .r1{--rc:#f5b544}.r2{--rc:#c8ccd2}.r3{--rc:#e08a4b}
+
+  .chipset{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+  .fchip{font-size:12px;font-weight:700;color:var(--muted);background:var(--panel);border:1px solid var(--line);padding:6px 12px;border-radius:999px}
+  .fchip.active{background:var(--green-soft);color:var(--green);border-color:transparent}
+  .pager{display:flex;gap:6px;align-items:center;margin-top:16px;flex-wrap:wrap}
+  .pager a,.pager span{font-size:12.5px;font-weight:700;padding:6px 11px;border-radius:9px;color:var(--muted);border:1px solid var(--line)}
+  .pager a:hover{background:var(--hover);color:var(--text)}
+  .pager .cur{background:var(--green-soft);color:var(--green);border-color:transparent}
+  .pager .off{opacity:.35}
+  .log{background:#06070688;border:1px solid var(--line);border-radius:12px;padding:14px 16px;font:500 12px ui-monospace,Menlo,monospace;color:#b7c0b7;margin-top:14px;max-height:220px;overflow:auto}
+  .log div{padding:2px 0}.log .t{color:var(--faint)}
+  .upload-zone{border:1.5px dashed var(--line-2);border-radius:14px;padding:20px;text-align:center;background:linear-gradient(180deg,rgba(30,215,96,.05),transparent)}
+  select.mini{background:var(--panel);color:var(--text);border:1px solid var(--line-2);border-radius:8px;padding:6px 10px;font:700 12px var(--font)}
+  .placeholder{display:grid;place-items:center;min-height:220px;text-align:center;color:var(--muted)}
+  .note{text-align:center;color:var(--faint);font-size:12px;margin-top:34px}
+  @media(max-width:1150px){.kpis,.status-strip{grid-template-columns:1fr 1fr}.grid-3,.grid-2,.tt-grid{grid-template-columns:1fr}.auto-grid{grid-template-columns:1fr 1fr}}
+  @media(max-width:760px){.app{grid-template-columns:1fr}.sidebar{display:none}.main{padding:20px 16px 50px}.kpis,.status-strip,.auto-grid{grid-template-columns:1fr}.wave{left:0}.acc-inner{padding-left:0}}
+</style>"""
+
+BG_ART_V4 = """<div class="bg-art">
+  <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div>
+  <svg class="wave" viewBox="0 0 1200 340" preserveAspectRatio="none" fill="none">
+    <path d="M0 180 Q150 80 300 180 T600 180 T900 180 T1200 180" stroke="url(#wg)" stroke-width="2"/>
+    <path d="M0 220 Q150 300 300 220 T600 220 T900 220 T1200 220" stroke="url(#wg)" stroke-width="1.5" opacity=".5"/>
+    <defs><linearGradient id="wg" x1="0" y1="0" x2="1200" y2="0"><stop stop-color="#1ed760" stop-opacity="0"/><stop offset=".5" stop-color="#1ed760" stop-opacity=".5"/><stop offset="1" stop-color="#1ed760" stop-opacity="0"/></linearGradient></defs>
+  </svg>
+  <div class="grain"></div>
+</div>"""
+
+# nav: (view-key, href, label, svg-inner)
+NAV_ITEMS = [
+    ("overview", "/", "Overview",
+     '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>', "Workspace"),
+    ("stats", "/stats", "YouTube Stats",
+     '<path d="M4 19V5m4 14V9m4 10V7m4 12v-6m4 6V4"/>', "Workspace"),
+    ("queue", "/queue", "Queue",
+     '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="16" y2="18"/><circle cx="3.5" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="3.5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="3.5" cy="18" r="1.3" fill="currentColor" stroke="none"/>', "Workspace"),
+    ("tiktok", "/tiktok-candidates", "TikTok Candidates",
+     '<path d="M9 18V5l3-1v10"/><circle cx="6" cy="18" r="3"/><path d="M14 7c1.5 2 4 2.5 6 2.5"/>', "Workspace"),
+    ("tracker", "/tracker", "Video Tracker",
+     '<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="20" x2="9" y2="9"/>', "Workspace"),
+    ("experiment", "/experiment", "12-Week Experiment",
+     '<circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>', "Project"),
+]
+
+
+def _sidebar_v4(active: str) -> str:
+    out = ['<aside class="sidebar">']
+    out.append('<div class="brand"><div class="logo"><svg viewBox="0 0 24 24" fill="#04140a"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div><div><b>Piano Shorts</b><span>Creator Analytics</span></div></div>')
+    last_section = ""
+    for key, href, label, svg, section in NAV_ITEMS:
+        if section != last_section:
+            out.append(f'<div class="nav-label">{section}</div>')
+            last_section = section
+        cls = "nav-item active" if key == active else "nav-item"
+        out.append(
+            f'<a class="{cls}" href="{href}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{svg}</svg>{html.escape(label)}</a>'
+        )
+    out.append('<div class="spacer"></div>')
+    out.append('<div class="owner-card"><div class="dot"></div><div><b>Owner mode</b><small>Full control · logged in</small></div></div>')
+    out.append('</aside>')
+    return "".join(out)
+
+
+def render_shell(active: str, eyebrow: str, title: str, sub: str, body: str,
+                 head_extra: str = "", top_actions: str = "") -> str:
+    """Wrap page body in the shared v4 layout (sidebar + bg art + topbar)."""
+    topbar = (
+        '<div class="topbar"><div>'
+        f'<p class="eyebrow">{html.escape(eyebrow)}</p>'
+        f'<h1>{html.escape(title)}</h1>'
+        + (f'<div class="sub">{sub}</div>' if sub else '')
+        + '</div>'
+        + (f'<div class="top-actions">{top_actions}</div>' if top_actions else '')
+        + '</div>'
+    )
+    return (
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f'<title>Piano Shorts — {html.escape(title)}</title>'
+        + FONT_HEAD + STYLE_V4 + head_extra
+        + '</head><body>' + BG_ART_V4
+        + '<div class="app">' + _sidebar_v4(active)
+        + '<main class="main">' + topbar + body + '</main></div></body></html>'
+    )
+
+
+CHART_HEAD = '<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>'
+
+
+def build_chart_payload() -> str:
+    """Build labels/data/colors per range from the real chart_view_gains()."""
+    ranges = {}
+    for rng in ("1d", "1w", "1m", "all"):
+        rows = chart_view_gains(rng)
+        ranges[rng] = {
+            "labels": [str(r.get("label", "")) for r in rows],
+            "data": [int(r.get("views", 0)) for r in rows],
+            "colors": [str(r["fill"]) if r.get("fill") else "#1ed760" for r in rows],
+            "tips": [str(r.get("tooltip", "")) for r in rows],
+        }
+    return json.dumps(ranges)
+
+
+def chart_script(canvas_id: str, tabset: str, default_range: str = "1d") -> str:
+    payload = build_chart_payload()
+    tmpl = r"""
+<script>
+(function(){
+  Chart.defaults.font.family="'Figtree', sans-serif";Chart.defaults.font.weight='600';Chart.defaults.color='#6a716a';
+  var RANGES=__PAYLOAD__;var cur='__DEF__';
+  var ctx=document.getElementById('__CID__');if(!ctx)return;
+  function set(r){var s=RANGES[r]||RANGES['__DEF__'];return s;}
+  var s0=set(cur);
+  var chart=new Chart(ctx,{type:'bar',data:{labels:s0.labels,datasets:[{data:s0.data,backgroundColor:s0.colors,borderRadius:6,maxBarThickness:30}]},
+    options:{plugins:{legend:{display:false},tooltip:{backgroundColor:'#0c0e0c',borderColor:'rgba(255,255,255,.12)',borderWidth:1,padding:10,displayColors:false,titleFont:{family:'Figtree',weight:'700'},bodyFont:{family:'Figtree'},callbacks:{title:function(it){var i=it[0].dataIndex;return set(cur).tips[i]||it[0].label;},label:function(x){return x.raw.toLocaleString()+' views';}}}},
+      scales:{x:{grid:{display:false},ticks:{font:{family:'Figtree',size:11,weight:'600'}}},y:{grid:{color:'rgba(255,255,255,.05)'},border:{display:false},ticks:{font:{family:'Figtree',size:11},callback:function(v){return v>=1000?(v/1000)+'k':v;}}}},
+      animation:{duration:900,easing:'easeOutQuart'},responsive:true,maintainAspectRatio:false}});
+  if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){chart.update();});
+  var tabs=document.querySelectorAll('[data-tabs="__TAB__"] .tab');
+  tabs.forEach(function(t){t.addEventListener('click',function(){
+    tabs.forEach(function(x){x.classList.remove('active');});t.classList.add('active');
+    cur=t.dataset.r;var s=set(cur);chart.data.labels=s.labels;chart.data.datasets[0].data=s.data;chart.data.datasets[0].backgroundColor=s.colors;chart.update();
+  });});
+})();
+</script>"""
+    return (tmpl.replace("__PAYLOAD__", payload).replace("__CID__", canvas_id)
+            .replace("__TAB__", tabset).replace("__DEF__", default_range))
+
+
+def _range_tabs(tabset: str, default_range: str = "1d") -> str:
+    out = [f'<div class="tabs" data-tabs="{tabset}">']
+    for r, lbl in (("1d", "1D"), ("1w", "1W"), ("1m", "1M"), ("all", "ALL")):
+        cls = "tab active" if r == default_range else "tab"
+        out.append(f'<button class="{cls}" data-r="{r}">{lbl}</button>')
+    out.append('</div>')
+    return "".join(out)
+
+
+def _clean_title(raw: str, fallback: str = "") -> str:
+    return raw.split("#", 1)[0].strip() or fallback
+
+
+def _uploaded_today_count() -> int:
+    today = datetime.now(ZoneInfo(config.TIMEZONE)).date().isoformat()
+    count = 0
+    for row in build_queue_rows():
+        parsed = parse_iso_datetime(row.get("upload_time", ""))
+        if parsed and parsed.astimezone(ZoneInfo(config.TIMEZONE)).date().isoformat() == today:
+            count += 1
+    return count
+
+
+def _today_views_delta() -> int:
+    return sum(int(r.get("views", 0)) for r in chart_view_gains("1d"))
+
+
+# ---------------------------------------------------------------------------
+# OVERVIEW  (/)
+# ---------------------------------------------------------------------------
+def render_dashboard() -> str:
+    status = build_status()
+    latest_rows = latest_video_stats()
+    total_views = sum(parse_stat_int(r.get("view_count", "")) for r in latest_rows)
+    hours = best_posting_hours()
+    best_hour = str(hours[0]["hour"]) if hours else "—"
+    delta_today = _today_views_delta()
+
+    input_count = int(status["input_count"])
+    clip_count = int(status["clip_count"])
+    uploaded_today = _uploaded_today_count()
+
+    # next scheduled post
+    now = datetime.now(ZoneInfo(config.TIMEZONE))
+    future = [
+        r for r in build_queue_rows()
+        if (p := parse_iso_datetime(r.get("scheduled_publish_time", ""))) and p > now
+    ]
+    future.sort(key=lambda r: parse_iso_datetime(r.get("scheduled_publish_time", "")))
+    next_post = html.escape(future[0]["display_time"]) if future else "None scheduled"
+
+    running = bool(status["run"]["running"])
+    run_label = "Running…" if running else "Clip + Upload"
+
+    chart = (
+        '<section class="panel chart-wrap"><div class="chart-glow"></div>'
+        '<div class="chart-top"><div>'
+        '<p class="eyebrow" style="color:var(--muted)">Channel Performance</p>'
+        f'<div class="metric-big">{total_views:,}</div>'
+        f'<div class="metric-cap">total views · <b>+{delta_today:,} today</b> · best hour {html.escape(best_hour)}</div>'
+        '</div>' + _range_tabs("ov") + '</div>'
+        '<canvas class="chart" id="chartOv"></canvas></section>'
+    )
+
+    strip = (
+        '<div class="status-strip">'
+        '<div class="chip"><div class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v12H4z"/><path d="M2 20h20"/></svg>Input videos</div>'
+        f'<div class="v">{input_count}</div></div>'
+        '<div class="chip b"><div class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3z"/></svg>Clips ready</div>'
+        f'<div class="v">{clip_count:,}</div></div>'
+        '<div class="chip t"><div class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Next post</div>'
+        f'<div class="v" style="font-size:16px">{next_post}</div></div>'
+        '<div class="chip a"><div class="l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0-12l-4 4m4-4l4 4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>Uploaded today</div>'
+        f'<div class="v">{uploaded_today}</div></div>'
+        '</div>'
+    )
+
+    autos = (
+        '<div class="panel-h" style="margin:4px 2px 14px"><h2 style="font-size:17px">Automation</h2><span class="hint">one-click creator pipeline</span></div>'
+        '<section class="auto-grid">'
+        # Clip + Upload (owner action)
+        '<form class="auto g1" action="/run" method="post" data-owner-only>'
+        '<button class="bare" type="submit"' + (' disabled' if running else '') + '>'
+        '<div class="a-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15V3m0 0l-4 4m4-4l4 4"/><path d="M4 15v4a2 2 0 002 2h12a2 2 0 002-2v-4"/></svg></div>'
+        f'<b>{html.escape(run_label)}</b><small>Clip, caption &amp; schedule</small></button></form>'
+        # YouTube Stats
+        '<a class="auto g2" href="/stats"><div class="a-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5m4 14V9m4 10V7m4 12v-6m4 6V4"/></svg></div><b>YouTube Stats</b><small>Views, likes &amp; growth</small></a>'
+        # Queue
+        '<a class="auto g3" href="/queue"><div class="a-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="13" y2="18"/></svg></div><b>Queue</b><small>Scheduled &amp; deferred</small></a>'
+        # TikTok
+        '<a class="auto g4" href="/tiktok-candidates"><div class="a-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l3-1v10"/><circle cx="6" cy="18" r="3"/><path d="M14 7c1.5 2 4 2.5 6 2.5"/></svg></div><b>TikTok Candidates</b><small>Top clips to repost</small></a>'
+        # Refresh (owner action)
+        '<form class="auto g5" action="/refresh-stats" method="post" data-owner-only>'
+        '<input type="hidden" name="redirect_to" value="/">'
+        '<button class="bare" type="submit"><div class="a-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg></div><b>Refresh Stats</b><small>Pull latest data</small></button></form>'
+        '</section>'
+    )
+
+    # experiment mini
+    exp_mini = "".join(
+        f'<div class="exp"><div class="wk">{html.escape(p["wk"])}</div>'
+        f'<div class="body"><b>{html.escape(p["t"])}</b><small>{html.escape(p["d"])}</small></div>'
+        f'<span class="status {experiment_status(p)[0]}">{experiment_status(p)[1]}</span></div>'
+        for p in EXPERIMENT_PHASES
+    )
+
+    # live activity (owner only)
+    log_lines = live_dashboard_log_lines(8)
+    log_html = "".join(
+        f'<div><span class="t">{html.escape(l[:9])}</span> {html.escape(l[9:200])}</div>'
+        for l in reversed(log_lines[-6:])
+    ) or '<div class="t">No dashboard activity yet.</div>'
+
+    activity = (
+        '<div class="panel"><div class="panel-h"><h2>Input &amp; Live Activity</h2>'
+        f'<span class="hint">{input_count} waiting</span></div>'
+        '<form class="upload-zone" action="/upload" method="post" enctype="multipart/form-data" data-owner-only>'
+        '<b style="font-size:14px">Drop videos into input</b>'
+        '<small style="display:block;color:var(--muted);font-size:12px;margin:6px 0 14px">.mp4 / .mov — then run Clip + Upload</small>'
+        '<input type="hidden" name="upload_action" value="upload_and_clip">'
+        '<input type="file" name="videos" accept=".mp4,.mov" multiple style="margin-bottom:12px;color:var(--muted);font-size:12px">'
+        '<br><button class="btn primary" type="submit" style="margin:0 auto">Upload &amp; clip</button></form>'
+        f'<div class="log" data-owner-only>{log_html}</div>'
+        '</div>'
+    )
+
+    body = (
+        chart + strip + autos
+        + '<section class="grid-2">'
+        + f'<div class="panel"><div class="panel-h"><h2>12-Week Experiment</h2><span class="hint">week {experiment_week()} of {config.PROJECT_TOTAL_WEEKS}</span></div>{exp_mini}</div>'
+        + activity
+        + '</section>'
+    )
+
+    head = CHART_HEAD
+    ready = '<span class="pill ready"><span class="dot"></span>' + ('Running' if running else 'Ready') + '</span>'
+    top_actions = ready + '<form class="inline" action="/run" method="post" data-owner-only><button class="btn primary" type="submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>Clip + Upload</button></form>'
+    return render_shell(
+        "overview", "Mission Control", "Overview",
+        "Clip, schedule, and run your Shorts pipeline — one quiet studio interface.",
+        body, head_extra=head + chart_script("chartOv", "ov"), top_actions=top_actions,
+    )
+
+
+# ---------------------------------------------------------------------------
+# YOUTUBE STATS  (/stats)
+# ---------------------------------------------------------------------------
+def render_stats_page(
+    selected_range: str = "1d",
+    selected_project_week: str = "",
+    selected_project_sort: str = "recent",
+    selected_stats_page: int = 1,
+    auto_refresh_started: bool = False,
+) -> str:
+    selected_range = normalize_stats_range(selected_range)
+    latest_rows = latest_video_stats()
+    total_views = sum(parse_stat_int(r.get("view_count", "")) for r in latest_rows)
+    total_likes = sum(parse_stat_int(r.get("like_count", "")) for r in latest_rows)
+    total_comments = sum(parse_stat_int(r.get("comment_count", "")) for r in latest_rows)
+    engagement = ((total_likes + total_comments) / total_views * 100) if total_views else 0.0
+    tracked = len(latest_rows)
+    hours = best_posting_hours()
+    best_hour = str(hours[0]["hour"]) if hours else "—"
+    delta_today = _today_views_delta()
+    upload_records = count_upload_records()
+    clips_ready = int(build_status()["clip_count"])
+    uploaded_today = _uploaded_today_count()
+
+    chart = (
+        '<section class="panel chart-wrap"><div class="chart-glow"></div>'
+        '<div class="chart-top"><div>'
+        '<p class="eyebrow" style="color:var(--muted)">Channel Performance</p>'
+        f'<div class="metric-big">{total_views:,}</div>'
+        f'<div class="metric-cap">total views · <b>best hour {html.escape(best_hour)}</b> · {tracked:,} tracked clips</div>'
+        '</div>' + _range_tabs("st", selected_range) + '</div>'
+        '<canvas class="chart" id="chartSt"></canvas>'
+        '<div class="metric-cap" style="margin-top:10px">Views gained per hour today (9 AM–9 PM) plus the overnight bar.</div>'
+        '</section>'
+    )
+
+    def kpi(cls, label, ic, value, delta, delta_cls="up"):
+        return (
+            f'<div class="kpi {cls}"><div class="k-top"><span class="k-label">{label}</span>'
+            f'<span class="k-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{ic}</svg></span></div>'
+            f'<div class="k-value">{value}</div><div class="k-delta {delta_cls}">{delta}</div></div>'
+        )
+
+    kpis = (
+        '<section class="kpis">'
+        + kpi("g", "Total Views", '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>',
+              f'{total_views:,}', f'▲ {delta_today:,} today')
+        + kpi("b", "Tracked Clips", '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 9l5 3-5 3z"/>',
+              f'{tracked:,}', f'▲ {clips_ready:,} clips ready')
+        + kpi("t", "Upload Records", '<path d="M12 3v12m0-12l-4 4m4-4l4 4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/>',
+              f'{upload_records:,}', f'▲ {uploaded_today} today')
+        + kpi("a", "Engagement", '<path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l9 9 8-8.2a5.5 5.5 0 000-7.6z"/>',
+              f'{engagement:.2f}%', f'{total_likes:,} likes · {total_comments:,} comments', "flat")
+        + '</section>'
+    )
+
+    # bars
+    hour_bars = "".join(_bar_row(str(h["hour"]), f'{float(h["average_views"]):,.0f} avg · {int(h["video_count"])} vids', float(h["average_views"]), max(float(x["average_views"]) for x in hours[:5]) or 1, "green") for h in hours[:5])
+    days = best_posting_days()
+    max_day = max(float(x["average_views"]) for x in days) or 1
+    day_bars = "".join(_bar_row(str(d["day"]), f'{float(d["average_views"]):,.0f} avg · {int(d["video_count"])} vids', float(d["average_views"]), max_day, "teal") for d in days)
+    top_videos = _top_videos_markup(latest_rows)
+
+    grid = (
+        '<section class="grid-3">'
+        f'<div class="panel"><div class="panel-h"><h2>Best Posting Hours</h2><span class="hint">Top 5 · avg</span></div>{hour_bars}</div>'
+        f'<div class="panel"><div class="panel-h"><h2>Top Days to Post</h2><span class="hint">avg views</span></div>{day_bars}</div>'
+        f'<div class="panel"><div class="panel-h"><h2>Top Videos</h2><span class="hint">by views</span></div>{top_videos}</div>'
+        '</section>'
+    )
+
+    project = render_project_tracker_section(
+        selected_project_week, selected_project_sort, selected_stats_page, selected_range
+    )
+
+    body = chart + kpis + grid + project
+    top_actions = '<form class="inline" action="/refresh-stats" method="post" data-owner-only><input type="hidden" name="redirect_to" value="/stats"><button class="btn primary" type="submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>Refresh YouTube Stats</button></form>'
+    return render_shell(
+        "stats", "Performance Center", "YouTube Stats",
+        "Every clip's growth, best windows, and top performers.",
+        body, head_extra=CHART_HEAD + chart_script("chartSt", "st", selected_range),
+        top_actions=top_actions,
+    )
+
+
+def _bar_row(label: str, sub: str, value: float, max_v: float, cls: str) -> str:
+    pct = max(4, round(value / max_v * 100)) if max_v else 4
+    return (
+        f'<div class="bar-row"><div class="bar-head"><b>{html.escape(label)}</b><span>{html.escape(sub)}</span></div>'
+        f'<div class="track"><div class="fill {cls}" style="width:{pct}%"></div></div></div>'
+    )
+
+
+def _top_videos_markup(rows: list) -> str:
+    ranked = sorted(rows, key=lambda r: parse_stat_int(r.get("view_count", "")), reverse=True)[:5]
+    if not ranked:
+        return '<p class="metric-cap">No ranked videos yet.</p>'
+    out = []
+    for i, r in enumerate(ranked, 1):
+        views = parse_stat_int(r.get("view_count", ""))
+        likes = parse_stat_int(r.get("like_count", ""))
+        title = _clean_title(r.get("title", ""), r.get("clip_filename", ""))
+        clip = r.get("clip_filename", "")
+        out.append(
+            f'<div class="vrow"><div class="vrank">{i}</div>'
+            f'<div class="vname"><b>{html.escape(title[:28])}</b><small>{html.escape(clip)}</small></div>'
+            f'<div class="vnum"><b>{views:,}</b><small>{likes} likes</small></div></div>'
+        )
+    return "".join(out)
+
+
+# ---- project dataset tracker (kept functional, restyled to v4) ----
+def render_project_tracker_section(selected_week: str, selected_sort: str,
+                                   stats_page: int, selected_range: str) -> str:
+    rows = read_project_dataset()
+    selected_week = normalize_project_week(rows, selected_week)
+    selected_sort = normalize_project_sort(selected_sort)
+    summary = summarize_project_dataset(rows)
+
+    weeks = planned_project_weeks()
+    chips = ['<div class="chipset">']
+    for wk in weeks:
+        active = "fchip active" if wk == selected_week else "fchip"
+        chips.append(f'<a class="{active}" href="/stats?project_week={wk.replace(" ", "%20")}&project_sort={selected_sort}&range={selected_range}">{html.escape(wk)}</a>')
+    chips.append('</div>')
+    chips = "".join(chips)
+
+    filtered = [r for r in rows if r.get("project_week") == selected_week] if selected_week else rows
+    filtered = sort_project_rows(filtered, selected_sort)
+
+    page_size = STATS_TABLE_PAGE_SIZE
+    total = len(filtered)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    stats_page = max(1, min(stats_page, total_pages))
+    start = (stats_page - 1) * page_size
+    visible = filtered[start:start + page_size]
+
+    trs = []
+    for r in visible:
+        clip = r.get("clip_id", "") or r.get("clip_filename", "")
+        caption = r.get("caption_word", "") or _clean_title(r.get("title", ""), clip)
+        views = r.get("views_24h", "") or r.get("current_views", "") or "—"
+        eng_raw = r.get("engagement_rate_24h", "") or r.get("current_engagement_rate", "")
+        try:
+            eng = f"{float(eng_raw) * 100:.2f}%" if eng_raw else "—"
+        except ValueError:
+            eng = html.escape(str(eng_raw)) or "—"
+        trs.append(
+            f'<tr><td class="clip">{html.escape(clip)}</td>'
+            f'<td class="word">{html.escape(str(caption)[:26])}</td>'
+            f'<td>{html.escape(str(r.get("project_week", "")))}</td>'
+            f'<td>{html.escape(str(views))}</td>'
+            f'<td>{eng}</td></tr>'
+        )
+    tbody = "".join(trs) or '<tr><td colspan="5" class="metric-cap">No rows for this week yet.</td></tr>'
+
+    pager = _simple_pager(stats_page, total_pages,
+                          lambda p: f'/stats?project_week={selected_week.replace(" ", "%20")}&project_sort={selected_sort}&range={selected_range}&stats_page={p}')
+
+    downloads = (
+        '<div class="top-actions" data-owner-only>'
+        '<a class="btn" href="/project-data.csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>CSV</a>'
+        '<a class="btn" href="/project-data.xlsx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>XLSX</a>'
+        '</div>'
+    )
+
+    return (
+        '<section class="panel"><div class="panel-h"><h2>Data-Science Tracker</h2>'
+        f'<span class="hint">{summary.get("official", 0)} official · {summary.get("completed_24h", 0)} with 24h data</span></div>'
+        + downloads + chips
+        + '<div class="table-wrap"><table class="qtable"><thead><tr><th>Clip</th><th>Caption</th><th>Week</th><th>24h Views</th><th>Engagement</th></tr></thead>'
+        + f'<tbody>{tbody}</tbody></table></div>' + pager
+        + '</section>'
+    )
+
+
+def _simple_pager(page: int, total_pages: int, href) -> str:
+    if total_pages <= 1:
+        return ""
+    out = ['<div class="pager">']
+    prev_cls = "off" if page <= 1 else ""
+    out.append(f'<a class="{prev_cls}" href="{href(max(1, page-1))}">‹ Prev</a>')
+    for p in queue_page_numbers(page, total_pages):
+        if p == page:
+            out.append(f'<span class="cur">{p}</span>')
+        else:
+            out.append(f'<a href="{href(p)}">{p}</a>')
+    next_cls = "off" if page >= total_pages else ""
+    out.append(f'<a class="{next_cls}" href="{href(min(total_pages, page+1))}">Next ›</a>')
+    out.append('</div>')
+    return "".join(out)
+
+
+# ---------------------------------------------------------------------------
+# QUEUE  (/queue)
+# ---------------------------------------------------------------------------
+def render_queue_page(page: int = 1, sort_order: str = "oldest") -> str:
+    sort_order = parse_queue_sort(sort_order)
+    rows = sort_queue_rows(build_queue_rows(), sort_order)
+    total = len(rows)
+    total_pages = max(1, (total + QUEUE_PAGE_SIZE - 1) // QUEUE_PAGE_SIZE)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * QUEUE_PAGE_SIZE
+    visible = rows[start:start + QUEUE_PAGE_SIZE]
+
+    trs = []
+    for r in visible:
+        clip = r.get("clip_filename", "")
+        title = _clean_title(r.get("title", ""), clip)
+        display = r.get("display_time", "") or "Not scheduled"
+        st = queue_status(r.get("status", ""), r.get("scheduled_publish_time", ""))
+        badge_cls, badge_txt = _queue_badge(st)
+        trs.append(
+            f'<tr><td class="clip">{html.escape(clip)}</td>'
+            f'<td class="word">{html.escape(title[:30])}</td>'
+            f'<td>{html.escape(display)}</td>'
+            f'<td><span class="badge {badge_cls}">{badge_txt}</span>'
+            f'{_queue_privacy_control(r)}</td></tr>'
+        )
+    tbody = "".join(trs) or '<tr><td colspan="4" class="metric-cap">No queued uploads yet.</td></tr>'
+
+    pager = _simple_pager(page, total_pages, lambda p: f'/queue?page={p}&sort={sort_order}')
+    sort_toggle = (
+        '<select class="mini" onchange="location.href=this.value">'
+        f'<option value="/queue?sort=oldest" {"selected" if sort_order=="oldest" else ""}>Oldest first</option>'
+        f'<option value="/queue?sort=newest" {"selected" if sort_order=="newest" else ""}>Newest first</option>'
+        '</select>'
+    )
+
+    body = (
+        '<section class="panel"><div class="panel-h"><h2>Upcoming &amp; recent</h2>'
+        f'<span class="hint">showing {len(visible)} of {total:,} records</span></div>'
+        f'<div style="margin-bottom:14px">{sort_toggle}</div>'
+        '<div class="table-wrap"><table class="qtable"><thead><tr><th>Clip</th><th>Caption</th><th>Scheduled slot</th><th>Status</th></tr></thead>'
+        f'<tbody>{tbody}</tbody></table></div>{pager}'
+        '<div class="metric-cap" style="margin-top:14px">Download the CSV for the full record of all uploads.</div>'
+        '</section>'
+    )
+    top_actions = (
+        '<a class="btn" href="/queue.csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>Download CSV</a>'
+    )
+    return render_shell(
+        "queue", "Publishing schedule", "Queue",
+        "Your current upload schedule at a glance.", body, top_actions=top_actions,
+    )
+
+
+def _queue_badge(status: str):
+    mapping = {
+        "scheduled": ("sch", "Scheduled"),
+        "uploaded": ("up", "Uploaded"),
+        "deferred": ("def", "Deferred"),
+        "failed": ("fail", "Failed"),
+        "waiting": ("wait", "Waiting"),
+    }
+    return mapping.get(status, ("wait", status.title() or "Waiting"))
+
+
+def _queue_privacy_control(row: dict) -> str:
+    """Owner-only inline privacy switcher (hidden from public viewers)."""
+    video_id = row.get("youtube_video_id", "")
+    if not video_id:
+        return ""
+    current = row.get("privacy_status", "") or "private"
+    options = "".join(
+        f'<option value="{p}"{" selected" if p == current else ""}>{p.title()}</option>'
+        for p in ("public", "unlisted", "private")
+    )
+    return (
+        '<form action="/queue/privacy" method="post" data-owner-only '
+        'style="display:inline-block;margin-left:10px">'
+        f'<input type="hidden" name="youtube_video_id" value="{html.escape(video_id)}">'
+        f'<input type="hidden" name="row_anchor" value="{queue_row_anchor(row)}">'
+        f'<select class="mini" name="privacy_status" onchange="this.form.submit()">{options}</select>'
+        '</form>'
+    )
+
+
+def queue_csv() -> str:
+    import io
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["clip_filename", "youtube_video_id", "caption", "scheduled_slot", "status"])
+    for r in sort_queue_rows(build_queue_rows(), "oldest"):
+        st = queue_status(r.get("status", ""), r.get("scheduled_publish_time", ""))
+        writer.writerow([
+            r.get("clip_filename", ""), r.get("youtube_video_id", ""),
+            _clean_title(r.get("title", ""), r.get("clip_filename", "")),
+            r.get("display_time", ""), st,
+        ])
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# TIKTOK CANDIDATES  (/tiktok-candidates)
+# ---------------------------------------------------------------------------
+def render_tiktok_candidates_page(selected_date: str = "") -> str:
+    _ = selected_date
+    today = datetime.now(ZoneInfo(config.TIMEZONE)).date()
+    all_days = tiktok_candidate_days()
+    # past week only
+    week_days = []
+    for day in all_days:
+        try:
+            d = datetime.fromisoformat(str(day["date"])).date()
+        except ValueError:
+            continue
+        if (today - d).days <= 6:
+            week_days.append(day)
+
+    cards = []
+    for day in week_days:
+        date_str = str(day["date"])
+        candidates = list(day["candidates"])[:3]
+        is_today = date_str == today.isoformat()
+        grid = []
+        for i, c in enumerate(candidates, 1):
+            title = _clean_title(str(c["title"]), str(c["clip_filename"]))
+            grid.append(
+                f'<div class="tt-card r{i}"><div class="rank">#{i} candidate</div>'
+                f'<div class="w">{html.escape(title)}</div>'
+                f'<div class="c">{html.escape(str(c["clip_filename"]))}</div>'
+                f'<div class="m"><div><b>{int(c["views"]):,}</b><span>views</span></div>'
+                f'<div><b>{int(c["likes"]):,}</b><span>likes</span></div>'
+                f'<div><b>{float(c["like_rate"]):.1f}%</b><span>like rate</span></div></div></div>'
+            )
+        live = '<span class="live">Updates daily</span>' if is_today else ''
+        label = "Today" if is_today else format_stats_date(date_str)
+        cards.append(
+            f'<div class="tt-day panel" id="day-{html.escape(date_str)}"><div class="dh"><h3>{html.escape(label)}</h3>'
+            f'<span>{html.escape(format_stats_date(date_str))} · {len(candidates)} clips</span>{live}</div>'
+            f'<div class="tt-grid">{"".join(grid)}</div></div>'
+        )
+
+    body = "".join(cards) or '<div class="panel"><div class="placeholder"><h3>No candidates in the past week</h3><div>Once clips have 24h of stats they appear here.</div></div></div>'
+    top_actions = (
+        '<a class="btn primary" href="/tiktok-candidates.csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>Download CSV of all weeks</a>'
+    )
+    return render_shell(
+        "tiktok", "YouTube winners for TikTok", "TikTok Candidates",
+        "Top 3 performing clips per day over the past week — refreshed automatically to repost on TikTok.",
+        body, top_actions=top_actions,
+    )
+
+
+def tiktok_all_weeks_csv() -> str:
+    import io
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["stats_date", "rank", "clip_filename", "youtube_video_id", "caption", "views", "likes", "comments", "score", "like_rate_pct"])
+    for day in tiktok_candidate_days():
+        date_str = str(day["date"])
+        for i, c in enumerate(list(day["candidates"]), 1):
+            writer.writerow([
+                date_str, i, c.get("clip_filename", ""), c.get("youtube_video_id", ""),
+                _clean_title(str(c.get("title", "")), str(c.get("clip_filename", ""))),
+                int(c.get("views", 0)), int(c.get("likes", 0)), int(c.get("comments", 0)),
+                int(c.get("score", 0)), f'{float(c.get("like_rate", 0)):.2f}',
+            ])
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# VIDEO TRACKER  (/tracker)
+# ---------------------------------------------------------------------------
+def render_tracker_page() -> str:
+    rows = read_tracker_rows()
+    total = len(rows)
+    preferred = ["clip_filename", "title", "youtube_video_id", "scheduled_publish_time", "view_count", "like_count", "comment_count"]
+    headers = [h for h in preferred if rows and h in rows[0]]
+    if not headers and rows:
+        headers = list(rows[0].keys())[:7]
+
+    def cell(row, key):
+        val = row.get(key, "")
+        if key == "title":
+            val = _clean_title(val, row.get("clip_filename", ""))[:30]
+        cls = ' class="clip"' if key in ("clip_filename", "youtube_video_id") else ''
+        return f'<td{cls}>{html.escape(str(val))}</td>'
+
+    thead = "".join(f'<th>{html.escape(h.replace("_", " ").title())}</th>' for h in headers)
+    trs = "".join('<tr>' + "".join(cell(r, h) for h in headers) + '</tr>' for r in rows[:200])
+    tbody = trs or f'<tr><td colspan="{max(1,len(headers))}" class="metric-cap">No tracker rows yet.</td></tr>'
+
+    body = (
+        '<section class="panel"><div class="panel-h"><h2>Clip &amp; metadata tracker</h2>'
+        f'<span class="hint">{total:,} records · showing first {min(200,total)}</span></div>'
+        f'<div class="table-wrap"><table class="qtable"><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table></div>'
+        '<div class="metric-cap" style="margin-top:14px">Download the full CSV or XLSX for every tracked clip.</div>'
+        '</section>'
+    )
+    top_actions = (
+        '<div class="top-actions" data-owner-only>'
+        '<a class="btn" href="/tracker.csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>CSV</a>'
+        '<a class="btn" href="/tracker.xlsx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>XLSX</a></div>'
+    )
+    return render_shell(
+        "tracker", "Automation records", "Video Tracker",
+        "Every clip, its metadata, and its YouTube identifiers.", body, top_actions=top_actions,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 12-WEEK EXPERIMENT  (/experiment)
+# ---------------------------------------------------------------------------
+EXPERIMENT_PHASES = [
+    {"wk": "Wk 1–2", "lo": 1, "hi": 2, "t": "Baseline",
+     "d": "Establish per-clip 24h view & engagement rates",
+     "goal": "Build a clean control set so every later test has a benchmark.",
+     "method": "For each clip, record 24h views, likes, comments; compute engagement = (likes+comments)/views. Summarize mean &amp; variance and the distribution of 24h views.",
+     "tags": ["Descriptive stats", "24h view distribution", "Control baseline"]},
+    {"wk": "Wk 3–4", "lo": 3, "hi": 4, "t": "Posting-time test",
+     "d": "9 AM–3 PM vs 4 PM–9 PM windows",
+     "goal": "Find whether morning/afternoon or evening posting drives more 24h views.",
+     "method": "Randomly assign clips to each window to remove content bias. Compare mean 24h views with a two-sample t-test (Mann-Whitney if skewed); report effect size + 95% CI.",
+     "tags": ["A/B test", "t-test", "Effect size", "Confidence interval"]},
+    {"wk": "Wk 5–6", "lo": 5, "hi": 6, "t": "Caption test",
+     "d": "Emotional vs energy caption words",
+     "goal": "Test if emotional (PEACE, SERENE, STILL) vs energy (FLOW, VIBE, FREE) captions change reach.",
+     "method": "Balance caption family across posting times. Compare group means; fit a logistic regression on a \"high performer\" flag controlling for hour to isolate caption effect.",
+     "tags": ["A/B test", "Logistic regression", "Confounder control"]},
+    {"wk": "Wk 7–8", "lo": 7, "hi": 8, "t": "Frequency test",
+     "d": "1 / hour vs 2× in best windows",
+     "goal": "See if posting denser in peak windows lifts total views without cannibalizing per-clip views.",
+     "method": "Compare per-day total views and per-clip views between cadences. Paired comparison across matched days; watch for diminishing returns.",
+     "tags": ["Paired test", "Cannibalization check", "Per-day totals"]},
+    {"wk": "Wk 9–12", "lo": 9, "hi": 12, "t": "Content type + capstone model",
+     "d": "Solo / church / jazz · predictive model",
+     "goal": "Predict which clips will perform from their features, and write the capstone.",
+     "method": "Tag clips by type, shot, orientation. Fit multivariate regression / gradient-boosted model to predict high performers; report feature importance and a final writeup.",
+     "tags": ["Feature engineering", "Regression", "Gradient boosting", "Feature importance"]},
+]
+
+
+def experiment_week() -> int:
+    start = datetime.fromisoformat(config.PROJECT_WEEK_1_START_DATE).date()
+    today = datetime.now(ZoneInfo(config.TIMEZONE)).date()
+    if today < start:
+        return 1
+    return max(1, (today - start).days // 7 + 1)
+
+
+def experiment_status(phase: dict):
+    wk = experiment_week()
+    if wk > phase["hi"]:
+        return ("st-done", "Done")
+    if phase["lo"] <= wk <= phase["hi"]:
+        return ("st-live", "Live")
+    return ("st-next", "Next")
+
+
+def render_experiment_page() -> str:
+    wk = experiment_week()
+    rows_out = []
+    for p in EXPERIMENT_PHASES:
+        s_cls, s_lbl = experiment_status(p)
+        tags = "".join(f'<span class="tag">{html.escape(t)}</span>' for t in p["tags"])
+        rows_out.append(
+            f'<details class="accw"{" open" if s_cls=="st-live" else ""}>'
+            f'<summary><div class="wk">{html.escape(p["wk"])}</div>'
+            f'<div class="body" style="flex:1"><b>{html.escape(p["t"])}</b><small>{html.escape(p["d"])}</small></div>'
+            f'<span class="status {s_cls}">{s_lbl}</span>'
+            '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg></summary>'
+            f'<div class="acc-inner"><span class="lab">Goal</span>{p["goal"]}'
+            f'<span class="lab">How we analyze</span>{p["method"]}'
+            f'<div class="tags">{tags}</div></div></details>'
+        )
+    body = (
+        '<div class="panel"><div class="panel-h"><h2>Experiment roadmap</h2>'
+        '<span class="hint">click a phase to expand the analysis plan</span></div>'
+        + "".join(rows_out) + '</div>'
+    )
+    sub = f'Currently week {wk} of {config.PROJECT_TOTAL_WEEKS} · primary metric: 24h views'
+    return render_shell("experiment", "Data Science Project", "12-Week Experiment", sub, body)
 
 
 def run_server() -> None:
