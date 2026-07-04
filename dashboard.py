@@ -231,6 +231,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if path == "/data-science":
+            query = parse_qs(parsed.query)
+            self.send_html(
+                viewer_mode_html(
+                    render_data_science_page(
+                        query.get("project_week", [""])[0],
+                        query.get("project_sort", ["recent"])[0],
+                        parse_page(query.get("stats_page", ["1"])[0]),
+                        query.get("range", ["1d"])[0],
+                    ),
+                    owner,
+                )
+            )
+            return
+
         if path == "/experiment":
             self.send_html(viewer_mode_html(render_experiment_page(), owner))
             return
@@ -1581,6 +1596,20 @@ STYLE_V4 = r"""<style>
   .nav-item svg{width:18px;height:18px;flex:none}
   .nav-item:hover{background:var(--hover);color:var(--text)}
   .nav-item.active{background:var(--green-soft);color:var(--green)}
+  .nav-group{margin:0}
+  .nav-group summary{list-style:none;display:flex;align-items:center;gap:2px;cursor:pointer}
+  .nav-group summary::-webkit-details-marker{display:none}
+  .nav-group summary .nav-item{flex:1}
+  .nav-group summary .nav-chev{width:16px;height:16px;color:var(--faint);flex:none;margin-right:6px;transition:transform .25s}
+  .nav-group[open] summary .nav-chev{transform:rotate(90deg);color:var(--green)}
+  .nav-children{display:flex;flex-direction:column;gap:3px;margin:3px 0 3px 30px;padding-left:10px;border-left:1px solid var(--line-2)}
+  .nav-sub{padding:8px 12px;border-radius:9px;color:var(--muted);font-size:12.5px;font-weight:600;transition:.15s}
+  .nav-sub:hover{background:var(--hover);color:var(--text)}
+  .nav-sub.active{background:var(--green-soft);color:var(--green)}
+  .ds-teaser{display:flex;align-items:center;justify-content:space-between;gap:16px;cursor:pointer;transition:.18s;margin-bottom:20px}
+  .ds-teaser:hover{border-color:var(--line-2);transform:translateY(-2px)}
+  .ds-teaser h2{margin:0 0 4px;font-size:16px;font-weight:750}
+  .ds-teaser .go{width:22px;height:22px;color:var(--green);flex:none}
   .sidebar .spacer{flex:1}
   .owner-card{margin-top:8px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);display:flex;align-items:center;gap:10px}
   .owner-card .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
@@ -1755,6 +1784,10 @@ NAV_ITEMS = [
 ]
 
 
+# view-keys that live under the YouTube Stats dropdown
+STATS_CHILDREN = [("dsci", "/data-science", "Data-Science Tracker")]
+
+
 def _sidebar_v4(active: str) -> str:
     out = ['<aside class="sidebar">']
     out.append('<div class="brand"><div class="logo"><svg viewBox="0 0 24 24" fill="#04140a"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div><div><b>Piano Shorts</b><span>Creator Analytics</span></div></div>')
@@ -1763,10 +1796,28 @@ def _sidebar_v4(active: str) -> str:
         if section != last_section:
             out.append(f'<div class="nav-label">{section}</div>')
             last_section = section
-        cls = "nav-item active" if key == active else "nav-item"
-        out.append(
-            f'<a class="{cls}" href="{href}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{svg}</svg>{html.escape(label)}</a>'
-        )
+        if key == "stats":
+            # Parent with a drop-down arrow revealing sub-items.
+            group_open = " open" if active in ("stats", "dsci") else ""
+            parent_cls = "nav-item active" if active == "stats" else "nav-item"
+            children = "".join(
+                f'<a class="nav-sub{" active" if ck == active else ""}" href="{chref}">{html.escape(clabel)}</a>'
+                for ck, chref, clabel in STATS_CHILDREN
+            )
+            out.append(
+                f'<details class="nav-group"{group_open}>'
+                '<summary class="nav-item-summary">'
+                f'<a class="{parent_cls}" href="{href}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{svg}</svg>{html.escape(label)}</a>'
+                '<svg class="nav-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>'
+                '</summary>'
+                f'<div class="nav-children">{children}</div>'
+                '</details>'
+            )
+        else:
+            cls = "nav-item active" if key == active else "nav-item"
+            out.append(
+                f'<a class="{cls}" href="{href}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{svg}</svg>{html.escape(label)}</a>'
+            )
     out.append('<div class="spacer"></div>')
     out.append('<div class="owner-card"><div class="dot"></div><div><b>Owner mode</b><small>Full control · logged in</small></div></div>')
     out.append('</aside>')
@@ -2056,17 +2107,33 @@ def render_stats_page(
         '</section>'
     )
 
-    project = render_project_tracker_section(
-        selected_project_week, selected_project_sort, selected_stats_page, selected_range
+    ds_link = (
+        '<a class="panel ds-teaser" href="/data-science">'
+        '<div><h2>Data-Science Tracker</h2>'
+        '<span class="hint">Per-clip experiment dataset — week filter, sorting &amp; exports</span></div>'
+        '<svg class="go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg></a>'
     )
 
-    body = chart + kpis + grid + project
+    body = chart + kpis + grid + ds_link
     top_actions = '<form class="inline" action="/refresh-stats" method="post" data-owner-only><input type="hidden" name="redirect_to" value="/stats"><button class="btn primary" type="submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>Refresh YouTube Stats</button></form>'
     return render_shell(
         "stats", "Performance Center", "YouTube Stats",
         "Every clip's growth, best windows, and top performers.",
         body, head_extra=CHART_HEAD + chart_script("chartSt", "st", selected_range),
         top_actions=top_actions,
+    )
+
+
+def render_data_science_page(selected_week: str = "", selected_sort: str = "recent",
+                             stats_page: int = 1, selected_range: str = "1d") -> str:
+    """Data-Science Tracker as its own sub-page under YouTube Stats."""
+    section = render_project_tracker_section(selected_week, selected_sort, stats_page, selected_range,
+                                             base_path="/data-science")
+    back = '<a class="btn" href="/stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>Back to Stats</a>'
+    return render_shell(
+        "dsci", "Performance Center · Experiment data", "Data-Science Tracker",
+        "Every clip tagged for the 12-week experiment — filter by week, sort, and export.",
+        section, top_actions=back,
     )
 
 
@@ -2098,7 +2165,8 @@ def _top_videos_markup(rows: list) -> str:
 
 # ---- project dataset tracker (kept functional, restyled to v4) ----
 def render_project_tracker_section(selected_week: str, selected_sort: str,
-                                   stats_page: int, selected_range: str) -> str:
+                                   stats_page: int, selected_range: str,
+                                   base_path: str = "/data-science") -> str:
     rows = read_project_dataset()
     selected_week = normalize_project_week(rows, selected_week)
     selected_sort = normalize_project_sort(selected_sort)
@@ -2108,7 +2176,7 @@ def render_project_tracker_section(selected_week: str, selected_sort: str,
     chips = ['<div class="chipset">']
     for wk in weeks:
         active = "fchip active" if wk == selected_week else "fchip"
-        chips.append(f'<a class="{active}" href="/stats?project_week={wk.replace(" ", "%20")}&project_sort={selected_sort}&range={selected_range}">{html.escape(wk)}</a>')
+        chips.append(f'<a class="{active}" href="{base_path}?project_week={wk.replace(" ", "%20")}&project_sort={selected_sort}&range={selected_range}">{html.escape(wk)}</a>')
     chips.append('</div>')
     chips = "".join(chips)
 
@@ -2179,7 +2247,7 @@ def render_project_tracker_section(selected_week: str, selected_sort: str,
     thead = "".join(f"<th>{html.escape(label)}</th>" for label, _k, _kind in columns)
 
     pager = _simple_pager(stats_page, total_pages,
-                          lambda p: f'/stats?project_week={selected_week.replace(" ", "%20")}&project_sort={selected_sort}&range={selected_range}&stats_page={p}')
+                          lambda p: f'{base_path}?project_week={selected_week.replace(" ", "%20")}&project_sort={selected_sort}&range={selected_range}&stats_page={p}')
 
     downloads = (
         '<div class="top-actions" data-owner-only>'
