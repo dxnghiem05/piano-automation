@@ -1820,10 +1820,11 @@ STYLE_V5 = r"""<style>
   .now-card{border:1px solid rgba(30,215,96,.4);background:linear-gradient(180deg,rgba(30,215,96,.1),transparent);border-radius:16px;padding:18px;margin-bottom:16px;display:flex;align-items:center;gap:16px}
   .now-card .big-np{width:52px;height:52px;border-radius:14px;background:var(--green);color:#04140a;display:grid;place-items:center;flex:none;animation:beat 3s infinite}
   .now-card .big-np svg{width:24px;height:24px}
-  .chipset{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
-  .fchip{font-size:12px;font-weight:700;color:var(--muted);background:var(--panel);border:1px solid var(--line);padding:6px 12px;border-radius:999px}
+  .chipset{display:flex;flex-wrap:nowrap;gap:8px;margin-bottom:16px;overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch}
+  .chipset::-webkit-scrollbar{height:6px}.chipset::-webkit-scrollbar-thumb{background:#2a2e2a;border-radius:8px}
+  .fchip{flex:none;white-space:nowrap;font-size:12px;font-weight:700;color:var(--muted);background:var(--panel);border:1px solid var(--line);padding:6px 12px;border-radius:999px}
   .fchip.active{background:var(--green-soft);color:var(--green);border-color:transparent}
-  .ds-scroll{max-height:64vh;overflow:auto;border:1px solid var(--line);border-radius:12px}
+  .ds-scroll{max-height:calc(100vh - 470px);min-height:220px;overflow:auto;border:1px solid var(--line);border-radius:12px}
   .ds-scroll table{margin:0;width:100%;border-collapse:collapse;font-size:13px}
   .ds-scroll th{position:sticky;top:0;z-index:2;background:#141613;text-align:left;color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:800;padding:12px;border-bottom:1px solid var(--line)}
   .ds-scroll td{padding:11px 12px;border-top:1px solid var(--line);white-space:nowrap}
