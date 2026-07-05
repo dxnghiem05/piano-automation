@@ -1520,6 +1520,10 @@ def start_stats_refresh() -> None:
     if STATS_REFRESH_LOCK.locked():
         return
 
+    # Flip the flag synchronously so the page that redirects right after this
+    # renders in the "Refreshing…" state and starts auto-reloading. The worker
+    # clears it in its finally block when the fresh stats are written.
+    RUN_STATE["stats_running"] = True
     thread = threading.Thread(target=refresh_stats_process, daemon=True)
     thread.start()
 
@@ -1597,6 +1601,7 @@ def latest_stats_checked_at() -> datetime | None:
 def refresh_stats_process() -> None:
     """Refresh YouTube stats without clipping/uploading."""
     if not STATS_REFRESH_LOCK.acquire(blocking=False):
+        RUN_STATE["stats_running"] = False
         return
 
     RUN_STATE.update(
@@ -1618,6 +1623,33 @@ def refresh_stats_process() -> None:
         STATS_REFRESH_LOCK.release()
         RUN_STATE["stats_running"] = False
         RUN_STATE["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+# Sample YouTube stats on a timer during posting hours so the hourly "today's
+# gains" chart fills in even when nobody has the dashboard open. Without this,
+# a bucket only shows a bar for the hours the page happened to be loaded, which
+# makes it look like views only arrived at one or two moments in the day.
+SNAPSHOT_INTERVAL_MINUTES = 30
+
+
+def _snapshot_scheduler_loop() -> None:
+    local_zone = ZoneInfo(config.TIMEZONE)
+    while True:
+        try:
+            now = datetime.now(local_zone)
+            if config.POST_START_HOUR <= now.hour <= config.POST_END_HOUR and youtube_stats_are_stale():
+                start_stats_refresh()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Background snapshot scheduler error: %s", exc)
+        time.sleep(SNAPSHOT_INTERVAL_MINUTES * 60)
+
+
+def start_snapshot_scheduler() -> None:
+    """Launch the background stats-sampling loop (daemon so it dies with the server)."""
+    thread = threading.Thread(target=_snapshot_scheduler_loop, daemon=True)
+    thread.start()
+    logger.info("Hourly stats snapshotter started (every %d min, %d:00–%d:00).",
+                SNAPSHOT_INTERVAL_MINUTES, config.POST_START_HOUR, config.POST_END_HOUR)
 
 
 def update_youtube_privacy(video_id: str, privacy_status: str) -> None:
@@ -2120,8 +2152,16 @@ def render_page(active: str, eyebrow: str, title: str, sub: str, body: str,
         + '</head><body class="tab">' + BG_MARKUP + _topbar(active)
         + '<main class="page shell">' + topline + body + '</main>'
         + '<div class="cbadge">Piano Shorts · Creator Analytics</div>'
-        + BG_SCRIPT + '</body></html>'
+        + _busy_autoreload() + BG_SCRIPT + '</body></html>'
     )
+
+
+def _busy_autoreload() -> str:
+    """While a pipeline run or stats refresh is in flight, reload the page so the
+    numbers update themselves instead of the user having to switch tabs."""
+    if RUN_STATE.get("running") or RUN_STATE.get("stats_running"):
+        return '<script>setTimeout(function(){location.reload();},3500);</script>'
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -2746,6 +2786,7 @@ def run_server() -> None:
     """Start the local dashboard server."""
     ensure_directories()
     configure_logging()
+    start_snapshot_scheduler()
     server = ThreadingHTTPServer((HOST, PORT), DashboardHandler)
     url = f"http://localhost:{PORT}/"
     logger.info("Dashboard running at %s", url)
