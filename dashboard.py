@@ -1449,11 +1449,14 @@ def live_dashboard_log_lines(limit: int = 90) -> list[str]:
         lines = file.readlines()[-600:]
 
     useful_lines = []
+    # Drop HTTP-server chatter (page loads, asset fetches, 404 pings, google
+    # cache notices) so the feed surfaces real pipeline events like
+    # "Generated clip …", "Finished run …", uploads, and errors.
     skipped_patterns = (
-        'dashboard: "GET /api/status',
-        'dashboard: "GET /api/logs',
-        'dashboard: "GET /clips/',
-        'dashboard: "GET /favicon.ico',
+        'dashboard: "GET ',
+        'dashboard: code ',
+        'file_cache is only supported',
+        'googleapiclient.discovery_cache',
     )
     for line in lines:
         clean = line.rstrip()
@@ -1461,9 +1464,24 @@ def live_dashboard_log_lines(limit: int = 90) -> list[str]:
             continue
         if any(pattern in clean for pattern in skipped_patterns):
             continue
-        useful_lines.append(clean)
+        useful_lines.append(_format_log_line(clean))
 
     return useful_lines[-limit:]
+
+
+def _format_log_line(raw: str) -> str:
+    """Turn a raw app.log line into 'HH:MM:SS  message' with short paths."""
+    parts = raw.split(" | ")
+    if len(parts) >= 4 and len(parts[0]) >= 19:
+        stamp = parts[0][11:19]  # HH:MM:SS
+        message = parts[-1]
+    else:
+        stamp = raw[11:19] if len(raw) >= 19 else ""
+        message = raw
+    # Collapse absolute paths to just the file/relative name.
+    message = message.replace(str(config.BASE_DIR) + "/", "")
+    message = message.replace("dashboard: ", "")
+    return f"{stamp}  {message}".strip()
 
 
 def live_dashboard_log_text(limit: int = 90) -> str:
