@@ -11,6 +11,8 @@ import json
 import logging
 import mimetypes
 import os
+import re
+import signal
 import subprocess
 import threading
 import time
@@ -34,7 +36,13 @@ from stats_tracker import (
     refresh_youtube_stats_history,
 )
 from tracker import update_tracker
-from youtube_upload import get_youtube_service, read_upload_records
+from youtube_upload import (
+    get_youtube_service,
+    read_stale_deferred_filenames,
+    read_upload_attempted_filenames,
+    read_upload_records,
+)
+from scheduler import generate_schedule
 from generate_metadata import read_metadata
 from googleapiclient.errors import HttpError
 
@@ -68,7 +76,7 @@ FONT_HEAD = (
 VIEWER_MODE_SNIPPET = """
 <style id="viewer-mode">
   form[action="/run"], form[action="/clip-only"], form[action="/upload"],
-  form[action="/refresh-stats"], form[action="/queue/privacy"],
+  form[action="/stop"], form[action="/refresh-stats"], form[action="/queue/privacy"],
   form[action="/tiktok-schedule"], form[action="/tiktok/post"], [data-owner-only] { display: none !important; }
   .owner-login-badge {
     position: fixed; right: 16px; bottom: 16px; z-index: 99999;
@@ -171,7 +179,25 @@ RUN_STATE = {
     "finished_at": "",
     "last_output": "",
     "last_error": "",
+    # Live run progress (extended for the /api/status live updates):
+    "phase": "",               # "" | "starting" | "clipping" | "uploading" | "finishing"
+    "done": 0,                 # uploads attempted so far in this run
+    "total": 0,                # uploads expected this run (0 = unknown / clip-only)
+    "clips_made": 0,           # clips generated so far in this run
+    "fails": 0,                # failed uploads so far in this run
+    "stopping": False,         # a Stop was requested and is being honored
+    "stopped": False,          # the last run ended because the owner pressed Stop
+    "quota_hit": False,        # the last/current run hit the YouTube daily limit
+    "run_seq": 0,              # increments when a run/refresh finishes (client change detection)
 }
+# Handle to the live pipeline subprocess so /stop can terminate it gracefully.
+PIPELINE_PROCESS: subprocess.Popen | None = None
+PIPELINE_PROCESS_LOCK = threading.Lock()
+# Wall-clock time the uploading phase started (for the ~time-left estimate).
+UPLOAD_PHASE_STARTED_AT: float = 0.0
+# YouTube's practical daily upload cap for this channel (surface only; override
+# with YOUTUBE_DAILY_UPLOAD_CAP in .env if your channel's cap differs).
+YOUTUBE_DAILY_UPLOAD_CAP = max(1, int(os.getenv("YOUTUBE_DAILY_UPLOAD_CAP", "20") or "20"))
 STATS_REFRESH_LOCK = threading.Lock()
 # Separate lock for the lightweight background snapshotter so it never holds the
 # STATS_REFRESH_LOCK that the clip/upload pipeline checks — otherwise a 30-min
@@ -254,7 +280,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/status":
-            self.send_json(build_status())
+            self.send_json(build_status(include_private=owner))
             return
 
         if path == "/api/logs":
@@ -413,9 +439,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.redirect(self.redirect_back_path(default="/"))
             return
 
+        if parsed.path == "/stop":
+            stopped = stop_pipeline()
+            if self.is_ajax_request():
+                self.send_json({"ok": True, "stopping": stopped})
+                return
+            self.redirect(self.form_redirect_target(default="/overview"))
+            return
+
         if parsed.path == "/refresh-stats":
             redirect_target = self.form_redirect_target(default=self.redirect_back_path(default="/stats"))
             start_stats_refresh()
+            if self.is_ajax_request():
+                self.send_json({"ok": True, "message": "Stats refresh started."})
+                return
             self.redirect(redirect_target)
             return
 
@@ -1429,15 +1466,124 @@ def current_project_week_label() -> str:
     return f"Week {week_number}"
 
 
-def build_status() -> dict[str, object]:
-    """Build dashboard status counts."""
-    return {
+def build_status(include_private: bool = False) -> dict[str, object]:
+    """Build dashboard status counts (plus live-run detail for /api/status).
+
+    include_private adds owner-only extras (log lines, last-run summary).
+    """
+    run = RUN_STATE.copy()
+    run["eta_seconds"] = estimate_run_eta_seconds()
+    payload: dict[str, object] = {
         "input_count": len(list_input_videos()),
         "clip_count": len(list_clip_files()),
         "uploaded_sources": len(list_uploaded_sources()),
         "upload_records": count_upload_records(),
-        "run": RUN_STATE.copy(),
+        "run": run,
+        "pending_uploads": len(count_pending_clips()),
+        "uploaded_today": _uploaded_today_count(),
+        "total_views": sum(parse_stat_int(r.get("view_count", "")) for r in latest_video_stats()),
+        "today_views": _today_views_delta(),
+        "next_post": next_scheduled_post_display(),
+        "quota": quota_status(),
     }
+    if include_private:
+        payload["log"] = live_dashboard_log_lines(140)
+        payload["last_run"] = last_run_summary()
+    return payload
+
+
+def count_pending_clips() -> list[str]:
+    """Clip filenames a full run would upload (same exclusions as main.py)."""
+    try:
+        skip = read_upload_attempted_filenames() | read_stale_deferred_filenames()
+    except Exception:  # noqa: BLE001 - a malformed log line must not break status
+        skip = set()
+    return sorted(p.name for p in config.CLIPS_DIR.glob("clip_*.mp4") if p.name not in skip)
+
+
+def next_scheduled_post_display() -> str:
+    """Display string for the next future scheduled publish slot."""
+    now = datetime.now(ZoneInfo(config.TIMEZONE))
+    future = [
+        p for r in build_queue_rows()
+        if (p := parse_iso_datetime(r.get("scheduled_publish_time", ""))) and p > now
+    ]
+    return format_queue_time(min(future).isoformat()) if future else "None scheduled"
+
+
+def estimate_run_eta_seconds() -> int:
+    """Rough seconds remaining for the uploading phase (0 = unknown)."""
+    if not RUN_STATE["running"] or RUN_STATE["phase"] != "uploading":
+        return 0
+    done = int(RUN_STATE["done"])
+    total = int(RUN_STATE["total"])
+    if done <= 0 or total <= done or not UPLOAD_PHASE_STARTED_AT:
+        return 0
+    per_clip = (time.time() - UPLOAD_PHASE_STARTED_AT) / done
+    return int(per_clip * (total - done))
+
+
+def quota_status() -> dict[str, object]:
+    """Today's YouTube upload usage vs the known daily cap."""
+    today = datetime.now(ZoneInfo(config.TIMEZONE)).date().isoformat()
+    used = 0
+    deferred_today = False
+    if config.UPLOAD_LOG_FILE.exists():
+        with config.UPLOAD_LOG_FILE.open("r", newline="", encoding="utf-8") as file:
+            for row in csv.DictReader(file):
+                parsed = parse_iso_datetime(row.get("upload_time", ""))
+                if not parsed:
+                    continue
+                if parsed.astimezone(ZoneInfo(config.TIMEZONE)).date().isoformat() != today:
+                    continue
+                status = row.get("status", "")
+                if status == "uploaded":
+                    used += 1
+                elif status == "deferred_quota":
+                    deferred_today = True
+    cap = YOUTUBE_DAILY_UPLOAD_CAP
+    exhausted = deferred_today or bool(RUN_STATE.get("quota_hit")) or used >= cap
+    return {
+        "used": used,
+        "cap": cap,
+        "remaining": max(0, cap - used),
+        "exhausted": exhausted,
+    }
+
+
+_RUN_SUMMARY_RE = re.compile(
+    r"RunSummary\(videos_found=(\d+), clips_generated=(\d+), clips_considered_for_upload=(\d+), "
+    r"uploads_completed=(\d+), uploads_skipped=(\d+), upload_failures=(\d+)\)"
+)
+
+
+def last_run_summary() -> dict[str, object]:
+    """Parse the newest 'Finished run: RunSummary(...)' from the app log."""
+    if not config.APP_LOG_FILE.exists():
+        return {}
+    try:
+        with config.APP_LOG_FILE.open("r", encoding="utf-8", errors="replace") as file:
+            lines = file.readlines()[-2500:]
+    except OSError:
+        return {}
+    for line in reversed(lines):
+        if "Finished run:" not in line:
+            continue
+        match = _RUN_SUMMARY_RE.search(line)
+        if not match:
+            continue
+        videos, clips, considered, uploads, skipped, fails = (int(g) for g in match.groups())
+        stamp = line[:19] if len(line) >= 19 else ""
+        return {
+            "when": stamp,
+            "videos_found": videos,
+            "clips_generated": clips,
+            "clips_considered": considered,
+            "uploads_completed": uploads,
+            "uploads_skipped": skipped,
+            "upload_failures": fails,
+        }
+    return {}
 
 
 def live_dashboard_log_lines(limit: int = 90) -> list[str]:
@@ -1602,6 +1748,7 @@ def auto_refresh_stats_process() -> None:
     finally:
         RUN_STATE["stats_running"] = False
         RUN_STATE["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        RUN_STATE["run_seq"] = int(RUN_STATE["run_seq"]) + 1
         STATS_REFRESH_LOCK.release()
 
 
@@ -1649,6 +1796,7 @@ def refresh_stats_process() -> None:
         STATS_REFRESH_LOCK.release()
         RUN_STATE["stats_running"] = False
         RUN_STATE["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        RUN_STATE["run_seq"] = int(RUN_STATE["run_seq"]) + 1
 
 
 # Sample YouTube stats on a timer during posting hours so the hourly "today's
@@ -1745,8 +1893,66 @@ def update_youtube_privacy_with_service(service, video_id: str, privacy_status: 
     ).execute()
 
 
+def _track_run_progress(line: str) -> None:
+    """Update RUN_STATE progress counters from one line of pipeline output."""
+    global UPLOAD_PHASE_STARTED_AT
+    if "Generating clips from" in line or "Discovered video:" in line:
+        RUN_STATE["phase"] = "clipping"
+    elif "Generated clip" in line:
+        RUN_STATE["phase"] = "clipping"
+        RUN_STATE["clips_made"] = int(RUN_STATE["clips_made"]) + 1
+    elif " as YouTube video " in line and "Uploaded" in line:
+        if RUN_STATE["phase"] != "uploading":
+            RUN_STATE["phase"] = "uploading"
+            UPLOAD_PHASE_STARTED_AT = time.time()
+        RUN_STATE["done"] = int(RUN_STATE["done"]) + 1
+    elif "Upload failed for" in line:
+        if RUN_STATE["phase"] != "uploading":
+            RUN_STATE["phase"] = "uploading"
+            UPLOAD_PHASE_STARTED_AT = time.time()
+        RUN_STATE["done"] = int(RUN_STATE["done"]) + 1
+        RUN_STATE["fails"] = int(RUN_STATE["fails"]) + 1
+    elif "DAILY UPLOAD LIMIT" in line or "daily upload limit hit" in line:
+        RUN_STATE["quota_hit"] = True
+    elif "Finished run:" in line:
+        RUN_STATE["phase"] = "finishing"
+
+
+def stop_pipeline() -> bool:
+    """Gracefully terminate the running pipeline subprocess (owner Stop button).
+
+    Sends SIGTERM to the whole process group (main.py + any live ffmpeg), then
+    escalates to SIGKILL a few seconds later if it is still alive. Returns True
+    when a stop was actually initiated.
+    """
+    with PIPELINE_PROCESS_LOCK:
+        process = PIPELINE_PROCESS
+        if process is None or process.poll() is not None:
+            return False
+        RUN_STATE["stopping"] = True
+        logger.info("Stop requested by owner; terminating pipeline run")
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            process.terminate()
+
+        def _escalate(proc: subprocess.Popen) -> None:
+            time.sleep(8)
+            if proc.poll() is None:
+                logger.warning("Pipeline did not exit after SIGTERM; killing it")
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except (ProcessLookupError, PermissionError, OSError):
+                    proc.kill()
+
+        threading.Thread(target=_escalate, args=(process,), daemon=True).start()
+        return True
+
+
 def run_main_process(clip_only: bool = False) -> None:
     """Execute the automation in a subprocess."""
+    global PIPELINE_PROCESS, UPLOAD_PHASE_STARTED_AT
+    UPLOAD_PHASE_STARTED_AT = 0.0
     RUN_STATE.update(
         {
             "running": True,
@@ -1754,6 +1960,14 @@ def run_main_process(clip_only: bool = False) -> None:
             "finished_at": "",
             "last_output": "",
             "last_error": "",
+            "phase": "starting",
+            "done": 0,
+            "total": 0 if clip_only else len(count_pending_clips()),
+            "clips_made": 0,
+            "fails": 0,
+            "stopping": False,
+            "stopped": False,
+            "quota_hit": False,
         }
     )
     output_lines: list[str] = []
@@ -1772,11 +1986,16 @@ def run_main_process(clip_only: bool = False) -> None:
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            start_new_session=True,  # own process group so Stop can signal the whole tree
         )
+        with PIPELINE_PROCESS_LOCK:
+            PIPELINE_PROCESS = process
         assert process.stdout is not None
         deadline = time.monotonic() + (60 * 60 * 4)
         for line in process.stdout:
-            output_lines.append(line.rstrip())
+            clean = line.rstrip()
+            output_lines.append(clean)
+            _track_run_progress(clean)
             RUN_STATE["last_output"] = "\n".join(output_lines[-80:]).strip()
             if time.monotonic() > deadline:
                 process.kill()
@@ -1785,7 +2004,10 @@ def run_main_process(clip_only: bool = False) -> None:
         return_code = process.wait()
         refresh_project_dataset()
         RUN_STATE["last_output"] = "\n".join(output_lines[-120:]).strip()
-        if return_code != 0:
+        if RUN_STATE["stopping"]:
+            RUN_STATE["stopped"] = True
+            logger.info("Pipeline run stopped by owner (after %s upload(s))", RUN_STATE["done"])
+        elif return_code != 0:
             RUN_STATE["last_error"] = RUN_STATE["last_output"]
     except Exception as exc:
         logger.exception("Dashboard run failed: %s", exc)
@@ -1793,8 +2015,13 @@ def run_main_process(clip_only: bool = False) -> None:
         RUN_STATE["last_output"] = "\n".join(output_lines[-120:]).strip()
         RUN_STATE["last_error"] = str(exc)
     finally:
+        with PIPELINE_PROCESS_LOCK:
+            PIPELINE_PROCESS = None
         RUN_STATE["running"] = False
+        RUN_STATE["stopping"] = False
+        RUN_STATE["phase"] = ""
         RUN_STATE["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        RUN_STATE["run_seq"] = int(RUN_STATE["run_seq"]) + 1
 
 
 def unique_input_destination(path: Path) -> Path:
@@ -2068,16 +2295,383 @@ BG_MARKUP = """<div class="stage">
 
 BG_SCRIPT = r"""<script>
 (function(){
+  // Calm mode: persisted in localStorage, applied ASAP so animations never start.
+  var calmOn=false;try{calmOn=localStorage.getItem('ps-calm')==='1';}catch(e){}
+  if(calmOn)document.body.classList.add('calm');
+  var cb=document.getElementById('calmBtn');
+  if(cb){
+    if(calmOn)cb.classList.add('on');
+    cb.addEventListener('click',function(){
+      calmOn=!calmOn;
+      document.body.classList.toggle('calm',calmOn);
+      cb.classList.toggle('on',calmOn);
+      try{localStorage.setItem('ps-calm',calmOn?'1':'0');}catch(e){}
+    });
+  }
   var keys=document.getElementById('keys');if(keys){var NK=30,cols=['g','v','b'],lit={},n=4+Math.floor(Math.random()*3);
     while(Object.keys(lit).length<n){lit[Math.floor(Math.random()*NK)]=cols[Math.floor(Math.random()*3)];}
     for(var i=0;i<NK;i++){var nb=(i%7===2||i%7===6);var k=document.createElement('div');k.className='key'+(nb?' nb':'')+(lit[i]?(' '+lit[i]):'');if(!nb){var b=document.createElement('div');b.className='bk';k.appendChild(b);}keys.appendChild(k);}}
   var stage=document.querySelector('.stage');var gl=['♪','♫','♩','♬'];var live=0;
-  setInterval(function(){if(document.hidden||live>6||!stage)return;var e=document.createElement('div');e.className='note';e.textContent=gl[Math.random()*4|0];
+  setInterval(function(){if(document.hidden||live>6||!stage||document.body.classList.contains('calm'))return;var e=document.createElement('div');e.className='note';e.textContent=gl[Math.random()*4|0];
     e.style.left=(5+Math.random()*88)+'%';e.style.fontSize=(16+Math.random()*16)+'px';e.style.animation='rise '+(8+Math.random()*5).toFixed(1)+'s linear forwards';
     stage.appendChild(e);live++;e.addEventListener('animationend',function(){e.remove();live--;});},1500);
   var glass=document.getElementById('glass');
-  if(glass){window.addEventListener('mousemove',function(ev){var x=ev.clientX/innerWidth-.5,y=ev.clientY/innerHeight-.5;
+  if(glass){window.addEventListener('mousemove',function(ev){if(document.body.classList.contains('calm'))return;var x=ev.clientX/innerWidth-.5,y=ev.clientY/innerHeight-.5;
     glass.style.transform='rotateX('+(-y*4).toFixed(2)+'deg) rotateY('+(x*5).toFixed(2)+'deg)';});}
+})();
+</script>"""
+
+# Additive style layer for the live-update UI (progress, logs, modal, toast,
+# quota meter, calm mode, sparklines, skeletons, mobile). Kept separate from
+# STYLE_V5 so the original theme stays untouched.
+STYLE_LIVE = r"""<style>
+  /* run progress */
+  .runprog{display:none;margin:0 0 14px}
+  .runprog.on{display:block}
+  .runprog .track{height:10px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
+  .runprog .fill{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#1ed760,#24d6b6);transition:width .6s cubic-bezier(.2,.7,.2,1)}
+  .runprog .fill.indet{width:38%;transition:none;animation:indet 1.5s ease-in-out infinite}
+  @keyframes indet{0%{margin-left:-38%}100%{margin-left:100%}}
+  .runprog .lbl{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;font-size:12.5px;color:var(--muted);font-weight:600;min-height:22px}
+  .btn.stop{background:rgba(255,93,120,.12);color:#ff9dae;border-color:rgba(255,93,120,.35);padding:6px 13px}
+  .btn.stop:hover{background:rgba(255,93,120,.22)}
+
+  /* quota meter */
+  .quota{margin-top:14px}
+  .quota .qrow{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:6px}
+  .quota .ql{color:var(--muted);font-size:12px;font-weight:600}
+  .quota .qv{font-size:12px;font-weight:800;color:var(--green)}
+  .quota .qv.hot{color:#ff5d78}
+  .quota .track{height:7px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
+  .quota .fill{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#1ed760,#f5b544);transition:width .5s}
+  .quota .fill.hot{background:#ff5d78}
+
+  /* log feed */
+  .logwrap{margin-top:14px}
+  .logbar{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .logbar .ll{color:var(--muted);font-size:12px;font-weight:700}
+  .lastrun{margin-left:auto;color:var(--faint);font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .logbar button{flex:none;background:none;border:1px solid var(--line);color:var(--muted);border-radius:8px;font:700 12px var(--font);padding:3px 9px;cursor:pointer}
+  .logbar button:hover{color:var(--text);background:rgba(255,255,255,.06)}
+  .log .ln{padding:2px 0;color:#96a09b;white-space:pre-wrap;word-break:break-word}
+  .log .ln .t{color:var(--faint);margin-right:8px}
+  .log .ln.ok{color:#7ef0a4}
+  .log .ln.err{color:#ff8a9c}
+  .log .ln.clip{color:#8fc2ff}
+  .log details.rg{margin:4px 0;border-left:2px solid rgba(255,255,255,.1);padding-left:8px}
+  .log details.rg[open]{border-left-color:rgba(30,215,96,.45)}
+  .log details.rg summary{cursor:pointer;list-style:none;color:#cfd6e0;font-weight:700;padding:2px 0}
+  .log details.rg summary::-webkit-details-marker{display:none}
+  .log details.rg summary::before{content:"▸ ";color:var(--faint)}
+  .log details.rg[open] summary::before{content:"▾ "}
+  .chiplet{display:inline-block;margin-left:8px;font-size:10.5px;font-weight:800;padding:1px 8px;border-radius:999px;background:rgba(30,215,96,.14);color:#7ef0a4}
+  .chiplet.live{background:rgba(79,151,255,.16);color:#8fc2ff;animation:pulse 2s infinite}
+  .log.full{position:fixed;inset:20px;z-index:990;max-height:none;background:rgba(5,8,7,.97);font-size:13px;padding:20px 22px;box-shadow:0 30px 90px rgba(0,0,0,.7)}
+
+  /* toast */
+  .toast{position:fixed;right:18px;bottom:18px;z-index:1000;max-width:min(420px,86vw);background:#0b1410;border:1px solid rgba(30,215,96,.45);color:var(--text);padding:13px 17px;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.55);font-size:13.5px;font-weight:650;opacity:0;transform:translateY(10px);transition:.35s;pointer-events:none}
+  .toast.on{opacity:1;transform:none}
+  .toast.err{border-color:rgba(255,93,120,.55);background:#160b0e}
+
+  /* confirm modal */
+  .modal-back{position:fixed;inset:0;z-index:995;background:rgba(3,5,8,.68);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);display:none;place-items:center;padding:20px}
+  .modal-back.on{display:grid}
+  .modal{width:min(460px,94vw);border-radius:18px;background:#0d1016;border:1px solid rgba(255,255,255,.14);padding:24px;box-shadow:0 30px 90px rgba(0,0,0,.65)}
+  .modal h3{margin:0 0 10px;font-size:17px;font-weight:800}
+  .modal .sub{font-size:13.5px;line-height:1.55}
+  .modal .sub b{color:var(--green)}
+  .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+
+  /* calm mode */
+  .calmbtn{display:inline-flex;align-items:center;gap:7px;flex:none;background:none;border:1px solid var(--line);color:var(--muted);border-radius:999px;font:700 12px var(--font);padding:7px 13px;cursor:pointer;transition:.18s}
+  .calmbtn:hover{color:var(--text);background:rgba(255,255,255,.06)}
+  .calmbtn.on{background:rgba(139,108,255,.16);color:#b8a5ff;border-color:transparent}
+  .calmbtn svg{width:13px;height:13px}
+  body.calm .note{display:none}
+  body.calm .blob{opacity:.16}
+  body.calm .mark,body.calm .now-card .big-np,body.calm .wkey.live,body.calm .pill.ready .d,body.calm .chiplet.live{animation:none}
+  body.calm .eq rect{animation:none!important}
+  body.calm .glass{transform:none!important}
+  body.calm .grain{opacity:.02}
+
+  /* skeleton shimmer */
+  .skel{position:relative;overflow:hidden;background:rgba(255,255,255,.05);border-radius:6px;height:11px;margin:7px 0}
+  .skel::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);animation:shim 1.2s infinite}
+  @keyframes shim{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+  body.calm .skel::after{animation:none}
+  .alb .cover{background-color:#0e1118;background-image:linear-gradient(110deg,#0e1118 30%,#161a24 50%,#0e1118 70%)}
+
+  /* sparklines */
+  .spark{display:block;margin-top:9px;opacity:.95}
+
+  /* mobile */
+  @media(max-width:640px){
+    .bar{flex-wrap:wrap;gap:8px;padding:10px 12px}
+    .pills{margin-left:0;width:100%;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch}
+    .pills::-webkit-scrollbar{display:none}
+    .calmbtn{position:absolute;top:10px;right:12px}
+    .bar{position:relative}
+    .page{padding:18px 12px 70px}
+    .topline{flex-direction:column;align-items:flex-start}
+    .top-actions{width:100%;flex-wrap:wrap}
+    .hero-num{font-size:clamp(38px,11vw,56px)}
+    .kpi .val{font-size:24px}
+    .podium{grid-template-columns:1fr}
+    .pod.gold{transform:none}
+    .pod:hover,.pod.gold:hover{transform:none}
+    .log.full{inset:8px}
+    .toast{left:12px;right:12px;max-width:none}
+  }
+</style>"""
+
+# Client-side live updater: polls GET /api/status and patches the DOM in place
+# (KPI numbers, run pill, progress bar + Stop, quota meter, colored log feed,
+# finish toast + browser notification, Clip+Upload confirm modal). This replaces
+# the old full-page 5s auto-reload; _busy_autoreload() remains as the no-JS
+# fallback only.
+LIVE_SCRIPT = r"""<script>
+(function(){
+  'use strict';
+  var calm=function(){return document.body.classList.contains('calm');};
+  var $=function(id){return document.getElementById(id);};
+  var fmtInt=function(v){return (v==null?0:v).toLocaleString('en-US');};
+  function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+
+  /* ---- count-up ---- */
+  function animateNum(el,from,to,ms){
+    if(calm()||from===to){el.textContent=fmtInt(to);return;}
+    var t0=null;
+    function step(ts){if(!t0)t0=ts;var p=Math.min(1,(ts-t0)/ms);p=1-Math.pow(1-p,3);
+      el.textContent=fmtInt(Math.round(from+(to-from)*p));
+      if(p<1)requestAnimationFrame(step);}
+    requestAnimationFrame(step);
+  }
+  function firstCountUp(){
+    if(calm())return;
+    document.querySelectorAll('.hero-num,.kpi .val,.chip .v').forEach(function(el){
+      var raw=(el.textContent||'').trim();
+      if(!/^[\d,]+$/.test(raw))return;
+      var v=parseInt(raw.replace(/,/g,''),10);
+      if(!isFinite(v)||v<=0)return;
+      el._v=v;el._init=true;animateNum(el,Math.floor(v*0.35),v,700);
+    });
+  }
+
+  /* ---- toast + notification ---- */
+  var toastEl=null,toastTimer=null;
+  function toast(msg,isErr){
+    if(!toastEl){toastEl=document.createElement('div');toastEl.className='toast';document.body.appendChild(toastEl);}
+    toastEl.textContent=msg;toastEl.classList.toggle('err',!!isErr);
+    requestAnimationFrame(function(){toastEl.classList.add('on');});
+    clearTimeout(toastTimer);toastTimer=setTimeout(function(){toastEl.classList.remove('on');},6500);
+  }
+  function notify(msg){
+    try{if('Notification' in window&&Notification.permission==='granted'){new Notification('Piano Shorts',{body:msg});}}catch(e){}
+  }
+
+  /* ---- colored, grouped log feed ---- */
+  var logEl=$('liveLog');
+  function lineClass(m){
+    if(/upload failed|error|traceback|quota|upload limit|failed:/i.test(m))return 'err';
+    if(/uploaded .* as youtube video|automation complete|stats refreshed|stats auto-refreshed|saved \d|finished run/i.test(m))return 'ok';
+    if(/generated clip|generating clips|discovered video|moved processed|scanning for videos/i.test(m))return 'clip';
+    return 'dim';
+  }
+  function lineHtml(l){
+    var t=l.slice(0,8),m=l.slice(8).replace(/^\s+/,'');
+    return '<div class="ln '+lineClass(m)+'"><span class="t">'+esc(t)+'</span>'+esc(m)+'</div>';
+  }
+  function summaryChip(l){
+    var m=l.match(/clips_generated=(\d+)[\s\S]*uploads_completed=(\d+)[\s\S]*upload_failures=(\d+)/);
+    if(!m)return '';
+    return '<span class="chiplet">'+m[1]+' clips · '+m[2]+' uploads · '+m[3]+' fail'+(m[3]==='1'?'':'s')+'</span>';
+  }
+  function renderLog(lines){
+    if(!logEl||!lines)return;
+    var html='',groups=[],cur=null,pre=[];
+    lines.forEach(function(l){
+      if(l.indexOf('Starting YouTube Shorts automation')>-1){cur={lines:[l],done:null};groups.push(cur);return;}
+      if(cur){cur.lines.push(l);if(l.indexOf('Finished run:')>-1){cur.done=l;cur=null;}}
+      else pre.push(l);
+    });
+    pre.forEach(function(l){html+=lineHtml(l);});
+    groups.forEach(function(g,i){
+      var open=(i===groups.length-1)?' open':'';
+      var head=g.lines[0]||'';
+      var chip=g.done?summaryChip(g.done):'<span class="chiplet live">running</span>';
+      html+='<details class="rg"'+open+'><summary><span class="t">'+esc(head.slice(0,8))+'</span>Run'+chip+'</summary>'
+        +g.lines.map(lineHtml).join('')+'</details>';
+    });
+    var nearBottom=!logEl._painted||(logEl.scrollHeight-logEl.scrollTop-logEl.clientHeight<48);
+    logEl.innerHTML=html||'<div class="ln dim">No dashboard activity yet.</div>';
+    logEl._painted=true;
+    if(nearBottom)logEl.scrollTop=logEl.scrollHeight;
+  }
+  var fullBtn=$('logFullBtn');
+  if(fullBtn&&logEl){fullBtn.addEventListener('click',function(){
+    var on=logEl.classList.toggle('full');
+    fullBtn.textContent=on?'✕ Close':'⛶ Expand';
+    logEl.scrollTop=logEl.scrollHeight;});}
+
+  /* ---- live DOM patching ---- */
+  function setNum(el,v){
+    v=Math.round(Number(v)||0);
+    var from=(typeof el._v==='number')?el._v:v;
+    if(from===v&&el._init)return;
+    el._v=v;el._init=true;
+    animateNum(el,from,v,600);
+  }
+  function patchValues(s){
+    document.querySelectorAll('[data-live]').forEach(function(el){
+      var k=el.getAttribute('data-live');
+      if(k in s)setNum(el,s[k]);
+    });
+    document.querySelectorAll('[data-live-text]').forEach(function(el){
+      var k=el.getAttribute('data-live-text');
+      if(k in s&&el.textContent!==String(s[k]))el.textContent=s[k];
+    });
+  }
+  function etaTxt(sec){
+    if(sec>=90)return '~'+Math.round(sec/60)+' min left';
+    return '~'+Math.max(5,Math.round(sec/5)*5)+' sec left';
+  }
+  function runLabel(r){
+    if(r.stopping)return 'Stopping run…';
+    var p=r.phase;
+    if(p==='clipping')return 'Clipping… '+(r.clips_made||0)+' clip'+((r.clips_made||0)===1?'':'s')+' generated';
+    if(p==='uploading'){
+      var total=r.total>0?r.total:'?';
+      var cur=Math.min((r.done||0)+1,r.total||((r.done||0)+1));
+      var txt='Uploading clip '+cur+' of '+total;
+      if(r.eta_seconds>0)txt+=' · '+etaTxt(r.eta_seconds);
+      if(r.fails>0)txt+=' · '+r.fails+' failed';
+      return txt;
+    }
+    if(p==='finishing')return 'Finishing up…';
+    return 'Starting run…';
+  }
+  function patchRun(s){
+    var r=s.run||{};
+    var pill=$('livePill');
+    if(pill)pill.textContent=r.running?'Running':(r.stats_running?'Refreshing stats…':'Ready');
+    var state=$('liveState');
+    if(state)state.textContent=r.running?'Pipeline running…':(r.stats_running?'Refreshing YouTube stats…':'Pipeline idle · ready');
+    var prog=$('runProg'),fill=$('runFill'),lbl=$('runLabel'),stopF=$('stopForm');
+    if(prog){
+      var busy=!!(r.running||r.stats_running);
+      prog.classList.toggle('on',busy);
+      if(fill){
+        if(r.running&&r.total>0&&r.phase==='uploading'){
+          fill.classList.remove('indet');
+          fill.style.width=Math.min(100,Math.round((r.done||0)/r.total*100))+'%';
+        }else{fill.classList.add('indet');}
+      }
+      if(lbl)lbl.textContent=r.running?runLabel(r):(r.stats_running?'Refreshing YouTube stats…':'');
+      if(stopF)stopF.style.display=r.running?'':'none';
+    }
+    var q=s.quota,qf=$('quotaFill'),qt=$('quotaTxt');
+    if(q&&qf){qf.style.width=Math.min(100,Math.round(q.used/q.cap*100))+'%';qf.classList.toggle('hot',!!q.exhausted);}
+    if(q&&qt){
+      qt.textContent=q.exhausted?(q.used+' of '+q.cap+' · daily limit hit'):(q.used+' of '+q.cap+' · '+q.remaining+' left');
+      qt.classList.toggle('hot',!!q.exhausted);
+    }
+    var lr=s.last_run,le=$('lastRun');
+    if(le&&lr&&lr.when){
+      le.textContent='Last run '+lr.when.slice(11,16)+' · '+lr.clips_generated+' clips · '
+        +lr.uploads_completed+' uploads · '+lr.upload_failures+' fail'+(lr.upload_failures===1?'':'s');
+    }
+  }
+
+  /* ---- run/refresh finish detection ---- */
+  var prevSeq=null,prevRunning=false,prevStats=false;
+  function checkFinish(s){
+    var r=s.run||{};
+    if(prevSeq===null){prevSeq=r.run_seq;prevRunning=!!r.running;prevStats=!!r.stats_running;return;}
+    if(r.run_seq!==prevSeq){
+      var wasRun=prevRunning,wasStats=prevStats;
+      prevSeq=r.run_seq;
+      if(!r.running&&!r.stats_running){
+        if(wasRun){
+          var msg;
+          if(r.stopped)msg='Run stopped — '+(r.done||0)+' upload'+((r.done||0)===1?'':'s')+' completed first';
+          else if(r.quota_hit)msg='Run paused — YouTube daily upload limit hit';
+          else if(r.last_error)msg='Run finished with errors — check the log';
+          else msg='Run finished — '+(r.done||0)+' upload'+((r.done||0)===1?'':'s')
+            +((r.fails||0)>0?(' · '+r.fails+' failed'):'')
+            +((r.clips_made||0)>0?(' · '+r.clips_made+' new clips'):'');
+          toast(msg,!!(r.last_error||r.quota_hit));notify(msg);
+          setTimeout(function(){location.reload();},2400);
+        }else if(wasStats){
+          toast('YouTube stats refreshed');
+          setTimeout(function(){location.reload();},1500);
+        }
+      }
+    }
+    prevRunning=!!r.running;prevStats=!!r.stats_running;
+  }
+
+  /* ---- polling ---- */
+  var FAST=2000,SLOW=4500,timer=null,busyNow=false;
+  function poll(){
+    fetch('/api/status',{cache:'no-store'}).then(function(r){return r.json();}).then(function(s){
+      busyNow=!!(s.run&&(s.run.running||s.run.stats_running));
+      patchValues(s);patchRun(s);checkFinish(s);
+      if(s.log)renderLog(s.log);
+      var rf=$('runForm');
+      if(rf&&typeof s.pending_uploads==='number')rf.setAttribute('data-pending',s.pending_uploads);
+    }).catch(function(){}).then(schedule);
+  }
+  function schedule(){
+    clearTimeout(timer);
+    timer=setTimeout(function(){
+      if(document.hidden){schedule();return;}
+      poll();
+    },busyNow?FAST:SLOW);
+  }
+  document.addEventListener('visibilitychange',function(){if(!document.hidden){clearTimeout(timer);poll();}});
+
+  /* ---- async owner actions (no page reloads) ---- */
+  function asyncPost(url,params){
+    return fetch(url,{method:'POST',headers:{'X-Requested-With':'fetch','Content-Type':'application/x-www-form-urlencoded'},body:params||''});
+  }
+  var stopF=$('stopForm');
+  if(stopF)stopF.addEventListener('submit',function(e){
+    e.preventDefault();
+    asyncPost('/stop','redirect_to=/overview').then(function(){toast('Stopping run…');poll();});
+  });
+  document.querySelectorAll('form[action="/refresh-stats"]').forEach(function(f){
+    f.addEventListener('submit',function(e){
+      e.preventDefault();
+      asyncPost('/refresh-stats','redirect_to=/overview').then(function(){toast('Refreshing YouTube stats…');busyNow=true;poll();});
+    });
+  });
+  var runForm=$('runForm'),modal=$('runModal');
+  if(runForm&&modal){
+    var txt=$('runModalText'),okBtn=$('runConfirm'),noBtn=$('runCancel');
+    runForm.addEventListener('submit',function(e){
+      e.preventDefault();
+      var n=parseInt(runForm.getAttribute('data-pending')||'0',10);
+      var slot=runForm.getAttribute('data-first-slot')||'';
+      if(txt){
+        txt.innerHTML=n>0
+          ?('This will clip any new input videos, then upload <b>'+n+'</b> pending clip'+(n===1?'':'s')
+            +' to YouTube as private, scheduled videos'+(slot?', publishing from <b>'+esc(slot)+'</b>':'')+'. Continue?')
+          :'No clips are waiting right now — this run will clip any new input videos and upload whatever they produce. Continue?';
+      }
+      modal.classList.add('on');
+    });
+    if(noBtn)noBtn.addEventListener('click',function(){modal.classList.remove('on');});
+    modal.addEventListener('click',function(e){if(e.target===modal)modal.classList.remove('on');});
+    document.addEventListener('keydown',function(e){if(e.key==='Escape')modal.classList.remove('on');});
+    if(okBtn)okBtn.addEventListener('click',function(){
+      try{if('Notification' in window&&Notification.permission==='default')Notification.requestPermission();}catch(e){}
+      modal.classList.remove('on');
+      asyncPost('/run','redirect_to=/overview').then(function(){toast('Run started');busyNow=true;poll();});
+    });
+  }
+
+  function init(){firstCountUp();poll();}
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
 })();
 </script>"""
 
@@ -2184,15 +2778,61 @@ def svg_bar_chart(labels: list, data: list, colors: list, height: int = 260) -> 
     )
 
 
+def svg_sparkline(values: list, color: str = "#1ed760", width: int = 132, height: int = 32) -> str:
+    """Tiny server-rendered 7-day trend line for KPI tiles."""
+    values = [max(0, int(v)) for v in values]
+    if len(values) < 2 or max(values) <= 0:
+        return ""
+    maxv = max(values)
+    n = len(values)
+    pts = []
+    for i, v in enumerate(values):
+        x = 2 + (i / (n - 1)) * (width - 4)
+        y = height - 3 - (v / maxv) * (height - 8)
+        pts.append(f"{x:.1f},{y:.1f}")
+    poly = " ".join(pts)
+    area = f"2,{height - 2} " + poly + f" {width - 2},{height - 2}"
+    return (
+        f'<svg class="spark" viewBox="0 0 {width} {height}" width="{width}" height="{height}" aria-hidden="true">'
+        f'<polygon points="{area}" fill="{color}" opacity=".12"/>'
+        f'<polyline points="{poly}" fill="none" stroke="{color}" stroke-width="1.8" '
+        f'stroke-linejoin="round" stroke-linecap="round"/></svg>'
+    )
+
+
+def _uploads_last_7_days() -> list[int]:
+    """Uploads completed per day for the last 7 local days (oldest first)."""
+    tz = ZoneInfo(config.TIMEZONE)
+    today = datetime.now(tz).date()
+    counts = {(today - timedelta(days=i)).isoformat(): 0 for i in range(6, -1, -1)}
+    for record in read_upload_records():
+        if record.status != "uploaded":
+            continue
+        parsed = parse_iso_datetime(record.upload_time)
+        if not parsed:
+            continue
+        key = parsed.astimezone(tz).date().isoformat()
+        if key in counts:
+            counts[key] += 1
+    return list(counts.values())
+
+
 def _topbar(active: str) -> str:
     pills = "".join(
         f'<a class="{"on" if (key == active or (active == "dsci" and key == "stats")) else ""}" href="{href}">{html.escape(label)}</a>'
         for key, href, label in PILLS
     )
+    calm_btn = (
+        '<button class="calmbtn" id="calmBtn" type="button" '
+        'title="Calm mode — stills animations and softens the glow" aria-label="Toggle calm mode">'
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+        '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>Calm</button>'
+    )
     return (
         '<header class="bar">'
         f'<a class="backhome" href="/"><span class="dot">{BRAND_SVG}</span>Piano Shorts</a>'
         f'<nav class="pills">{pills}</nav>'
+        + calm_btn +
         '</header>'
     )
 
@@ -2213,19 +2853,20 @@ def render_page(active: str, eyebrow: str, title: str, sub: str, body: str,
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f'<title>Piano Shorts — {html.escape(title)}</title>'
-        + FONT_HEAD + STYLE_V5 + head_extra
+        + FONT_HEAD + STYLE_V5 + STYLE_LIVE + head_extra
         + '</head><body class="tab">' + BG_MARKUP + _topbar(active)
         + '<main class="page shell">' + topline + body + '</main>'
         + '<div class="cbadge">Piano Shorts · Creator Analytics</div>'
-        + _busy_autoreload() + BG_SCRIPT + '</body></html>'
+        + _busy_autoreload() + BG_SCRIPT + LIVE_SCRIPT + '</body></html>'
     )
 
 
 def _busy_autoreload() -> str:
-    """While a pipeline run or stats refresh is in flight, reload the page so the
-    numbers update themselves instead of the user having to switch tabs."""
+    """No-JS fallback only: browsers without JavaScript still see fresh numbers
+    via a meta refresh while a run/refresh is busy. JS clients get live partial
+    updates from /api/status (LIVE_SCRIPT) instead of full page reloads."""
     if RUN_STATE.get("running") or RUN_STATE.get("stats_running"):
-        return '<script>setTimeout(function(){location.reload();},5000);</script>'
+        return '<noscript><meta http-equiv="refresh" content="7"></noscript>'
     return ""
 
 
@@ -2273,7 +2914,7 @@ def render_dashboard() -> str:
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        '<title>Piano Shorts</title>' + FONT_HEAD + STYLE_V5
+        '<title>Piano Shorts</title>' + FONT_HEAD + STYLE_V5 + STYLE_LIVE
         + '</head><body>' + BG_MARKUP + body + BG_SCRIPT + '</body></html>'
     )
 
@@ -2313,7 +2954,8 @@ UPLOAD_PROGRESS_SCRIPT = r"""<script>
         msg.textContent='✓ '+r.saved+' file'+(r.saved>1?'s':'')+' in input folder ('+r.input_count+' total) · clipping started';
         var ic=document.getElementById('inputCount'); if(ic) ic.textContent=r.input_count;
         file.value='';
-        setTimeout(function(){ location.reload(); }, 2600);
+        // No page reload: the live status poller picks up the clipping run,
+        // shows progress, and patches the counts in place.
       } else {
         bar.style.background='#ff5d78';
         msg.style.color='#ff5d78';
@@ -2356,21 +2998,74 @@ def render_overview() -> str:
     colors = ["#8b6cff" if r.get("fill") else "#1ed760" for r in rows1d]
     chart_svg = svg_bar_chart(labels, data, colors)
 
-    log_lines = live_dashboard_log_lines(6)
+    log_lines = live_dashboard_log_lines(40)
     log_html = "".join(
-        f'<div><span class="t">{html.escape(l[:9])}</span> {html.escape(l[9:180])}</div>'
-        for l in reversed(log_lines[-6:])
-    ) or '<div class="t">No dashboard activity yet.</div>'
+        f'<div class="ln dim"><span class="t">{html.escape(l[:8])}</span>{html.escape(l[8:180].lstrip())}</div>'
+        for l in log_lines
+    ) or '<div class="skel" style="width:82%"></div><div class="skel" style="width:64%"></div><div class="skel" style="width:73%"></div>'
+
+    # Confirm-modal facts: how many clips a full run would upload, and the first
+    # publish slot the scheduler would give them.
+    pending = count_pending_clips()
+    try:
+        first_slot = format_queue_time(generate_schedule(1)[0].isoformat()) if pending else ""
+    except Exception:  # noqa: BLE001 - a scheduling hiccup must not break the page
+        first_slot = ""
+    quota = quota_status()
+    quota_pct = min(100, round(int(quota["used"]) / int(quota["cap"]) * 100))
+    quota_txt = (
+        f'{quota["used"]} of {quota["cap"]} · daily limit hit'
+        if quota["exhausted"]
+        else f'{quota["used"]} of {quota["cap"]} · {quota["remaining"]} left'
+    )
+    busy = running or stats_running
+
+    run_progress = (
+        f'<div class="runprog{" on" if busy else ""}" id="runProg">'
+        '<div class="track"><div class="fill indet" id="runFill"></div></div>'
+        '<div class="lbl"><span id="runLabel">'
+        + ("Run in progress…" if running else ("Refreshing YouTube stats…" if stats_running else ""))
+        + '</span>'
+        '<form class="inline" action="/stop" method="post" data-owner-only id="stopForm"'
+        + ('' if running else ' style="display:none"') +
+        '><input type="hidden" name="redirect_to" value="/overview">'
+        '<button class="btn stop" type="submit">■ Stop</button></form>'
+        '</div></div>'
+    )
+    quota_meter = (
+        '<div class="quota" data-owner-only>'
+        '<div class="qrow"><span class="ql">YouTube uploads today</span>'
+        f'<span class="qv{" hot" if quota["exhausted"] else ""}" id="quotaTxt">{quota_txt}</span></div>'
+        f'<div class="track"><div class="fill{" hot" if quota["exhausted"] else ""}" id="quotaFill" style="width:{quota_pct}%"></div></div>'
+        '</div>'
+    )
+    log_feed = (
+        '<div class="logwrap" data-owner-only>'
+        '<div class="logbar"><span class="ll">Live activity log</span>'
+        '<span class="lastrun" id="lastRun"></span>'
+        '<button type="button" id="logFullBtn">⛶ Expand</button></div>'
+        f'<div class="log" id="liveLog">{log_html}</div></div>'
+    )
+    confirm_modal = (
+        '<div class="modal-back" id="runModal" data-owner-only>'
+        '<div class="modal"><h3>Start Clip + Upload?</h3>'
+        '<p class="sub" id="runModalText"></p>'
+        '<div class="modal-actions">'
+        '<button class="btn" type="button" id="runCancel">Cancel</button>'
+        '<button class="btn primary" type="button" id="runConfirm">Yes, start the run</button>'
+        '</div></div></div>'
+    )
 
     body = (
         '<div class="row r-2 mt">'
         '<div class="panel"><p class="eyebrow" style="color:var(--muted)">Total channel views</p>'
-        f'<div class="hero-num">{total_views:,}</div>'
-        f'<div class="sub" style="margin-top:8px">+<b style="color:var(--green)">{delta:,}</b> overnight · best hour <b style="color:var(--green)">{html.escape(best_hour)}</b> · today’s gains below</div>'
+        f'<div class="hero-num" data-live="total_views">{total_views:,}</div>'
+        f'<div class="sub" style="margin-top:8px">+<b style="color:var(--green)" data-live="today_views">{delta:,}</b> overnight · best hour <b style="color:var(--green)">{html.escape(best_hour)}</b> · today’s gains below</div>'
         f'{chart_svg}</div>'
         '<div class="panel"><h3>Live activity</h3>'
         '<div class="now-card"><div class="big-np"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>'
-        f'<div><b style="font-size:15px">{"Pipeline running…" if running else ("Refreshing YouTube stats…" if stats_running else "Pipeline idle · ready")}</b><div class="sub" style="margin-top:2px">Drop videos in input, then Clip + Upload</div></div></div>'
+        f'<div><b style="font-size:15px" id="liveState">{"Pipeline running…" if running else ("Refreshing YouTube stats…" if stats_running else "Pipeline idle · ready")}</b><div class="sub" style="margin-top:2px">Drop videos in input, then Clip + Upload</div></div></div>'
+        + run_progress +
         '<form id="upform" class="upzone" action="/upload" method="post" enctype="multipart/form-data" data-owner-only>'
         '<input type="hidden" name="upload_action" value="upload_and_clip">'
         '<input id="upfile" type="file" name="videos" accept=".mp4,.mov" multiple style="color:var(--muted);font-size:12px;margin-bottom:10px"><br>'
@@ -2380,20 +3075,22 @@ def render_overview() -> str:
         '<div id="upbar" style="height:100%;width:0%;background:linear-gradient(90deg,#1ed760,#4f97ff);transition:width .15s"></div></div>'
         '<div id="upmsg" class="sub" style="margin-top:7px;font-size:12px">Uploading… 0%</div></div>'
         '</form>'
-        f'<div class="log" data-owner-only>{log_html}</div></div>'
+        + quota_meter + log_feed + '</div>'
         '</div>'
         '<div class="row r-4 mt">'
-        f'<div class="chip"><div class="l">Input videos</div><div class="v" id="inputCount">{input_count}</div></div>'
-        f'<div class="chip"><div class="l">Clips ready</div><div class="v">{clip_count:,}</div></div>'
-        f'<div class="chip"><div class="l">Next post</div><div class="v" style="font-size:15px">{next_post}</div></div>'
-        f'<div class="chip"><div class="l">Uploaded today</div><div class="v">{uploaded_today}</div></div>'
+        f'<div class="chip"><div class="l">Input videos</div><div class="v" id="inputCount" data-live="input_count">{input_count}</div></div>'
+        f'<div class="chip"><div class="l">Clips ready</div><div class="v" data-live="clip_count">{clip_count:,}</div></div>'
+        f'<div class="chip"><div class="l">Next post</div><div class="v" style="font-size:15px" data-live-text="next_post">{next_post}</div></div>'
+        f'<div class="chip"><div class="l">Uploaded today</div><div class="v" data-live="uploaded_today">{uploaded_today}</div></div>'
         '</div>'
-        + UPLOAD_PROGRESS_SCRIPT
+        + confirm_modal + UPLOAD_PROGRESS_SCRIPT
     )
     pill_label = "Running" if running else ("Refreshing stats…" if stats_running else "Ready")
-    ready = '<span class="pill ready"><span class="d"></span>' + pill_label + '</span>'
+    ready = '<span class="pill ready"><span class="d"></span><span id="livePill">' + pill_label + '</span></span>'
     top_actions = ready + (
-        '<form class="inline" action="/run" method="post" data-owner-only><input type="hidden" name="redirect_to" value="/overview">'
+        f'<form class="inline" action="/run" method="post" data-owner-only id="runForm" '
+        f'data-pending="{len(pending)}" data-first-slot="{html.escape(first_slot)}">'
+        '<input type="hidden" name="redirect_to" value="/overview">'
         '<button class="btn primary" type="submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>Clip + Upload</button></form>'
         '<form class="inline" action="/refresh-stats" method="post" data-owner-only><input type="hidden" name="redirect_to" value="/overview">'
         '<button class="btn" type="submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>Refresh</button></form>'
@@ -2426,15 +3123,22 @@ def render_stats_page(selected_range: str = "1d", *_ignore, **_kw) -> str:
     colors = ["#1ed760"] * len(data)
     chart_svg = svg_bar_chart(labels, data, colors)
 
-    def kpi(cls, lab, val, delta_txt, dcolor=""):
+    def kpi(cls, lab, val, delta_txt, dcolor="", live="", spark=""):
         style = f' style="color:{dcolor}"' if dcolor else ""
-        return f'<div class="kpi {cls}"><div class="lab">{lab}</div><div class="val">{val}</div><div class="d"{style}>{delta_txt}</div></div>'
+        live_attr = f' data-live="{live}"' if live else ""
+        return (
+            f'<div class="kpi {cls}"><div class="lab">{lab}</div><div class="val"{live_attr}>{val}</div>'
+            f'<div class="d"{style}>{delta_txt}</div>{spark}</div>'
+        )
 
+    views_7d = [int(r.get("views", 0)) for r in rows1w]
     kpis = (
         '<div class="row r-4 mt">'
-        + kpi("kc-g", "Total Views", f"{total_views:,}", f"▲ {delta:,} today")
-        + kpi("kc-b", "Tracked Clips", f"{tracked:,}", f"{clips_ready:,} clips ready")
-        + kpi("kc-t", "Upload Records", f"{uploads:,}", f"▲ {uploaded_today} today")
+        + kpi("kc-g", "Total Views", f"{total_views:,}", f'▲ <span data-live="today_views">{delta:,}</span> today',
+              live="total_views", spark=svg_sparkline(views_7d, "#1ed760"))
+        + kpi("kc-b", "Tracked Clips", f"{tracked:,}", f'<span data-live="clip_count">{clips_ready:,}</span> clips ready')
+        + kpi("kc-t", "Upload Records", f"{uploads:,}", f'▲ <span data-live="uploaded_today">{uploaded_today}</span> today',
+              live="upload_records", spark=svg_sparkline(_uploads_last_7_days(), "#24d6b6"))
         + kpi("kc-a", "Engagement", f"{engagement:.2f}%", f"{total_likes:,} likes · {total_comments:,} comments", "var(--faint)")
         + '</div>'
     )
