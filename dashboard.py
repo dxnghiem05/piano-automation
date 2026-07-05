@@ -2263,6 +2263,55 @@ def render_dashboard() -> str:
 # ---------------------------------------------------------------------------
 # OVERVIEW  (/overview)
 # ---------------------------------------------------------------------------
+# Uploads the chosen videos via XHR so we can show a live % progress bar and,
+# on completion, confirm the files actually landed in the input folder (reading
+# the saved count the server reports back) before clipping kicks off.
+UPLOAD_PROGRESS_SCRIPT = r"""<script>
+(function(){
+  var f=document.getElementById('upform'); if(!f) return;
+  var file=document.getElementById('upfile'), prog=document.getElementById('upprog'),
+      bar=document.getElementById('upbar'), msg=document.getElementById('upmsg');
+  f.addEventListener('submit', function(e){
+    if(!file || !file.files || !file.files.length){ return; }
+    e.preventDefault();
+    var xhr=new XMLHttpRequest();
+    xhr.open('POST','/upload');
+    xhr.setRequestHeader('X-Requested-With','fetch');
+    prog.style.display='block'; bar.style.width='0%';
+    bar.style.background='linear-gradient(90deg,#1ed760,#4f97ff)';
+    msg.style.color=''; msg.textContent='Uploading… 0%';
+    xhr.upload.onprogress=function(ev){
+      if(ev.lengthComputable){
+        var p=Math.round(ev.loaded/ev.total*100);
+        bar.style.width=p+'%';
+        msg.textContent = p<100 ? ('Uploading… '+p+'%') : 'Saving to input folder…';
+      }
+    };
+    xhr.onload=function(){
+      var r={}; try{ r=JSON.parse(xhr.responseText); }catch(err){}
+      bar.style.width='100%';
+      if(r.ok && r.saved>0){
+        msg.style.color='var(--green)';
+        msg.textContent='✓ '+r.saved+' file'+(r.saved>1?'s':'')+' in input folder ('+r.input_count+' total) · clipping started';
+        var ic=document.getElementById('inputCount'); if(ic) ic.textContent=r.input_count;
+        file.value='';
+        setTimeout(function(){ location.reload(); }, 2600);
+      } else {
+        bar.style.background='#ff5d78';
+        msg.style.color='#ff5d78';
+        msg.textContent = (r && r.message) ? r.message : 'No valid .mp4/.mov files were saved.';
+      }
+    };
+    xhr.onerror=function(){
+      bar.style.background='#ff5d78'; msg.style.color='#ff5d78';
+      msg.textContent='Upload failed — check the connection and try again.';
+    };
+    xhr.send(new FormData(f));
+  });
+})();
+</script>"""
+
+
 def render_overview() -> str:
     status = build_status()
     latest_rows = latest_video_stats()
@@ -2304,18 +2353,24 @@ def render_overview() -> str:
         '<div class="panel"><h3>Live activity</h3>'
         '<div class="now-card"><div class="big-np"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>'
         f'<div><b style="font-size:15px">{"Pipeline running…" if running else ("Refreshing YouTube stats…" if stats_running else "Pipeline idle · ready")}</b><div class="sub" style="margin-top:2px">Drop videos in input, then Clip + Upload</div></div></div>'
-        '<form class="upzone" action="/upload" method="post" enctype="multipart/form-data" data-owner-only>'
+        '<form id="upform" class="upzone" action="/upload" method="post" enctype="multipart/form-data" data-owner-only>'
         '<input type="hidden" name="upload_action" value="upload_and_clip">'
-        '<input type="file" name="videos" accept=".mp4,.mov" multiple style="color:var(--muted);font-size:12px;margin-bottom:10px"><br>'
-        '<button class="btn primary" type="submit">Upload &amp; clip</button></form>'
+        '<input id="upfile" type="file" name="videos" accept=".mp4,.mov" multiple style="color:var(--muted);font-size:12px;margin-bottom:10px"><br>'
+        '<button class="btn primary" type="submit">Upload &amp; clip</button>'
+        '<div id="upprog" style="display:none;margin-top:12px">'
+        '<div style="height:9px;border-radius:6px;background:rgba(255,255,255,.09);overflow:hidden">'
+        '<div id="upbar" style="height:100%;width:0%;background:linear-gradient(90deg,#1ed760,#4f97ff);transition:width .15s"></div></div>'
+        '<div id="upmsg" class="sub" style="margin-top:7px;font-size:12px">Uploading… 0%</div></div>'
+        '</form>'
         f'<div class="log" data-owner-only>{log_html}</div></div>'
         '</div>'
         '<div class="row r-4 mt">'
-        f'<div class="chip"><div class="l">Input videos</div><div class="v">{input_count}</div></div>'
+        f'<div class="chip"><div class="l">Input videos</div><div class="v" id="inputCount">{input_count}</div></div>'
         f'<div class="chip"><div class="l">Clips ready</div><div class="v">{clip_count:,}</div></div>'
         f'<div class="chip"><div class="l">Next post</div><div class="v" style="font-size:15px">{next_post}</div></div>'
         f'<div class="chip"><div class="l">Uploaded today</div><div class="v">{uploaded_today}</div></div>'
         '</div>'
+        + UPLOAD_PROGRESS_SCRIPT
     )
     pill_label = "Running" if running else ("Refreshing stats…" if stats_running else "Ready")
     ready = '<span class="pill ready"><span class="d"></span>' + pill_label + '</span>'
