@@ -402,7 +402,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if self.is_ajax_request():
                 self.send_json({"ok": True, "message": "Started clipping and YouTube scheduling."})
                 return
-            self.redirect(self.redirect_back_path(default="/"))
+            self.redirect(self.form_redirect_target(default="/overview"))
             return
 
         if parsed.path == "/clip-only":
@@ -2393,7 +2393,7 @@ def render_overview() -> str:
     pill_label = "Running" if running else ("Refreshing stats…" if stats_running else "Ready")
     ready = '<span class="pill ready"><span class="d"></span>' + pill_label + '</span>'
     top_actions = ready + (
-        '<form class="inline" action="/run" method="post" data-owner-only>'
+        '<form class="inline" action="/run" method="post" data-owner-only><input type="hidden" name="redirect_to" value="/overview">'
         '<button class="btn primary" type="submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>Clip + Upload</button></form>'
         '<form class="inline" action="/refresh-stats" method="post" data-owner-only><input type="hidden" name="redirect_to" value="/overview">'
         '<button class="btn" type="submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>Refresh</button></form>'
