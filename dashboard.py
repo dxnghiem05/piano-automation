@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 from zoneinfo import ZoneInfo
 
 import config
@@ -2349,6 +2349,7 @@ def render_stats_page(selected_range: str = "1d", *_ignore, **_kw) -> str:
 # TIKTOK CANDIDATES  (/tiktok-candidates)
 # ---------------------------------------------------------------------------
 TIKTOK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l3-1v10"/><circle cx="6" cy="18" r="3"/><path d="M14 7c1.5 2 4 2.5 6 2.5"/></svg>'
+DOWNLOAD_CLIP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>'
 
 
 def render_tiktok_candidates_page(selected_date: str = "") -> str:
@@ -2357,19 +2358,17 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
     medal = ["\U0001f947", "\U0001f948", "\U0001f949"]
     cls = ["gold", "silver", "bronze"]
 
-    tk_configured = tiktok.is_configured()
-    tk_connected = tiktok.is_connected()
-    disp = tiktok.connected_display() if tk_connected else {}
-
-    def post_form(clip_filename: str, caption: str) -> str:
-        if not tk_connected:
-            return ""
+    def download_btn(clip_filename: str) -> str:
+        if not clip_filename:
+            return ''
+        exists = (config.CLIPS_DIR / clip_filename).exists()
+        if not exists:
+            return '<div class="sub" style="margin-top:12px;font-size:11.5px">clip file not on disk</div>'
+        href = "/clips/" + quote(clip_filename)
         return (
-            '<form action="/tiktok/post" method="post" data-owner-only style="position:relative;margin-top:12px">'
-            f'<input type="hidden" name="clip_filename" value="{html.escape(clip_filename)}">'
-            f'<input type="hidden" name="caption" value="{html.escape(caption)}">'
-            '<button class="btn primary" type="submit" style="width:100%;justify-content:center">'
-            + TIKTOK_ICON + 'Post to TikTok</button></form>'
+            f'<a class="btn primary" href="{html.escape(href)}" download '
+            'style="width:100%;justify-content:center;margin-top:12px">'
+            + DOWNLOAD_CLIP_ICON + 'Download clip</a>'
         )
 
     blocks = []
@@ -2389,7 +2388,7 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
                 f'<div class="pod {cls[i]}"><div class="medal">{medal[i]}</div><div class="w">{title}</div>'
                 f'<div class="c">{html.escape(clip_fn)}</div>'
                 f'<div class="met"><b>{int(c["views"]):,}</b> views · <b>{int(c["likes"]):,}</b> likes</div>'
-                f'{post_form(clip_fn, title)}</div>'
+                f'{download_btn(clip_fn)}</div>'
             )
         while len(pods) < 3:
             pods.append('<div class="pod"><div class="met sub">—</div></div>')
@@ -2399,56 +2398,29 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
 
     grid = "".join(blocks) or '<div class="panel"><div class="placeholder"><h3>No candidates in the past week</h3><div>Once clips have 24h of stats they appear here.</div></div></div>'
 
-    # One-shot status banner from the last connect/post action.
-    msg = TIKTOK_RESULT.get("message", "")
-    err = TIKTOK_RESULT.get("error", "")
-    TIKTOK_RESULT.update({"message": "", "error": ""})
-    banner = ""
-    if err:
-        banner = f'<div class="panel" style="border-color:rgba(255,93,120,.5);margin-bottom:16px"><b style="color:#ff5d78">{html.escape(err)}</b></div>'
-    elif msg:
-        banner = f'<div class="panel" style="border-color:rgba(30,215,96,.5);margin-bottom:16px"><b style="color:var(--green)">{html.escape(msg)}</b></div>'
+    # How-it-works strip: log in to TikTok, download a clip, post it yourself.
+    how_panel = (
+        '<div class="panel" style="margin-bottom:16px;display:flex;align-items:center;'
+        'justify-content:space-between;gap:16px;flex-wrap:wrap">'
+        '<div style="max-width:640px">'
+        '<h3 style="margin:0 0 4px">Post them yourself, one tap at a time</h3>'
+        '<span class="sub">Open the TikTok upload page and log in, then <b>Download clip</b> on any '
+        'winner below and drag the file in. You decide what goes live — nothing posts automatically.</span>'
+        '</div>'
+        '<a class="btn primary" href="https://www.tiktok.com/tiktokstudio/upload" target="_blank" rel="noopener">'
+        + TIKTOK_ICON + 'Open TikTok Upload</a>'
+        '</div>'
+    )
 
-    # Owner-only connection panel (hidden from public viewers).
-    if not tk_configured:
-        conn_panel = (
-            '<div class="panel" data-owner-only style="margin-bottom:16px">'
-            '<h3>Connect TikTok</h3>'
-            '<p class="sub" style="margin:0">TikTok isn\'t configured yet. Add <code>TIKTOK_CLIENT_KEY</code> and '
-            '<code>TIKTOK_CLIENT_SECRET</code> to your <code>.env</code>, then register this redirect URI in the TikTok portal:</p>'
-            f'<p style="font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--green);margin-top:8px">{html.escape(tiktok.redirect_uri())}</p>'
-            '</div>'
-        )
-    elif not tk_connected:
-        conn_panel = (
-            '<div class="panel" data-owner-only style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">'
-            '<div><h3 style="margin:0 0 4px">Connect your TikTok account</h3>'
-            '<span class="sub">Authorize PianoClip to post your top clips. Redirect URI: '
-            f'<code style="color:var(--green)">{html.escape(tiktok.redirect_uri())}</code></span></div>'
-            '<a class="btn primary" href="/tiktok/connect">' + TIKTOK_ICON + 'Connect TikTok</a>'
-            '</div>'
-        )
-    else:
-        name = html.escape(disp.get("display_name", "your TikTok"))
-        avatar = disp.get("avatar_url", "")
-        av = (f'<img src="{html.escape(avatar)}" alt="" style="width:36px;height:36px;border-radius:50%;object-fit:cover">'
-              if avatar else '')
-        conn_panel = (
-            '<div class="panel" data-owner-only style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">'
-            f'<div style="display:flex;align-items:center;gap:12px">{av}'
-            f'<div><b>Connected: {name}</b><div class="sub" style="margin:0">Use “Post to TikTok” on any clip below.</div></div></div>'
-            '<a class="btn" href="/tiktok/disconnect">Disconnect</a>'
-            '</div>'
-        )
-
-    body = banner + conn_panel + grid
-    top_actions = ""
-    if tk_connected:
-        top_actions += '<span class="pill ready" data-owner-only><span class="d"></span>TikTok connected</span>'
-    top_actions += '<a class="btn" href="/tiktok-candidates.csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>Download CSV</a>'
+    body = how_panel + grid
+    top_actions = (
+        '<a class="btn" href="https://www.tiktok.com/tiktokstudio/upload" target="_blank" rel="noopener">'
+        + TIKTOK_ICON + 'Open TikTok</a>'
+        '<a class="btn" href="/tiktok-candidates.csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>Download CSV</a>'
+    )
     return render_page(
         "tiktok", "YouTube winners → TikTok", "TikTok Candidates",
-        "The daily podium of clips worth reposting — connect TikTok and post them in one click.",
+        "The daily podium of clips worth reposting — download a winner and post it to TikTok yourself.",
         body, top_actions=top_actions,
     )
 
