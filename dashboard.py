@@ -1819,11 +1819,13 @@ STYLE_V5 = r"""<style>
       radial-gradient(65% 55% at 50% 104%, rgba(30,215,96,.30), transparent 60%),
       radial-gradient(40% 40% at 92% 88%, rgba(245,105,120,.28), transparent 60%),
       linear-gradient(180deg,#070812,#04060b 60%,#02040a)}
-  .blob{position:absolute;border-radius:50%;filter:blur(70px);opacity:.4}
-  .blob.g{width:640px;height:640px;background:radial-gradient(circle,#1ed760,transparent 68%);top:-190px;left:6%;animation:drift 16s ease-in-out infinite}
-  .blob.v{width:560px;height:560px;background:radial-gradient(circle,#8b6cff,transparent 68%);top:-130px;right:5%;animation:drift 19s ease-in-out infinite reverse}
-  .blob.b{width:520px;height:520px;background:radial-gradient(circle,#4f97ff,transparent 68%);bottom:-170px;left:42%;animation:drift 22s ease-in-out infinite}
-  @keyframes drift{0%,100%{transform:translate(0,0)}50%{transform:translate(26px,-22px)}}
+  /* Static glows: promoted to their own GPU layer and NOT animated, so the
+     blurred edges don't re-rasterize every frame (that caused monitor-edge
+     flicker). The color wash behind them carries the aurora look. */
+  .blob{position:absolute;border-radius:50%;filter:blur(70px);opacity:.4;transform:translateZ(0)}
+  .blob.g{width:640px;height:640px;background:radial-gradient(circle,#1ed760,transparent 68%);top:-190px;left:6%}
+  .blob.v{width:560px;height:560px;background:radial-gradient(circle,#8b6cff,transparent 68%);top:-130px;right:5%}
+  .blob.b{width:520px;height:520px;background:radial-gradient(circle,#4f97ff,transparent 68%);bottom:-170px;left:42%}
   .grain{position:absolute;inset:0;opacity:.05;background-image:radial-gradient(#fff 1px,transparent 1px);background-size:4px 4px}
   .keys{position:absolute;left:50%;bottom:-46px;transform:translateX(-50%) perspective(1150px) rotateX(51deg);
     transform-origin:bottom center;display:flex;gap:4px;opacity:.46;transition:opacity .6s}
