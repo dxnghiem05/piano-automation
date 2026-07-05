@@ -155,7 +155,11 @@ MAX_UPLOAD_BYTES = 8 * 1024 * 1024 * 1024
 HOME_PREVIEW_CLIP_LIMIT = 3
 QUEUE_PAGE_SIZE = 20
 STATS_TABLE_PAGE_SIZE = 25
-AUTO_STATS_REFRESH_MINUTES = 2
+# How stale saved stats must be before the /stats page triggers a full, heavy
+# rebuild (tracker CSV + project Excel) on load. Kept high because the cheap
+# background snapshotter already keeps the view history fresh every 30 min, so
+# the expensive rebuild only needs to run occasionally (or on manual Refresh).
+AUTO_STATS_REFRESH_MINUTES = 45
 APP_FONT_STACK = (
     '"Figtree", "CircularSp", "Circular Std", "Avenir Next", "Helvetica Neue", '
     'Helvetica, Arial, sans-serif'
@@ -1632,13 +1636,42 @@ def refresh_stats_process() -> None:
 SNAPSHOT_INTERVAL_MINUTES = 30
 
 
+def snapshot_youtube_stats_quietly() -> None:
+    """Append ONE stats snapshot only — no tracker/project rebuild, no UI busy
+    state. This is what the hourly chart needs, and keeping it lightweight means
+    the background sampler doesn't steal CPU from page rendering or trigger the
+    auto-reload the way a full manual refresh does. The heavy tracker/project
+    rebuilds stay on the manual Refresh button and the pipeline run."""
+    if RUN_STATE["running"] or RUN_STATE["stats_running"]:
+        return
+    if not STATS_REFRESH_LOCK.acquire(blocking=False):
+        return
+    try:
+        refresh_youtube_stats_history()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Background stats snapshot failed: %s", exc)
+    finally:
+        STATS_REFRESH_LOCK.release()
+
+
 def _snapshot_scheduler_loop() -> None:
     local_zone = ZoneInfo(config.TIMEZONE)
+    # Sample when the last snapshot is older than the interval (minus a little
+    # slack so timer jitter doesn't push us to every-other-cycle). Decoupled
+    # from AUTO_STATS_REFRESH_MINUTES so the two behaviours can't fight.
+    threshold = timedelta(minutes=max(5, SNAPSHOT_INTERVAL_MINUTES - 5))
     while True:
         try:
             now = datetime.now(local_zone)
-            if config.POST_START_HOUR <= now.hour <= config.POST_END_HOUR and youtube_stats_are_stale():
-                start_stats_refresh()
+            if config.POST_START_HOUR <= now.hour <= config.POST_END_HOUR:
+                latest = latest_stats_checked_at()
+                if latest is None:
+                    due = True
+                else:
+                    ref_now = datetime.now(latest.tzinfo) if latest.tzinfo else datetime.now()
+                    due = ref_now - latest >= threshold
+                if due:
+                    snapshot_youtube_stats_quietly()
         except Exception as exc:  # noqa: BLE001
             logger.exception("Background snapshot scheduler error: %s", exc)
         time.sleep(SNAPSHOT_INTERVAL_MINUTES * 60)
@@ -2160,7 +2193,7 @@ def _busy_autoreload() -> str:
     """While a pipeline run or stats refresh is in flight, reload the page so the
     numbers update themselves instead of the user having to switch tabs."""
     if RUN_STATE.get("running") or RUN_STATE.get("stats_running"):
-        return '<script>setTimeout(function(){location.reload();},3500);</script>'
+        return '<script>setTimeout(function(){location.reload();},5000);</script>'
     return ""
 
 
