@@ -173,6 +173,10 @@ RUN_STATE = {
     "last_error": "",
 }
 STATS_REFRESH_LOCK = threading.Lock()
+# Separate lock for the lightweight background snapshotter so it never holds the
+# STATS_REFRESH_LOCK that the clip/upload pipeline checks — otherwise a 30-min
+# background snapshot could silently swallow a "Clip + Upload" click.
+SNAPSHOT_LOCK = threading.Lock()
 LAST_AUTO_STATS_REFRESH_ATTEMPT: datetime | None = None
 
 # TikTok OAuth CSRF state + PKCE verifier + last post result (shown on the page).
@@ -1644,14 +1648,19 @@ def snapshot_youtube_stats_quietly() -> None:
     rebuilds stay on the manual Refresh button and the pipeline run."""
     if RUN_STATE["running"] or RUN_STATE["stats_running"]:
         return
-    if not STATS_REFRESH_LOCK.acquire(blocking=False):
+    # Skip if a heavy refresh holds the main lock (avoid two writers appending to
+    # the history CSV at once) but do NOT take that lock ourselves — the pipeline
+    # must stay free to start.
+    if STATS_REFRESH_LOCK.locked():
+        return
+    if not SNAPSHOT_LOCK.acquire(blocking=False):
         return
     try:
         refresh_youtube_stats_history()
     except Exception as exc:  # noqa: BLE001
         logger.warning("Background stats snapshot failed: %s", exc)
     finally:
-        STATS_REFRESH_LOCK.release()
+        SNAPSHOT_LOCK.release()
 
 
 def _snapshot_scheduler_loop() -> None:
@@ -1878,7 +1887,10 @@ STYLE_V5 = r"""<style>
   .social a svg{width:19px;height:19px}
 
   /* tab chrome */
-  .bar{position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:16px;padding:14px clamp(16px,4vw,40px);backdrop-filter:blur(14px);background:linear-gradient(180deg,rgba(6,8,12,.72),rgba(6,8,12,.3));border-bottom:1px solid var(--line)}
+  /* Near-opaque bar instead of a live backdrop-filter blur — a sticky blur
+     re-samples the content scrolling underneath every frame, which caused
+     flicker while scrolling the Stats page. */
+  .bar{position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:16px;padding:14px clamp(16px,4vw,40px);background:linear-gradient(180deg,rgba(6,8,12,.94),rgba(6,8,12,.86));border-bottom:1px solid var(--line)}
   .backhome{display:inline-flex;align-items:center;gap:9px;font-weight:800;font-size:14px;cursor:pointer;padding:8px 12px;border-radius:11px;transition:.2s}
   .backhome:hover{background:rgba(255,255,255,.06)}
   .backhome .dot{width:22px;height:22px;border-radius:50%;background:var(--green);display:grid;place-items:center}
