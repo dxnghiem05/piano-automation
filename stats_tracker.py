@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import io
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
@@ -82,13 +83,68 @@ def append_snapshots(snapshots: list[StatsSnapshot]) -> None:
             writer.writerow(snapshot.__dict__)
 
 
+# The history CSV is strictly append-only (append_snapshots always opens it in
+# "a" mode and every row ends in a newline), so we never need to re-parse the
+# whole file. This cache keeps the parsed rows plus the byte offset we last
+# consumed; on each read we parse ONLY the newly appended tail. A month of
+# 30-min snapshots for ~34 videos is already 180k+ rows / 35 MB, and a full
+# reparse on every page load is what made reloads get slower and slower. The
+# raw file is never modified — only read — so no historical data is affected.
+_HISTORY_CACHE: dict[str, object] = {"size": 0, "mtime_ns": 0, "header": None, "rows": []}
+
+
 def read_stats_history() -> list[dict[str, str]]:
-    """Read all saved YouTube stats snapshots."""
-    if not config.YOUTUBE_STATS_HISTORY_FILE.exists():
+    """Read all saved YouTube stats snapshots (incrementally cached)."""
+    path = config.YOUTUBE_STATS_HISTORY_FILE
+    cache = _HISTORY_CACHE
+
+    if not path.exists():
+        cache.update(size=0, mtime_ns=0, header=None, rows=[])
         return []
 
-    with config.YOUTUBE_STATS_HISTORY_FILE.open("r", newline="", encoding="utf-8") as file:
-        return list(csv.DictReader(file))
+    try:
+        stat = path.stat()
+    except OSError:
+        return cache["rows"]  # type: ignore[return-value]
+
+    # Unchanged since last read -> return the cached rows untouched.
+    if (
+        cache["header"] is not None
+        and stat.st_size == cache["size"]
+        and stat.st_mtime_ns == cache["mtime_ns"]
+    ):
+        return cache["rows"]  # type: ignore[return-value]
+
+    # Append-only fast path: file only grew, so parse just the new tail.
+    if cache["header"] is not None and cache["size"] and stat.st_size > cache["size"]:  # type: ignore[operator]
+        with path.open("rb") as file:
+            file.seek(cache["size"])  # type: ignore[arg-type]
+            tail = file.read()
+        # Only consume up to the last complete line, so a snapshot being written
+        # concurrently can never leave a torn final row in the cache.
+        cut = tail.rfind(b"\n") + 1
+        consumed = tail[:cut]
+        if consumed:
+            reader = csv.DictReader(
+                io.StringIO(consumed.decode("utf-8", "replace")),
+                fieldnames=cache["header"],  # type: ignore[arg-type]
+            )
+            cache["rows"].extend(reader)  # type: ignore[attr-defined]
+        cache["size"] = cache["size"] + len(consumed)  # type: ignore[operator]
+        cache["mtime_ns"] = stat.st_mtime_ns
+        return cache["rows"]  # type: ignore[return-value]
+
+    # Full parse: first load, or the file shrank / was rotated / reset.
+    data = path.read_bytes()
+    cut = data.rfind(b"\n") + 1
+    consumed = data[:cut]
+    reader = csv.DictReader(io.StringIO(consumed.decode("utf-8", "replace")))
+    rows = list(reader)
+    cache["header"] = reader.fieldnames
+    cache["rows"] = rows
+    cache["size"] = len(consumed)
+    cache["mtime_ns"] = stat.st_mtime_ns
+    return rows
 
 
 def latest_video_stats() -> list[dict[str, str]]:

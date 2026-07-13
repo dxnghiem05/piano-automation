@@ -1633,6 +1633,49 @@ def _format_log_line(raw: str) -> str:
     return f"{stamp}  {message}".strip()
 
 
+# --- Log prettifying (Vision live-activity feed) ---------------------------
+# Turns raw pipeline log messages into the condensed feed style:
+#   "Uploaded clip_000612.mp4 as YouTube video k2Xw9abc" -> "✔ Uploaded clip_000612 → k2Xw9…"
+# The same rules exist client-side in LIVE_SCRIPT; these run for the initial
+# server render so no-JS views (and first paint) match.
+_LOG_UPLOADED_RE = re.compile(r"^Uploaded (\S+?)\.mp4 as YouTube video (\S+)\s*$")
+_LOG_FAILED_RE = re.compile(r"^Upload failed for (\S+?)\.mp4[:\s]*(.*)$")
+_LOG_GENERATED_RE = re.compile(r"^Generated clip .*?(clip_\d+\.mp4)\s*$")
+_LOG_MOVED_RE = re.compile(r"^Moved processed source .*?([^/]+) to .*$")
+
+
+def _pretty_log_message(message: str) -> str:
+    """Condense one raw log message for the live feed (display only)."""
+    match = _LOG_UPLOADED_RE.match(message)
+    if match:
+        return f"✔ Uploaded {match.group(1)} → {match.group(2)[:5]}…"
+    match = _LOG_FAILED_RE.match(message)
+    if match:
+        tail = match.group(2).strip()
+        return f"✘ Upload failed {match.group(1)}" + (f" — {tail[:60]}" if tail else "")
+    match = _LOG_GENERATED_RE.match(message)
+    if match:
+        return f"Generated {match.group(1)}"
+    match = _LOG_MOVED_RE.match(message)
+    if match:
+        return f"Moved {match.group(1)} → uploaded/"
+    return message
+
+
+def _log_line_class(message: str) -> str:
+    """Feed color class for one raw log message (matches LIVE_SCRIPT's rules)."""
+    lower = message.lower()
+    if any(t in lower for t in ("upload failed", "error", "traceback", "quota", "upload limit", "failed:")):
+        return "err"
+    if any(t in lower for t in ("as youtube video", "automation complete", "stats refreshed",
+                                "stats auto-refreshed", "finished run")) or lower.startswith("saved "):
+        return "ok"
+    if any(t in lower for t in ("generated clip", "generating clips", "discovered video",
+                                "moved processed", "scanning for videos")):
+        return "clip"
+    return "dim"
+
+
 def live_dashboard_log_text(limit: int = 90) -> str:
     """Return recent useful app log lines as one text block."""
     lines = live_dashboard_log_lines(limit)
@@ -2049,247 +2092,6 @@ def upload_message(saved: int, upload_action: str) -> str:
 
 
 # ============================================================================
-# v5 dashboard UI — vibrant "Piano Shorts" concept, server-rendered & wired to
-# the live data functions. Home splash + real routes per tab. Owner-only actions
-# stay inside forms hidden from public viewers by the viewer-mode overlay.
-# ============================================================================
-
-STYLE_V5 = r"""<style>
-  :root{
-    --green:#1ed760;--green-soft:rgba(30,215,96,.16);
-    --blue:#4f97ff;--violet:#8b6cff;--teal:#24d6b6;--amber:#f5b544;--rose:#ff5d78;
-    --text:#f6f8f6;--muted:#aeb6c2;--faint:#7c8595;
-    --panel:rgba(255,255,255,.045);--line:rgba(255,255,255,.10);
-    --font:'Figtree',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-  }
-  *{box-sizing:border-box}
-  html,body{margin:0;min-height:100%}
-  a{color:inherit;text-decoration:none}
-  body{font-family:var(--font);color:var(--text);background:#05060a;-webkit-font-smoothing:antialiased;letter-spacing:-.011em;min-height:100vh;position:relative;overflow-x:hidden}
-  ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:#2a2e2a;border-radius:8px}
-
-  .stage{position:fixed;inset:0;z-index:0;overflow:hidden}
-  .wash{position:absolute;inset:-12%;
-    background:
-      radial-gradient(48% 40% at 20% 16%, rgba(139,108,255,.50), transparent 60%),
-      radial-gradient(46% 42% at 84% 24%, rgba(79,151,255,.42), transparent 60%),
-      radial-gradient(65% 55% at 50% 104%, rgba(30,215,96,.30), transparent 60%),
-      radial-gradient(40% 40% at 92% 88%, rgba(245,105,120,.28), transparent 60%),
-      linear-gradient(180deg,#070812,#04060b 60%,#02040a)}
-  /* Static glows: promoted to their own GPU layer and NOT animated, so the
-     blurred edges don't re-rasterize every frame (that caused monitor-edge
-     flicker). The color wash behind them carries the aurora look. */
-  .blob{position:absolute;border-radius:50%;filter:blur(70px);opacity:.4;transform:translateZ(0)}
-  .blob.g{width:640px;height:640px;background:radial-gradient(circle,#1ed760,transparent 68%);top:-190px;left:6%}
-  .blob.v{width:560px;height:560px;background:radial-gradient(circle,#8b6cff,transparent 68%);top:-130px;right:5%}
-  .blob.b{width:520px;height:520px;background:radial-gradient(circle,#4f97ff,transparent 68%);bottom:-170px;left:42%}
-  .grain{position:absolute;inset:0;opacity:.05;background-image:radial-gradient(#fff 1px,transparent 1px);background-size:4px 4px}
-  .keys{position:absolute;left:50%;bottom:-46px;transform:translateX(-50%) perspective(1150px) rotateX(51deg);
-    transform-origin:bottom center;display:flex;gap:4px;opacity:.46;transition:opacity .6s}
-  body.tab .keys{opacity:.16}
-  .key{width:50px;height:278px;border-radius:0 0 8px 8px;background:linear-gradient(180deg,#e9edf6,#aab3c6);position:relative;box-shadow:inset 0 -12px 20px rgba(0,0,0,.25)}
-  .key.g{background:linear-gradient(180deg,#c9ffe0,#1ed760);box-shadow:0 0 30px rgba(30,215,96,.8)}
-  .key.v{background:linear-gradient(180deg,#e5dcff,#8b6cff);box-shadow:0 0 30px rgba(139,108,255,.8)}
-  .key.b{background:linear-gradient(180deg,#d5e7ff,#4f97ff);box-shadow:0 0 30px rgba(79,151,255,.8)}
-  .bk{position:absolute;top:0;right:-14px;width:28px;height:176px;border-radius:0 0 5px 5px;background:linear-gradient(180deg,#181c26,#05070c);z-index:3;box-shadow:0 6px 8px rgba(0,0,0,.5)}
-  .key.nb .bk{display:none}
-  .note{position:absolute;bottom:3%;color:rgba(255,255,255,.4);text-shadow:0 0 6px rgba(30,215,96,.35);will-change:transform,opacity;pointer-events:none}
-  @keyframes rise{0%{transform:translateY(20px) rotate(0);opacity:0}12%{opacity:.9}85%{opacity:.6}100%{transform:translateY(-48vh) rotate(16deg);opacity:0}}
-
-  /* home */
-  .home{position:relative;z-index:2;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 20px}
-  .shell{position:relative;z-index:2;width:min(1160px,94vw);margin:0 auto}
-  .mark{width:54px;height:54px;border-radius:50%;background:var(--green);display:grid;place-items:center;margin:0 auto 8px;box-shadow:0 0 0 7px var(--green-soft),0 0 40px rgba(30,215,96,.6);animation:beat 3.4s ease-in-out infinite}
-  @keyframes beat{0%,100%{box-shadow:0 0 0 7px var(--green-soft),0 0 32px rgba(30,215,96,.5)}50%{box-shadow:0 0 0 10px var(--green-soft),0 0 56px rgba(30,215,96,.85)}}
-  .mark svg{width:27px;height:27px}
-  h1.big{font-size:clamp(40px,6.4vw,72px);font-weight:850;margin:6px 0 0;letter-spacing:-.045em;background:linear-gradient(180deg,#fff,#cfe9d9);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-  .kicker{margin:14px 0 4px;letter-spacing:.42em;font-size:13px;font-weight:700;color:rgba(255,255,255,.72);text-transform:uppercase}
-  .stat-line{color:var(--muted);font-size:13.5px;margin-bottom:26px;font-weight:600}.stat-line b{color:var(--green)}
-  .glass{position:relative;margin:0 auto;padding:32px 26px 28px;border-radius:26px;width:min(1180px,95vw);
-    background:linear-gradient(180deg,rgba(255,255,255,.13),rgba(255,255,255,.045));border:1px solid rgba(255,255,255,.18);
-    backdrop-filter:blur(26px) saturate(150%);-webkit-backdrop-filter:blur(26px) saturate(150%);
-    box-shadow:0 40px 120px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.25);transition:transform .2s cubic-bezier(.2,.7,.2,1)}
-  .glass::before{content:"";position:absolute;top:0;left:38px;right:38px;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent)}
-  .grid5{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
-  .tile{position:relative;overflow:hidden;padding:24px 16px 22px;border-radius:18px;cursor:pointer;text-align:center;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);transition:transform .28s cubic-bezier(.2,.8,.2,1),background .28s,border-color .28s,box-shadow .28s;display:block}
-  .tile::after{content:"";position:absolute;width:180px;height:180px;border-radius:50%;filter:blur(46px);top:-100px;right:-60px;opacity:0;transition:opacity .35s;background:var(--ac,var(--green))}
-  .tile:hover{transform:translateY(-8px) scale(1.035);background:rgba(255,255,255,.07);border-color:color-mix(in srgb,var(--ac,var(--green)) 55%,transparent);box-shadow:0 22px 50px rgba(0,0,0,.4)}
-  .tile:hover::after{opacity:.55}
-  .tile .ic{width:56px;height:56px;margin:0 auto 15px;display:grid;place-items:center;border-radius:15px;color:#eef2f8;background:rgba(255,255,255,.04);transition:transform .35s cubic-bezier(.2,.8,.2,1),color .3s,background .3s}
-  .tile:hover .ic{color:var(--ac);background:color-mix(in srgb,var(--ac) 18%,transparent);transform:translateY(-2px) scale(1.08)}
-  .tile .ic svg{width:30px;height:30px;transition:filter .3s}
-  .tile:hover .ic svg{filter:drop-shadow(0 0 10px color-mix(in srgb,var(--ac) 90%,transparent))}
-  .tile b{display:block;font-size:15px;font-weight:750;color:#f6f8f6}
-  .tile small{display:block;color:var(--muted);font-size:11.5px;margin-top:3px;opacity:.55;transition:.3s}
-  .tile:hover small{opacity:1;color:#cfd6e0}
-  .tile .go{position:absolute;top:13px;right:14px;color:var(--ac);opacity:0;transform:translateX(-4px);transition:.3s;font-weight:800}
-  .tile:hover .go{opacity:1;transform:none}
-  .t1{--ac:#1ed760}.t2{--ac:#4f97ff}.t3{--ac:#ff5d78}.t4{--ac:#f5b544}.t5{--ac:#8b6cff}
-  .eq rect{transform-origin:bottom;animation:bar 1.1s ease-in-out infinite;animation-play-state:paused}
-  .tile:hover .eq rect{animation-play-state:running}
-  .eq rect:nth-child(2){animation-delay:.18s}.eq rect:nth-child(3){animation-delay:.36s}.eq rect:nth-child(4){animation-delay:.1s}
-  @keyframes bar{0%,100%{transform:scaleY(.4)}50%{transform:scaleY(1)}}
-  .social{margin-top:32px;display:flex;justify-content:center;gap:22px}
-  .social a{width:44px;height:44px;display:grid;place-items:center;border-radius:50%;color:#cdd4de;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);transition:transform .25s cubic-bezier(.2,.8,.2,1),color .25s,box-shadow .25s,background .25s}
-  .social a:hover{transform:translateY(-4px) scale(1.12);color:#fff;background:var(--green-soft);box-shadow:0 10px 26px rgba(30,215,96,.4);border-color:transparent}
-  .social a svg{width:19px;height:19px}
-
-  /* tab chrome */
-  /* Near-opaque bar instead of a live backdrop-filter blur — a sticky blur
-     re-samples the content scrolling underneath every frame, which caused
-     flicker while scrolling the Stats page. */
-  .bar{position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:16px;padding:14px clamp(16px,4vw,40px);background:linear-gradient(180deg,rgba(6,8,12,.94),rgba(6,8,12,.86));border-bottom:1px solid var(--line)}
-  .backhome{display:inline-flex;align-items:center;gap:9px;font-weight:800;font-size:14px;cursor:pointer;padding:8px 12px;border-radius:11px;transition:.2s}
-  .backhome:hover{background:rgba(255,255,255,.06)}
-  .backhome .dot{width:22px;height:22px;border-radius:50%;background:var(--green);display:grid;place-items:center}
-  .backhome .dot svg{width:12px;height:12px}
-  .pills{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
-  .pills a{font-size:12.5px;font-weight:700;color:var(--muted);padding:8px 13px;border-radius:999px;transition:.18s}
-  .pills a:hover{background:rgba(255,255,255,.06);color:var(--text)}
-  .pills a.on{background:var(--green-soft);color:var(--green)}
-  .page{padding:26px clamp(16px,4vw,40px) 90px}
-  .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--green);font-weight:800;margin:0 0 6px}
-  .h2{font-size:clamp(24px,3vw,34px);font-weight:850;letter-spacing:-.03em;margin:0}
-  .sub{color:var(--muted);font-size:14px;margin-top:5px}
-  .topline{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:6px}
-  .top-actions{display:flex;align-items:center;gap:10px}
-  .panel{position:relative;overflow:hidden;background:rgba(16,18,23,.66);border:1px solid var(--line);border-radius:18px;padding:20px}
-  .panel h3{margin:0 0 14px;font-size:15px;font-weight:750}
-  .row{display:grid;gap:16px}
-  .r-4{grid-template-columns:repeat(4,1fr)}.r-3{grid-template-columns:repeat(3,1fr)}.r-2{grid-template-columns:1.5fr 1fr}
-  @media(max-width:960px){.r-4,.r-3,.r-2,.grid5{grid-template-columns:1fr 1fr}}
-  @media(max-width:560px){.r-4,.r-3,.r-2,.grid5{grid-template-columns:1fr}}
-  .mt{margin-top:16px}
-
-  .pill{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:999px;font-size:12.5px;font-weight:700}
-  .pill.ready{background:var(--green-soft);color:var(--green)}
-  .pill.ready .d{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s infinite}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-  .btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:999px;font:800 13px var(--font);cursor:pointer;border:1px solid var(--line);background:rgba(255,255,255,.03);color:var(--text);transition:.18s}
-  .btn:hover{background:rgba(255,255,255,.08)}
-  .btn.primary{background:var(--green);color:#04140a;border-color:var(--green)}
-  .btn.primary:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(30,215,96,.4)}
-  .btn svg{width:15px;height:15px}
-  form.inline{display:inline-flex;margin:0}
-
-  .kpi{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;transition:.25s}
-  .kpi:hover{transform:translateY(-4px);border-color:color-mix(in srgb,var(--kc,var(--green)) 50%,transparent);box-shadow:0 18px 40px rgba(0,0,0,.35)}
-  .kpi::after{content:"";position:absolute;width:150px;height:150px;border-radius:50%;filter:blur(46px);top:-80px;right:-50px;opacity:.4;background:var(--kc,var(--green))}
-  .kpi .lab{color:var(--muted);font-size:12.5px;font-weight:600}
-  .kpi .val{font-size:30px;font-weight:850;letter-spacing:-.03em;margin-top:8px}
-  .kpi .d{font-size:12px;font-weight:700;color:var(--kc,var(--green));margin-top:3px}
-  .kc-g{--kc:#1ed760}.kc-b{--kc:#4f97ff}.kc-t{--kc:#24d6b6}.kc-a{--kc:#f5b544}
-  .hero-num{font-size:clamp(46px,7vw,84px);font-weight:900;letter-spacing:-.04em;line-height:1;background:linear-gradient(180deg,#fff,#bfe9cf);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-  .chartbox{position:relative;height:240px;margin-top:14px;width:100%}
-
-  .pk-wrap{display:flex;align-items:flex-end;gap:10px;height:220px;padding-top:10px}
-  .pk{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
-  .pk .col{width:100%;max-width:52px;border-radius:8px 8px 6px 6px;background:linear-gradient(180deg,#e9edf6,#aab3c6);transition:transform .3s,box-shadow .3s;box-shadow:inset 0 -10px 16px rgba(0,0,0,.2)}
-  .pk.best .col{background:linear-gradient(180deg,#c9ffe0,#1ed760);box-shadow:0 0 24px rgba(30,215,96,.7)}
-  .pk:hover .col{transform:translateY(-5px) scaleY(1.02);box-shadow:0 0 26px rgba(79,151,255,.6)}
-  .pk .v{font-size:12px;font-weight:800;margin-bottom:6px;color:#eef2f8}
-  .pk .h{font-size:11px;color:var(--muted);margin-top:8px;font-weight:700}
-
-  .lead{display:grid;grid-template-columns:34px 1fr auto;gap:14px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
-  .lead:last-child{border-bottom:0}
-  .lead .rk{font-weight:900;font-size:16px;text-align:center;background:linear-gradient(180deg,#fff,#9fdcb4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-  .lead .nm b{display:block;font-size:14px}.lead .nm small{color:var(--faint);font-size:11.5px;font-family:ui-monospace,Menlo,monospace}
-  .lead .nu{text-align:right}.lead .nu b{display:block}.lead .nu small{color:var(--green);font-size:11.5px}
-
-  .set{display:flex;align-items:center;gap:14px;padding:13px 14px;border-radius:13px;border:1px solid var(--line);background:var(--panel);margin-bottom:9px;transition:.2s}
-  .set:hover{transform:translateX(4px);border-color:rgba(30,215,96,.5);background:rgba(30,215,96,.06)}
-  .set .np{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;background:var(--green-soft);color:var(--green);flex:none}
-  .set .np svg{width:16px;height:16px}
-  .set .mid{flex:1}.set .mid b{font-size:14px}.set .mid small{display:block;color:var(--faint);font-size:11.5px;font-family:ui-monospace,Menlo,monospace}
-  .set .time{color:var(--muted);font-size:12.5px;font-weight:700}
-  .badge{font-size:11px;font-weight:800;padding:3px 10px;border-radius:999px;margin-left:12px}
-  .badge.up{background:var(--green-soft);color:var(--green)}.badge.sch{background:rgba(79,151,255,.16);color:var(--blue)}
-
-  .podium{display:grid;grid-template-columns:1fr 1.15fr 1fr;gap:14px;align-items:end;margin-bottom:8px}
-  .pod{position:relative;overflow:hidden;border-radius:16px;padding:20px 16px;text-align:center;border:1px solid var(--line);background:var(--panel);transition:.25s}
-  .pod::after{content:"";position:absolute;inset:0;opacity:.14;background:var(--pc)}
-  .pod .medal{font-size:26px}.pod .w{font-size:18px;font-weight:850;margin:8px 0 2px;position:relative}
-  .pod .c{font-size:11px;color:var(--faint);font-family:ui-monospace,Menlo,monospace;position:relative}
-  .pod .met{margin-top:10px;font-size:13px;position:relative}.pod .met b{color:#fff}
-  .pod.gold{--pc:#f5b544;transform:translateY(-10px)}.pod.silver{--pc:#c8ccd2}.pod.bronze{--pc:#e08a4b}
-  .pod:hover{transform:translateY(-14px);box-shadow:0 20px 44px rgba(0,0,0,.4)}
-  .pod.gold:hover{transform:translateY(-22px)}
-  .day-block{margin-top:20px}.day-block h4{margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:700}
-
-  .lib{display:grid;grid-template-columns:repeat(7,1fr);gap:12px}
-  @media(max-width:1100px){.lib{grid-template-columns:repeat(4,1fr)}}
-  @media(max-width:640px){.lib{grid-template-columns:repeat(2,1fr)}}
-  .alb{border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--panel);transition:.25s;cursor:pointer;display:block}
-  .alb:hover{transform:translateY(-6px) scale(1.03);box-shadow:0 18px 40px rgba(0,0,0,.4);border-color:rgba(139,108,255,.5)}
-  .alb .cover{height:104px;background:#0e1118 center/cover no-repeat;position:relative}
-  .alb .play{position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.45);display:grid;place-items:center;opacity:0;transition:.25s}
-  .alb:hover .play{opacity:1}.alb .play svg{width:11px;height:11px;color:#fff}
-  .alb .meta{padding:10px 11px}.alb .meta b{font-size:12.5px;display:block}.alb .meta small{color:var(--faint);font-size:10.5px;font-family:ui-monospace,Menlo,monospace}
-  .dlbtn{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:999px;font-weight:800;font-size:13px;cursor:pointer;color:#04140a;background:var(--green);transition:.2s}
-  .dlbtn:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(30,215,96,.4)}.dlbtn svg{width:15px;height:15px}
-
-  .octave{display:flex;gap:5px;justify-content:center;margin:10px 0 22px;flex-wrap:wrap}
-  .wkey{width:58px;height:150px;border-radius:0 0 9px 9px;background:linear-gradient(180deg,#20242e,#12151c);border:1px solid rgba(255,255,255,.08);position:relative;display:flex;align-items:flex-end;justify-content:center;padding-bottom:12px;transition:.3s}
-  .wkey .n{font-size:12px;font-weight:800;color:var(--faint)}
-  .wkey.done{background:linear-gradient(180deg,#123a24,#0c2417)}.wkey.done .n{color:#8ef0ab}
-  .wkey.live{background:linear-gradient(180deg,#c9ffe0,#1ed760);box-shadow:0 0 30px rgba(30,215,96,.75);animation:beat 2.4s infinite}.wkey.live .n{color:#04140a}
-  .wkey:hover{transform:translateY(-6px)}
-  .phase{border:1px solid var(--line);border-radius:14px;background:var(--panel);margin-bottom:10px;overflow:hidden}
-  .phase summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:14px;padding:16px}
-  .phase summary::-webkit-details-marker{display:none}
-  .phase .wk{font-size:11px;font-weight:800;color:var(--green);width:64px;flex:none}
-  .phase .pt b{display:block;font-size:15px}.phase .pt small{color:var(--muted);font-size:12.5px}
-  .phase .st{margin-left:auto;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:4px 10px;border-radius:999px}
-  .st.live{background:var(--green-soft);color:var(--green)}.st.done{background:rgba(255,255,255,.06);color:var(--faint)}.st.next{background:rgba(79,151,255,.14);color:var(--blue)}
-  .phase .body{padding:0 16px 18px 78px;color:var(--muted);font-size:13px;line-height:1.6}
-  .phase .body .l{color:var(--faint);text-transform:uppercase;font-size:10px;letter-spacing:.1em;font-weight:800;display:block;margin:10px 0 3px}
-  .tag{display:inline-block;font-size:11px;font-weight:700;color:var(--green);background:var(--green-soft);padding:4px 10px;border-radius:999px;margin:6px 6px 0 0}
-  .prog{height:8px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin:6px 0 4px}
-  .prog i{display:block;height:100%;background:linear-gradient(90deg,#1ed760,#8ef0ab);border-radius:999px}
-
-  .chip{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px 16px}
-  .chip .l{color:var(--muted);font-size:12px;font-weight:600}.chip .v{font-size:22px;font-weight:850;margin-top:7px}
-  .log{background:#06070688;border:1px solid var(--line);border-radius:12px;padding:14px 16px;font:500 12px ui-monospace,Menlo,monospace;color:#b7c0b7;margin-top:14px;max-height:210px;overflow:auto}
-  .log div{padding:2px 0}.log .t{color:var(--faint)}
-  .upzone{border:1.5px dashed var(--line);border-radius:14px;padding:18px;text-align:center;background:linear-gradient(180deg,rgba(30,215,96,.05),transparent)}
-  .now-card{border:1px solid rgba(30,215,96,.4);background:linear-gradient(180deg,rgba(30,215,96,.1),transparent);border-radius:16px;padding:18px;margin-bottom:16px;display:flex;align-items:center;gap:16px}
-  .now-card .big-np{width:52px;height:52px;border-radius:14px;background:var(--green);color:#04140a;display:grid;place-items:center;flex:none;animation:beat 3s infinite}
-  .now-card .big-np svg{width:24px;height:24px}
-  .chipset{display:flex;flex-wrap:nowrap;gap:8px;margin-bottom:16px;overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch}
-  .chipset::-webkit-scrollbar{height:6px}.chipset::-webkit-scrollbar-thumb{background:#2a2e2a;border-radius:8px}
-  .fchip{flex:none;white-space:nowrap;font-size:12px;font-weight:700;color:var(--muted);background:var(--panel);border:1px solid var(--line);padding:6px 12px;border-radius:999px}
-  .fchip.active{background:var(--green-soft);color:var(--green);border-color:transparent}
-  .ds-scroll{max-height:calc(100vh - 430px);min-height:240px;overflow:auto;border:1px solid var(--line);border-radius:12px}
-  .ds-split{display:grid;grid-template-columns:346px 1fr;gap:18px}
-  @media(max-width:900px){.ds-split{grid-template-columns:1fr}}
-  .ds-list{max-height:calc(100vh - 430px);min-height:240px;overflow:auto;padding-right:6px}
-  .ds-list::-webkit-scrollbar{width:8px}.ds-list::-webkit-scrollbar-thumb{background:#2a2e2a;border-radius:8px}
-  .arow{display:flex;align-items:center;gap:13px;padding:9px 10px;border-radius:12px;cursor:pointer;transition:.16s}
-  .arow:hover{background:rgba(255,255,255,.055)}
-  .arow.sel{background:rgba(255,255,255,.06)}
-  .arow .acov{width:52px;height:52px;border-radius:8px;flex:none;background:#0e1118 center/cover no-repeat;box-shadow:0 4px 12px rgba(0,0,0,.4)}
-  .arow .acov.all{background:linear-gradient(135deg,#1ed760,#0d6e46);display:grid;place-items:center}
-  .arow .acov.all svg{width:24px;height:24px}
-  .arow .acov.empty{background:linear-gradient(135deg,#20242e,#12151c)}
-  .arow .atx{min-width:0;flex:1}
-  .arow .att{font-size:15px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
-  .arow.sel .att{color:var(--green)}
-  .arow .ast{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
-  .arow.future{opacity:.5}.arow.future .ast{color:var(--faint)}
-  .apin{width:12px;height:12px;color:var(--green);flex:none;opacity:0}
-  .arow.sel .apin{opacity:1}
-  .acount{margin-left:auto;font-size:11px;font-weight:800;color:var(--muted);background:rgba(255,255,255,.06);padding:3px 9px;border-radius:999px;flex:none}
-  .arow.sel .acount{background:var(--green-soft);color:var(--green)}
-  .ds-scroll table{margin:0;width:100%;border-collapse:collapse;font-size:13px}
-  .ds-scroll th{position:sticky;top:0;z-index:2;background:#141613;text-align:left;color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:800;padding:12px;border-bottom:1px solid var(--line)}
-  .ds-scroll td{padding:11px 12px;border-top:1px solid var(--line);white-space:nowrap}
-  .ds-scroll tbody tr:hover{background:rgba(255,255,255,.03)}
-  .ds-scroll .clip{color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-size:12px}.ds-scroll .word{font-weight:700}
-  .placeholder{display:grid;place-items:center;min-height:220px;text-align:center;color:var(--muted)}
-  .cbadge{position:fixed;left:14px;bottom:12px;z-index:9;color:rgba(255,255,255,.4);font-size:11px;font-weight:600}
-</style>"""
-
-# ============================================================================
 # v6 "Vision" theme — visionOS-style floating glass panels layered over the
 # original piano/aurora stage. Same class names as v5 so every render function
 # keeps working unchanged; only the presentation layer moves. Fonts are the
@@ -2310,7 +2112,12 @@ STYLE_V6 = r"""<style>
   ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:8px}
 
   /* ---- the piano stage (kept from the original dashboard) ---- */
-  .stage{position:fixed;inset:0;z-index:0;overflow:hidden}
+  /* Fixed background promoted to its own GPU layer so it is rasterized once and
+     just composited (not repainted) on every scroll frame — the main scroll-lag
+     fix, especially on the Retina panel. pointer-events:none keeps hit-testing
+     off it entirely. */
+  .stage{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none;
+    transform:translateZ(0);will-change:transform;backface-visibility:hidden;contain:paint}
   .wash{position:absolute;inset:-12%;
     background:
       radial-gradient(48% 40% at 20% 16%, rgba(109,91,208,.5), transparent 60%),
@@ -2522,7 +2329,11 @@ STYLE_V6 = r"""<style>
   .fchip.active{background:rgba(255,255,255,.92);color:#10122b;border-color:transparent}
 
   /* data-science split */
-  .ds-scroll{max-height:calc(100vh - 430px);min-height:240px;overflow:auto;border:1px solid rgba(255,255,255,.14);border-radius:16px}
+  .ds-scroll{max-height:calc(100vh - 430px);min-height:240px;overflow:auto;border:1px solid rgba(255,255,255,.14);border-radius:16px;
+    transform:translateZ(0);contain:paint;-webkit-overflow-scrolling:touch}
+  /* Isolate each card's paint so scrolling one region can't invalidate the rest.
+     All of these already clip with overflow:hidden, so containment is free. */
+  .panel,.kpi,.chip,.pod,.alb,.tile{contain:layout paint}
   .ds-split{display:grid;grid-template-columns:346px 1fr;gap:18px}
   @media(max-width:900px){.ds-split{grid-template-columns:1fr}}
   .ds-list{max-height:calc(100vh - 430px);min-height:240px;overflow:auto;padding-right:6px}
@@ -2554,6 +2365,82 @@ STYLE_V6 = r"""<style>
   /* calm mode: soften the glass + still the stage */
   body.calm .panel,body.calm .kpi,body.calm .chip,body.calm .glass,body.calm .pod,body.calm .alb,body.calm .phase{backdrop-filter:none;-webkit-backdrop-filter:none}
   body.calm .mark,body.calm .now-card .big-np,body.calm .wkey.live{animation:none}
+
+  /* ---- perf mode (auto on Retina / high-DPI) --------------------------------
+     On the built-in MacBook display devicePixelRatio is 2, so every
+     backdrop-filter panel costs ~4x the GPU work of a 1x external monitor, and
+     any element moving *behind* the glass (the floating notes) forces the whole
+     blur pass to re-run each frame. That's the lag. `perf` mode (added by JS
+     when devicePixelRatio>=2 or prefers-reduced-motion) trims the blur radius
+     so scrolling stays cheap; the JS also stops spawning notes behind the
+     glass. The look stays glassy — it's just far lighter to composite. */
+  /* Drop backdrop-filter ENTIRELY in perf mode: a blurred panel must re-sample
+     everything behind it as you scroll, which is the Retina scroll-lag. We keep
+     the glassy look with a slightly more opaque panel fill + lighter shadows, so
+     scrolling composites cheaply. Low-DPI external monitors keep the full glass. */
+  body.perf .panel,body.perf .kpi,body.perf .chip,body.perf .glass,body.perf .pod,
+  body.perf .alb,body.perf .phase,body.perf .wkey,body.perf .btn,body.perf .social a,
+  body.perf .octave .wkey{backdrop-filter:none;-webkit-backdrop-filter:none}
+  body.perf .panel,body.perf .kpi,body.perf .chip,body.perf .pod,body.perf .alb,body.perf .phase{
+    background:rgba(21,23,36,.68);box-shadow:0 12px 30px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.13)}
+  body.perf .glass{background:rgba(21,23,36,.74);box-shadow:0 20px 50px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.16)}
+  body.perf .blob{filter:blur(56px);opacity:.28}
+  body.perf .panel:hover,body.perf .kpi:hover,body.perf .chip:hover,body.perf .pod:hover,body.perf .alb:hover{transform:none}
+
+  @media (prefers-reduced-motion: reduce){
+    .mark,.now-card .big-np,.wkey.live,.pill.ready .d,.eq rect{animation:none!important}
+    .note{display:none}
+    *{scroll-behavior:auto!important}
+  }
+
+  /* ===================== SMOOTH-SCROLL OVERRIDES ============================
+     Applied to ALL displays (kept last so they win). Three things made scroll
+     jank at ~1s/frame on Retina, and none of them are removed by Calm mode:
+       1. backdrop-filter: every glass card re-blurs what's behind it each frame
+          while you scroll — the single biggest cost. Removed everywhere.
+       2. Huge soft box-shadows (blur radius 70–120px) that re-rasterize as cards
+          scroll into view. Reduced to a small, cheap shadow.
+       3. An always-on 50px blur glow on every KPI (.kpi::after) — swapped for a
+          cheap radial-gradient that needs no filter pass.
+     Cards still read as glass via translucency + a thin top highlight + border,
+     so the Vision look is preserved; it just composites at 60fps now. */
+  .panel,.kpi,.chip,.glass,.pod,.alb,.phase,.wkey,.octave .wkey,
+  .btn,.social a,.now-card,.upzone,.fchip,.set,.arow{
+    backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+  .panel,.kpi,.chip,.pod,.alb,.phase{background:rgba(20,22,34,.74)!important}
+  .glass{background:rgba(20,22,34,.82)!important}
+  .panel,.kpi,.chip,.pod,.alb,.glass,.tile,.now-card,.set{
+    box-shadow:0 6px 18px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.1)!important}
+  .panel:hover,.kpi:hover,.chip:hover,.pod:hover,.alb:hover,.tile:hover{
+    box-shadow:0 10px 26px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.12)!important}
+  /* replace the filter-blur corner glows with a no-cost radial gradient */
+  .kpi::after,.tile::after{filter:none!important;
+    background:radial-gradient(circle at 75% 12%,var(--kc,var(--ac,#4ade80)),transparent 70%)}
+  .blob{filter:blur(60px)!important}
+
+  /* ---- Retina / perf HARD-CUT (built-in display + FPS-flagged slow monitors) --
+     backdrop-filter is already gone everywhere, yet the 2x built-in panel still
+     stalled because of effects whose cost scales with pixel count (4x at 2x DPI):
+       1. the aurora blobs' filter:blur(60px) — a giant blurred raster buffer;
+       2. the tiled grain overlay;
+       3. TRANSLUCENT cards — a semi-transparent panel can't composite as a flat
+          tile, so the GPU re-blends it against the background on every scroll
+          frame. Making the scrolling cards opaque removes that per-frame blend,
+          which is the biggest remaining Retina scroll cost;
+       4. always-on filter/text-shadow glows + idle animations that keep the
+          compositor busy (and delay input) even when nothing is happening.
+     All scoped to body.perf, so low-DPI external monitors keep the full glass. */
+  body.perf .blob{filter:none!important;opacity:.2}
+  body.perf .grain{display:none!important}
+  body.perf .panel,body.perf .kpi,body.perf .chip,body.perf .pod,body.perf .alb,
+  body.perf .phase,body.perf .now-card,body.perf .set,body.perf .arow,body.perf .pill{
+    background:#12131f!important;box-shadow:0 4px 14px rgba(0,0,0,.28)!important}
+  body.perf .glass{background:#111220!important;box-shadow:0 8px 22px rgba(0,0,0,.32)!important}
+  body.perf .kpi::after,body.perf .tile::after{display:none!important}
+  body.perf .mark,body.perf .now-card .big-np,body.perf .wkey.live,body.perf .pill.ready .d,
+  body.perf .eq rect,body.perf .chiplet.live,body.perf .runprog .fill.indet{animation:none!important}
+  body.perf .note{display:none!important}
+  body.perf *{text-shadow:none!important}
 </style>"""
 
 BG_MARKUP = """<div class="stage">
@@ -2565,6 +2452,28 @@ BG_MARKUP = """<div class="stage">
 
 BG_SCRIPT = r"""<script>
 (function(){
+  // Perf mode (auto): on the built-in Retina panel devicePixelRatio is 2, so the
+  // backdrop-filter glass costs ~4x an external 1x monitor and any element moving
+  // behind it re-runs the blur every frame. Detecting hi-DPI / reduced-motion lets
+  // us trim the blur AND skip the floating-note spawner (the main cause of the
+  // MacBook-screen lag) while low-DPI monitors keep the full effect.
+  var reduceMotion=false;
+  try{reduceMotion=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(e){}
+  // Perf mode auto-enables on hi-DPI/Retina and reduced-motion. It is ALSO
+  // remembered in localStorage: once a machine is known to be slow (see the FPS
+  // watchdog below) every reload paints straight into the fast path with no
+  // first-scroll jank -- so reloads keep getting cheaper, not slower.
+  var perfStored=false;try{perfStored=localStorage.getItem('ps-perf')==='1';}catch(e){}
+  var perfOn=perfStored||(window.devicePixelRatio||1)>=2||reduceMotion;
+  function setPerf(){if(document.body.classList.contains('perf'))return;perfOn=true;document.body.classList.add('perf');try{localStorage.setItem('ps-perf','1');}catch(e){}}
+  if(perfOn)document.body.classList.add('perf');
+  // FPS watchdog: on a low-DPI (1x) external monitor perf stays off, but the
+  // backdrop-filter glass can still stutter on scroll. Sample ~1s of frames
+  // after load; if the effective frame rate is poor, switch to perf mode and
+  // remember it. Only runs when perf isn't already on, and a hidden tab simply
+  // never completes the sample (no false positives).
+  if(!perfOn){try{var _frames=0,_start=0;var _tick=function(now){if(!_start)_start=now;_frames++;if(now-_start<1000){requestAnimationFrame(_tick);return;}if(_frames*1000/(now-_start)<45)setPerf();};requestAnimationFrame(_tick);}catch(e){}}
+
   // Calm mode: persisted in localStorage, applied ASAP so animations never start.
   var calmOn=false;try{calmOn=localStorage.getItem('ps-calm')==='1';}catch(e){}
   if(calmOn)document.body.classList.add('calm');
@@ -2582,18 +2491,22 @@ BG_SCRIPT = r"""<script>
     while(Object.keys(lit).length<n){lit[Math.floor(Math.random()*NK)]=cols[Math.floor(Math.random()*3)];}
     for(var i=0;i<NK;i++){var nb=(i%7===2||i%7===6);var k=document.createElement('div');k.className='key'+(nb?' nb':'')+(lit[i]?(' '+lit[i]):'');if(!nb){var b=document.createElement('div');b.className='bk';k.appendChild(b);}keys.appendChild(k);}}
   var stage=document.querySelector('.stage');var gl=['♪','♫','♩','♬'];var live=0;
-  setInterval(function(){if(document.hidden||live>6||!stage||document.body.classList.contains('calm'))return;var e=document.createElement('div');e.className='note';e.textContent=gl[Math.random()*4|0];
+  // Skip the floating-note animation entirely in perf/calm mode: a note moving
+  // behind the glass forces every backdrop-filter panel to re-blur each frame,
+  // which is what makes the Retina MacBook screen lag. Low-DPI monitors keep it.
+  if(!perfOn)
+  setInterval(function(){if(document.hidden||live>6||!stage||document.body.classList.contains('calm')||document.body.classList.contains('perf'))return;var e=document.createElement('div');e.className='note';e.textContent=gl[Math.random()*4|0];
     e.style.left=(5+Math.random()*88)+'%';e.style.fontSize=(16+Math.random()*16)+'px';e.style.animation='rise '+(8+Math.random()*5).toFixed(1)+'s linear forwards';
     stage.appendChild(e);live++;e.addEventListener('animationend',function(){e.remove();live--;});},1500);
   var glass=document.getElementById('glass');
-  if(glass){window.addEventListener('mousemove',function(ev){if(document.body.classList.contains('calm'))return;var x=ev.clientX/innerWidth-.5,y=ev.clientY/innerHeight-.5;
+  if(glass&&!perfOn){window.addEventListener('mousemove',function(ev){if(document.body.classList.contains('calm')||document.body.classList.contains('perf'))return;var x=ev.clientX/innerWidth-.5,y=ev.clientY/innerHeight-.5;
     glass.style.transform='rotateX('+(-y*4).toFixed(2)+'deg) rotateY('+(x*5).toFixed(2)+'deg)';});}
 })();
 </script>"""
 
 # Additive style layer for the live-update UI (progress, logs, modal, toast,
 # quota meter, calm mode, sparklines, skeletons, mobile). Kept separate from
-# STYLE_V5 so the original theme stays untouched.
+# STYLE_V6 so the base theme stays untouched.
 STYLE_LIVE = r"""<style>
   /* run progress */
   .runprog{display:none;margin:0 0 14px}
@@ -2609,8 +2522,9 @@ STYLE_LIVE = r"""<style>
   /* quota meter */
   .quota{margin-top:14px}
   .quota .qrow{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:6px}
-  .quota .ql{color:var(--muted);font-size:12px;font-weight:600}
-  .quota .qv{font-size:12px;font-weight:800;color:var(--green)}
+  .quota .ql{color:var(--text);font-size:13px;font-weight:700;opacity:.85}
+  .quota .qv{font-size:12.5px;font-weight:800;color:var(--green)}
+  .quota .qv.warn{color:#fcd34d}
   .quota .qv.hot{color:#fb7185}
   .quota .track{height:7px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
   .quota .fill{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#4ade80,#fcd34d);transition:width .5s}
@@ -2745,9 +2659,17 @@ LIVE_SCRIPT = r"""<script>
     if(/generated clip|generating clips|discovered video|moved processed|scanning for videos/i.test(m))return 'clip';
     return 'dim';
   }
+  function pretty(m){
+    m=m.replace(/^Uploaded (\S+?)\.mp4 as YouTube video (\S+)\s*$/,function(_,c,id){return '✔ Uploaded '+c+' → '+id.slice(0,5)+'…';});
+    m=m.replace(/^Upload failed for (\S+?)\.mp4[:\s]*(.*)$/,function(_,c,rest){rest=rest.trim();return '✘ Upload failed '+c+(rest?' — '+rest.slice(0,60):'');});
+    m=m.replace(/^Generated clip .*?(clip_\d+\.mp4)\s*$/,'Generated $1');
+    m=m.replace(/^Moved processed source .*?([^\/]+) to .*$/,'Moved $1 → uploaded/');
+    return m;
+  }
   function lineHtml(l){
-    var t=l.slice(0,8),m=l.slice(8).replace(/^\s+/,'');
-    return '<div class="ln '+lineClass(m)+'"><span class="t">'+esc(t)+'</span>'+esc(m)+'</div>';
+    var m=l.slice(8).replace(/^\s+/,'');
+    var cls=lineClass(m);  // classify on the raw message, then condense it
+    return '<div class="ln '+cls+'"><span class="t">'+esc(l.slice(0,5))+'</span>'+esc(pretty(m))+'</div>';
   }
   function summaryChip(l){
     var m=l.match(/clips_generated=(\d+)[\s\S]*uploads_completed=(\d+)[\s\S]*upload_failures=(\d+)/);
@@ -2842,6 +2764,7 @@ LIVE_SCRIPT = r"""<script>
     if(q&&qt){
       qt.textContent=q.exhausted?(q.used+' of '+q.cap+' · daily limit hit'):(q.used+' of '+q.cap+' · '+q.remaining+' left');
       qt.classList.toggle('hot',!!q.exhausted);
+      qt.classList.toggle('warn',!q.exhausted&&q.remaining<=Math.max(1,Math.floor(q.cap/10)));
     }
     var lr=s.last_run,le=$('lastRun');
     if(le&&lr&&lr.when){
@@ -2943,8 +2866,6 @@ LIVE_SCRIPT = r"""<script>
 })();
 </script>"""
 
-CHART_HEAD = '<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>'
-
 PILLS = [
     ("overview", "/overview", "Overview"),
     ("stats", "/stats", "Stats"),
@@ -2983,29 +2904,6 @@ def _today_views_delta() -> int:
 def _cap(raw: str, fallback: str = "") -> str:
     """Clean caption (strip hashtags) and HTML-escape; keeps the leaf glyph if present."""
     return html.escape(_clean_title(raw, fallback))
-
-
-def concept_chart(canvas_id: str, labels: list, data: list, colors: list) -> str:
-    payload = json.dumps({"l": labels, "d": data, "c": colors})
-    tmpl = r"""<script>
-(function(){
-  var CID='__CID__';var P=__P__;var drawn=false;
-  function draw(){
-    if(drawn)return;
-    if(typeof Chart==='undefined'){return setTimeout(draw,60);}
-    var ctx=document.getElementById(CID);if(!ctx)return;
-    drawn=true;
-    Chart.defaults.font.family="'Figtree',sans-serif";Chart.defaults.color='#8892a3';
-    new Chart(ctx,{type:'bar',data:{labels:P.l,datasets:[{data:P.d,backgroundColor:P.c,borderRadius:6,maxBarThickness:34}]},
-      options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:function(x){return x.raw.toLocaleString()+' views';}}}},
-        scales:{x:{grid:{display:false},ticks:{font:{size:11}}},y:{grid:{color:'rgba(255,255,255,.05)'},ticks:{callback:function(v){return v>=1000?(v/1000)+'k':v;}}}},
-        responsive:true,maintainAspectRatio:false,animation:{duration:800}});
-  }
-  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',draw);}else{draw();}
-  window.addEventListener('load',draw);
-})();
-</script>"""
-    return tmpl.replace("__CID__", canvas_id).replace("__P__", payload)
 
 
 def svg_bar_chart(labels: list, data: list, colors: list, height: int = 260) -> str:
@@ -3064,7 +2962,8 @@ def svg_bar_chart(labels: list, data: list, colors: list, height: int = 260) -> 
             f'<text x="{x + barw / 2:.1f}" y="{height - pad_b + 14}" text-anchor="middle" font-size="9.5" fill="rgba(235,240,255,.5)">{html.escape(lb)}</text>'
         )
     return (
-        f'<svg viewBox="0 0 {W} {height}" style="width:100%;height:auto;display:block;margin-top:14px" '
+        f'<svg viewBox="0 0 {W} {height}" '
+        f'style="width:100%;height:auto;display:block;margin-top:14px;font-family:{APP_FONT_STACK}" '
         f'preserveAspectRatio="xMidYMid meet">{"".join(parts)}</svg>'
     )
 
@@ -3291,7 +3190,8 @@ def render_overview() -> str:
 
     log_lines = live_dashboard_log_lines(40)
     log_html = "".join(
-        f'<div class="ln dim"><span class="t">{html.escape(l[:8])}</span>{html.escape(l[8:180].lstrip())}</div>'
+        f'<div class="ln {_log_line_class(l[8:].lstrip())}"><span class="t">{html.escape(l[:5])}</span>'
+        f'{html.escape(_pretty_log_message(l[8:180].lstrip()))}</div>'
         for l in log_lines
     ) or '<div class="skel" style="width:82%"></div><div class="skel" style="width:64%"></div><div class="skel" style="width:73%"></div>'
 
@@ -3304,11 +3204,15 @@ def render_overview() -> str:
         first_slot = ""
     quota = quota_status()
     quota_pct = min(100, round(int(quota["used"]) / int(quota["cap"]) * 100))
-    quota_txt = (
-        f'{quota["used"]} of {quota["cap"]} · daily limit hit'
-        if quota["exhausted"]
-        else f'{quota["used"]} of {quota["cap"]} · {quota["remaining"]} left'
-    )
+    if quota["exhausted"]:
+        quota_txt = f'{quota["used"]} of {quota["cap"]} · daily limit hit'
+        quota_cls = " hot"
+    elif int(quota["remaining"]) <= max(1, int(quota["cap"]) // 10):
+        quota_txt = f'{quota["used"]} of {quota["cap"]} · {quota["remaining"]} left'
+        quota_cls = " warn"
+    else:
+        quota_txt = f'{quota["used"]} of {quota["cap"]} · {quota["remaining"]} left'
+        quota_cls = ""
     busy = running or stats_running
 
     run_progress = (
@@ -3326,7 +3230,7 @@ def render_overview() -> str:
     quota_meter = (
         '<div class="quota" data-owner-only>'
         '<div class="qrow"><span class="ql">YouTube uploads today</span>'
-        f'<span class="qv{" hot" if quota["exhausted"] else ""}" id="quotaTxt">{quota_txt}</span></div>'
+        f'<span class="qv{quota_cls}" id="quotaTxt">{quota_txt}</span></div>'
         f'<div class="track"><div class="fill{" hot" if quota["exhausted"] else ""}" id="quotaFill" style="width:{quota_pct}%"></div></div>'
         '</div>'
     )
@@ -3354,9 +3258,9 @@ def render_overview() -> str:
         f'<div class="sub" style="margin-top:8px">+<b style="color:var(--green)" data-live="today_views">{delta:,}</b> overnight · best hour <b style="color:var(--green)">{html.escape(best_hour)}</b> · today’s gains below</div>'
         f'{chart_svg}</div>'
         '<div class="panel"><h3>Live activity</h3>'
-        '<div class="now-card"><div class="big-np"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>'
+        + run_progress + quota_meter +
+        '<div class="now-card" style="margin-top:14px"><div class="big-np"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>'
         f'<div><b style="font-size:15px" id="liveState">{"Pipeline running…" if running else ("Refreshing YouTube stats…" if stats_running else "Pipeline idle · ready")}</b><div class="sub" style="margin-top:2px">Drop videos in input, then Clip + Upload</div></div></div>'
-        + run_progress +
         '<form id="upform" class="upzone" action="/upload" method="post" enctype="multipart/form-data" data-owner-only>'
         '<input type="hidden" name="upload_action" value="upload_and_clip">'
         '<input id="upfile" type="file" name="videos" accept=".mp4,.mov" multiple style="color:var(--muted);font-size:12px;margin-bottom:10px"><br>'
@@ -3366,7 +3270,7 @@ def render_overview() -> str:
         '<div id="upbar" style="height:100%;width:0%;background:linear-gradient(90deg,#4ade80,#7dd3fc);transition:width .15s"></div></div>'
         '<div id="upmsg" class="sub" style="margin-top:7px;font-size:12px">Uploading… 0%</div></div>'
         '</form>'
-        + quota_meter + log_feed + '</div>'
+        + log_feed + '</div>'
         '</div>'
         '<div class="row r-4 mt">'
         f'<div class="chip"><div class="l">Input videos</div><div class="v" id="inputCount" data-live="input_count">{input_count}</div></div>'
