@@ -37,13 +37,20 @@ CREATOR_INFO_URL = "https://open.tiktokapis.com/v2/post/publish/creator_info/que
 POST_INIT_URL = "https://open.tiktokapis.com/v2/post/publish/video/init/"
 INBOX_INIT_URL = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/"
 POST_STATUS_URL = "https://open.tiktokapis.com/v2/post/publish/status/fetch/"
+VIDEO_LIST_URL = "https://open.tiktokapis.com/v2/video/list/"
+# Fields returned per video by the Display API list endpoint (video.list scope).
+VIDEO_LIST_FIELDS = (
+    "id,title,video_description,cover_image_url,share_url,embed_link,"
+    "view_count,like_count,comment_count,share_count,create_time,duration"
+)
 
 # Scopes: user.info.basic shows the creator's name/avatar (a TikTok review
 # requirement); video.upload enables uploading clips to the creator's TikTok
 # inbox as drafts (no audit needed); video.publish enables Direct Post once the
-# Direct Post audit is approved. We request all three so a single connect covers
-# both draft-upload now and direct posting later.
-SCOPES = "user.info.basic,video.upload,video.publish"
+# Direct Post audit is approved; video.list reads the account's public videos +
+# their view/like/comment/share stats for the TikTok Stats page. One connect
+# covers draft-upload now, direct posting later, and stats.
+SCOPES = "user.info.basic,video.upload,video.publish,video.list"
 
 TOKEN_FILE = config.CREDENTIALS_DIR / "tiktok_token.json"
 
@@ -344,3 +351,19 @@ def fetch_post_status(publish_id: str) -> dict:
     token = valid_access_token()
     result = _post_json(POST_STATUS_URL, {"publish_id": publish_id}, token)
     return result.get("data", {}) or {}
+
+
+# --- Video stats (Display API, scope video.list) -----------------------------
+def list_videos(max_count: int = 20) -> list[dict]:
+    """Return the connected account's public TikTok videos with their stats.
+
+    Uses /v2/video/list/ (scope video.list). Each item includes view_count,
+    like_count, comment_count, share_count, title, cover_image_url, share_url,
+    create_time, duration. Raises RuntimeError with TikTok's error if the scope
+    isn't granted yet (re-connect needed).
+    """
+    token = valid_access_token()
+    url = VIDEO_LIST_URL + "?" + urllib.parse.urlencode({"fields": VIDEO_LIST_FIELDS})
+    result = _post_json(url, {"max_count": max(1, min(int(max_count), 20))}, token)
+    data = result.get("data", {}) or {}
+    return list(data.get("videos", []) or [])

@@ -219,7 +219,7 @@ def is_safe_dashboard_path(value: str) -> bool:
     parsed = urlparse(value)
     if parsed.netloc or parsed.scheme:
         return False
-    return parsed.path in {"/", "/overview", "/stats", "/tracker", "/tiktok-candidates", "/experiment", "/data-science"}
+    return parsed.path in {"/", "/overview", "/stats", "/tracker", "/tiktok-candidates", "/tiktok-stats", "/experiment", "/data-science"}
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -308,6 +308,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             selected_date = query.get("date", [""])[0]
             self.send_html(viewer_mode_html(render_tiktok_candidates_page(selected_date), owner))
+            return
+
+        if path == "/tiktok-stats":
+            self.send_html(viewer_mode_html(render_tiktok_stats_page(), owner))
             return
 
         if path == "/stats":
@@ -469,7 +473,36 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.handle_tiktok_schedule()
             return
 
+        if parsed.path == "/tiktok-stats/refresh":
+            self.handle_tiktok_stats_refresh()
+            return
+
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
+
+    def handle_tiktok_stats_refresh(self) -> None:
+        """Fetch the connected account's TikTok video stats and cache them."""
+        content_length = int(self.headers.get("Content-Length", "0"))
+        if content_length:
+            self.rfile.read(content_length)  # drain body
+        if not tiktok.is_connected():
+            TIKTOK_RESULT.update({"error": "Connect a TikTok account first.", "message": ""})
+            self.redirect("/tiktok-stats")
+            return
+        try:
+            videos = tiktok.list_videos(max_count=20)
+            save_tiktok_video_stats(videos)
+            TIKTOK_RESULT.update({
+                "message": f"Refreshed TikTok stats — {len(videos)} video(s) found.",
+                "error": "",
+            })
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("TikTok stats refresh failed: %s", exc)
+            msg = str(exc)
+            if "scope_not_authorized" in msg or "video.list" in msg:
+                msg = ("TikTok stats need the 'video.list' permission. Disconnect and Connect "
+                       "TikTok again to grant it, then refresh.")
+            TIKTOK_RESULT.update({"error": f"Could not refresh TikTok stats: {msg}", "message": ""})
+        self.redirect("/tiktok-stats")
 
     def handle_upload(self) -> None:
         """Save uploaded videos into input/."""
@@ -725,7 +758,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return default
 
         path = parsed.path or default
-        if path not in {"/", "/overview", "/stats", "/tracker", "/tiktok-candidates", "/experiment", "/data-science"}:
+        if path not in {"/", "/overview", "/stats", "/tracker", "/tiktok-candidates", "/tiktok-stats", "/experiment", "/data-science"}:
             return default
 
         return path + (f"?{parsed.query}" if parsed.query else "")
@@ -2158,7 +2191,7 @@ STYLE_V6 = r"""<style>
     backdrop-filter:blur(28px) saturate(150%);-webkit-backdrop-filter:blur(28px) saturate(150%);
     box-shadow:0 40px 120px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.25);transition:transform .2s cubic-bezier(.2,.7,.2,1)}
   .glass::before{content:"";position:absolute;top:0;left:38px;right:38px;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent)}
-  .grid5{display:grid;grid-template-columns:repeat(5,1fr);gap:13px}
+  .grid5{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}
   .tile{position:relative;overflow:hidden;padding:25px 16px 22px;border-radius:22px;cursor:pointer;text-align:center;
     background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);
     transition:transform .3s cubic-bezier(.2,.8,.2,1),background .3s,border-color .3s,box-shadow .3s;display:block}
@@ -2871,6 +2904,7 @@ PILLS = [
     ("overview", "/overview", "Overview"),
     ("stats", "/stats", "Stats"),
     ("tiktok", "/tiktok-candidates", "TikTok"),
+    ("tiktokstats", "/tiktok-stats", "TikTok Stats"),
     ("tracker", "/tracker", "Tracker"),
     ("experiment", "/experiment", "Experiment"),
 ]
@@ -3077,6 +3111,8 @@ def render_dashboard() -> str:
         ("t2", "/stats", "YouTube Stats", "Growth &amp; queue log", None, True),
         ("t3", "/tiktok-candidates", "TikTok Candidates", "Top clips to repost",
          '<path d="M9 18V5l3-1v10"/><circle cx="6" cy="18" r="3"/><path d="M14 7c1.5 2 4 2.5 6 2.5"/>', False),
+        ("t3b", "/tiktok-stats", "TikTok Stats", "Views &amp; engagement",
+         '<path d="M4 19V10m5 9V5m5 14v-6m5 6V8"/>', False),
         ("t4", "/tracker", "Video Tracker", "Every clip logged",
          '<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="20" x2="9" y2="9"/>', False),
         ("t5", "/experiment", "12-Week Experiment", "Data-science project",
@@ -3411,6 +3447,20 @@ def render_stats_page(selected_range: str = "1d", *_ignore, **_kw) -> str:
 TIKTOK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l3-1v10"/><circle cx="6" cy="18" r="3"/><path d="M14 7c1.5 2 4 2.5 6 2.5"/></svg>'
 DOWNLOAD_CLIP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>'
 
+# Hashtags appended to every TikTok caption. Edit this line to change them.
+TIKTOK_HASHTAGS = "#piano #pianocover #relaxingmusic #pianomusic #fyp"
+
+
+def tiktok_caption(title: str, clip_filename: str = "") -> str:
+    """Build a TikTok caption from the clip's (best) YouTube title + hashtags.
+
+    Used as the Direct Post `title` once the audit is approved, and shown with a
+    Copy button on each candidate card so it can be pasted when finishing drafts
+    manually today.
+    """
+    base = _clean_title(title, clip_filename).strip()
+    return f"{base}\n\n{TIKTOK_HASHTAGS}" if base else TIKTOK_HASHTAGS
+
 
 def render_tiktok_candidates_page(selected_date: str = "") -> str:
     _ = selected_date
@@ -3467,6 +3517,33 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
             '</form>'
         )
 
+    def caption_box(title: str, clip_filename: str, compact: bool = False) -> str:
+        # Shows the generated caption (best YouTube title + hashtags) with a Copy
+        # button, so it can be pasted when finishing a draft in the TikTok app.
+        # Owner-only. Becomes the auto caption once Direct Post is audited.
+        cap = tiktok_caption(title, clip_filename)
+        cap_attr = html.escape(cap)
+        copy_js = (
+            "navigator.clipboard.writeText(this.getAttribute('data-cap'));"
+            "var t=this.textContent;this.textContent='Copied';"
+            "setTimeout(function(b){return function(){b.textContent=t}}(this),1300);"
+        )
+        if compact:
+            return (
+                f'<button class="btn" type="button" data-owner-only data-cap="{cap_attr}" '
+                f'style="padding:4px 10px;font-size:12px" onclick="{copy_js}">Copy caption</button>'
+            )
+        preview = html.escape(cap.replace("\n\n", "  "))
+        return (
+            '<div data-owner-only style="margin-top:8px;text-align:left">'
+            f'<div class="sub" style="font-size:11.5px;line-height:1.4;white-space:normal;'
+            f'opacity:.8;margin-bottom:5px">{preview}</div>'
+            f'<button class="btn" type="button" data-cap="{cap_attr}" '
+            f'style="width:100%;justify-content:center;padding:5px 10px;font-size:12px" '
+            f'onclick="{copy_js}">Copy caption</button>'
+            '</div>'
+        )
+
     all_days = tiktok_candidate_days()
     blocks = []
     for day in all_days:
@@ -3485,7 +3562,8 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
                 f'<div class="pod {cls[i]}"><div class="medal">{medal[i]}</div><div class="w">{title}</div>'
                 f'<div class="c">{html.escape(clip_fn)}</div>'
                 f'<div class="met"><b>{int(c["views"]):,}</b> views · <b>{int(c["likes"]):,}</b> likes</div>'
-                f'{download_btn(clip_fn)}{post_btn(clip_fn, _clean_title(str(c["title"]), clip_fn))}</div>'
+                f'{download_btn(clip_fn)}{post_btn(clip_fn, _clean_title(str(c["title"]), clip_fn))}'
+                f'{caption_box(str(c["title"]), clip_fn)}</div>'
             )
         while len(pods) < 3:
             pods.append('<div class="pod"><div class="met sub">—</div></div>')
@@ -3580,9 +3658,11 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
                     'style="padding:4px 10px;font-size:12px">Download</a>'
                 )
                 post = post_btn(clip_fn, _clean_title(str(c["title"]), clip_fn), compact=True)
+                cap = caption_box(str(c["title"]), clip_fn, compact=True)
             else:
                 dl = '<span class="sub" style="font-size:11px">no file</span>'
                 post = ''
+                cap = ''
             rows.append(
                 '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;'
                 'border-bottom:1px solid rgba(128,128,128,.18)">'
@@ -3591,7 +3671,7 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
                 f'white-space:nowrap">{title}</span>'
                 f'<span class="sub" style="white-space:nowrap;font-size:12px">'
                 f'{int(c["views"]):,} views · {int(c["likes"]):,} likes</span>'
-                f'<span style="display:flex;gap:6px;flex-shrink:0">{dl}{post}</span>'
+                f'<span style="display:flex;gap:6px;flex-shrink:0">{dl}{post}{cap}</span>'
                 '</div>'
             )
         arch_days.append(
@@ -3619,6 +3699,139 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
     return render_page(
         "tiktok", "YouTube winners → TikTok", "TikTok Candidates",
         "The daily podium of clips worth reposting — download a winner and post it to TikTok yourself.",
+        body, top_actions=top_actions,
+    )
+
+
+# ---------------------------------------------------------------------------
+# TIKTOK STATS  (/tiktok-stats)   — separate from the YouTube data
+# ---------------------------------------------------------------------------
+TIKTOK_STATS_FILE = config.CREDENTIALS_DIR / "tiktok_video_stats.json"
+
+
+def _tt_int(value) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def read_tiktok_video_stats() -> dict:
+    """Read the cached TikTok video-stats snapshot: {fetched_at, videos:[...]}."""
+    try:
+        return json.loads(TIKTOK_STATS_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def save_tiktok_video_stats(videos: list) -> dict:
+    """Persist a fresh TikTok video-stats snapshot (kept separate from YouTube)."""
+    snap = {
+        "fetched_at": datetime.now(ZoneInfo(config.TIMEZONE)).isoformat(),
+        "videos": list(videos or []),
+    }
+    TIKTOK_STATS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    TIKTOK_STATS_FILE.write_text(json.dumps(snap, indent=2), encoding="utf-8")
+    return snap
+
+
+def render_tiktok_stats_page() -> str:
+    """Dedicated TikTok metrics page — kept fully separate from YouTube stats."""
+    connected = tiktok.is_connected()
+    snap = read_tiktok_video_stats()
+    videos = list(snap.get("videos", []) or [])
+    videos.sort(key=lambda v: _tt_int(v.get("view_count")), reverse=True)
+
+    banner = ''
+    if TIKTOK_RESULT.get("error"):
+        banner = ('<div class="panel" data-owner-only style="margin-bottom:16px;border-left:3px solid #e5484d">'
+                  f'<b style="color:#e5484d">{html.escape(TIKTOK_RESULT["error"])}</b></div>')
+    elif TIKTOK_RESULT.get("message"):
+        banner = ('<div class="panel" data-owner-only style="margin-bottom:16px;border-left:3px solid #30a46c">'
+                  f'<b style="color:#30a46c">{html.escape(TIKTOK_RESULT["message"])}</b></div>')
+
+    if not connected:
+        body = banner + (
+            '<div class="panel"><div class="placeholder"><h3>Connect TikTok to see your stats</h3>'
+            '<div>Once your TikTok account is connected, refresh to pull view, like, comment and share '
+            'counts for the videos you have posted. This data is stored separately from your YouTube stats.</div>'
+            '<a class="btn primary" data-owner-only href="/tiktok/connect" style="margin-top:12px">'
+            + TIKTOK_ICON + 'Connect TikTok</a></div></div>'
+        )
+        return render_page(
+            "tiktokstats", "TikTok analytics", "TikTok Stats",
+            "Views, likes and engagement on the clips you have posted to TikTok.", body,
+        )
+
+    tot_views = sum(_tt_int(v.get("view_count")) for v in videos)
+    tot_likes = sum(_tt_int(v.get("like_count")) for v in videos)
+    tot_comments = sum(_tt_int(v.get("comment_count")) for v in videos)
+    tot_shares = sum(_tt_int(v.get("share_count")) for v in videos)
+    chips = (
+        '<div class="row r-4 mt" style="grid-template-columns:repeat(5,1fr)">'
+        f'<div class="chip"><div class="l">Posts</div><div class="v">{len(videos):,}</div></div>'
+        f'<div class="chip"><div class="l">Views</div><div class="v">{tot_views:,}</div></div>'
+        f'<div class="chip"><div class="l">Likes</div><div class="v">{tot_likes:,}</div></div>'
+        f'<div class="chip"><div class="l">Comments</div><div class="v">{tot_comments:,}</div></div>'
+        f'<div class="chip"><div class="l">Shares</div><div class="v">{tot_shares:,}</div></div>'
+        '</div>'
+    )
+
+    if videos:
+        head = (
+            '<tr style="text-align:left;border-bottom:1px solid rgba(128,128,128,.25)">'
+            '<th style="padding:8px 6px">Video</th><th style="padding:8px 6px">Views</th>'
+            '<th style="padding:8px 6px">Likes</th><th style="padding:8px 6px">Comments</th>'
+            '<th style="padding:8px 6px">Shares</th><th style="padding:8px 6px">Posted</th></tr>'
+        )
+        rows = []
+        for v in videos:
+            raw_title = str(v.get("title") or v.get("video_description") or "").strip()
+            title = html.escape(raw_title[:80] or "(no caption)")
+            url = html.escape(str(v.get("share_url") or "#"))
+            try:
+                ct = _tt_int(v.get("create_time"))
+                posted = datetime.fromtimestamp(ct, ZoneInfo(config.TIMEZONE)).strftime("%b %d, %Y") if ct else "—"
+            except (ValueError, OSError, OverflowError):
+                posted = "—"
+            rows.append(
+                '<tr style="border-bottom:1px solid rgba(128,128,128,.12)">'
+                f'<td style="padding:8px 6px;max-width:340px"><a href="{url}" target="_blank" rel="noopener">{title}</a></td>'
+                f'<td style="padding:8px 6px"><b>{_tt_int(v.get("view_count")):,}</b></td>'
+                f'<td style="padding:8px 6px">{_tt_int(v.get("like_count")):,}</td>'
+                f'<td style="padding:8px 6px">{_tt_int(v.get("comment_count")):,}</td>'
+                f'<td style="padding:8px 6px">{_tt_int(v.get("share_count")):,}</td>'
+                f'<td style="padding:8px 6px" class="sub">{posted}</td></tr>'
+            )
+        table = (
+            '<div class="panel mt"><h3>Your TikTok videos '
+            '<span style="color:var(--faint);font-weight:600;font-size:12px">· sorted by views</span></h3>'
+            '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px">'
+            f'<thead>{head}</thead><tbody>{"".join(rows)}</tbody></table></div></div>'
+        )
+    else:
+        table = (
+            '<div class="panel mt"><div class="placeholder"><h3>No TikTok videos yet</h3>'
+            '<div>Once you have posted clips to this account, hit <b>Refresh TikTok stats</b> to pull them. '
+            'Only public posts show up here.</div></div></div>'
+        )
+
+    fetched_note = ''
+    if snap.get("fetched_at"):
+        try:
+            ft = datetime.fromisoformat(snap["fetched_at"]).strftime("%b %d, %Y %I:%M %p")
+            fetched_note = f'<div class="sub" style="margin-top:10px">Last refreshed {html.escape(ft)}</div>'
+        except ValueError:
+            pass
+
+    body = banner + chips + table + fetched_note
+    top_actions = (
+        '<form class="inline" action="/tiktok-stats/refresh" method="post" data-owner-only>'
+        '<button class="btn primary" type="submit">Refresh TikTok stats</button></form>'
+    )
+    return render_page(
+        "tiktokstats", "TikTok analytics", "TikTok Stats",
+        "Views, likes and engagement on the clips you have posted to TikTok — separate from your YouTube data.",
         body, top_actions=top_actions,
     )
 
