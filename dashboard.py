@@ -622,15 +622,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            result = tiktok.direct_post_video(clip_path, caption)
+            _ = caption  # caption is set by the creator in the TikTok app for drafts
+            tiktok.upload_video_draft(clip_path)
             TIKTOK_RESULT.update({
-                "message": f"Posted {clip_filename} to TikTok "
-                           f"({result.get('privacy_level', 'SELF_ONLY')}). It may take a moment to appear.",
+                "message": f"Sent {clip_filename} to your TikTok inbox as a draft. "
+                           "Open the TikTok app, tap the notification, add your caption and post it when ready.",
                 "error": "",
             })
         except Exception as exc:  # noqa: BLE001
-            logger.exception("TikTok post failed: %s", exc)
-            TIKTOK_RESULT.update({"error": f"TikTok post failed: {exc}", "message": ""})
+            logger.exception("TikTok upload failed: %s", exc)
+            TIKTOK_RESULT.update({"error": f"TikTok upload failed: {exc}", "message": ""})
 
         self.redirect("/tiktok-candidates")
 
@@ -3433,15 +3434,15 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
     tiktok_connected = tiktok.is_connected()
 
     def post_btn(clip_filename: str, caption: str, compact: bool = False) -> str:
-        # Owner-only per-clip posting, shown under every clip. When an account is
-        # connected it Direct-Posts as SELF_ONLY (private) via /tiktok/post (that
-        # form is hidden from public viewers by CSS). When not connected it routes
-        # the owner through Connect first. `compact` renders a small inline button
-        # for the archive rows. All variants carry data-owner-only so the public
-        # showcase never sees them.
+        # Owner-only per-clip action, shown under every clip. When an account is
+        # connected it uploads the clip to the creator's TikTok inbox as a DRAFT
+        # via /tiktok/post (that form is hidden from public viewers by CSS); the
+        # creator finishes and posts from the TikTok app. When not connected it
+        # routes the owner through Connect first. `compact` renders a small inline
+        # button for the archive rows. All variants carry data-owner-only.
         if not clip_filename or not (config.CLIPS_DIR / clip_filename).exists():
             return ''
-        label = 'Post' if compact else 'Post to TikTok'
+        label = 'Send' if compact else 'Send to TikTok'
         icon = '' if compact else TIKTOK_ICON
         if compact:
             btn_style = 'padding:4px 10px;font-size:12px'
@@ -3453,12 +3454,12 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
             a_style = btn_style if compact else 'width:100%;justify-content:center;margin-top:8px'
             return (
                 f'<a class="btn" data-owner-only href="/tiktok/connect" style="{a_style}" '
-                f'title="Connect your TikTok account first, then post">{icon}{label}</a>'
+                f'title="Connect your TikTok account first">{icon}{label}</a>'
             )
         return (
             f'<form class="inline" action="/tiktok/post" method="post" data-owner-only '
-            "onsubmit=\"return confirm('Post this clip to TikTok now? It publishes as "
-            "Only me (private). By posting you agree to the TikTok Music Usage Confirmation.');\" "
+            "onsubmit=\"return confirm('Send this clip to your TikTok inbox as a draft? "
+            "You will finish the caption and post it from the TikTok app.');\" "
             f'style="{wrap_style}">'
             f'<input type="hidden" name="clip_filename" value="{html.escape(clip_filename)}">'
             f'<input type="hidden" name="caption" value="{html.escape(caption)}">'
@@ -3535,9 +3536,10 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
             '<div class="panel" data-owner-only style="margin-bottom:16px;display:flex;'
             'align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">'
             '<div style="max-width:640px">'
-            f'<h3 style="margin:0 0 4px">Connected as {who} · one-click posting is on</h3>'
-            '<span class="sub">Hit <b>Post to TikTok</b> on any winner below. Clips publish as '
-            '<b>Only me (private)</b> while your Direct Post audit is pending — flip to public once it clears.</span>'
+            f'<h3 style="margin:0 0 4px">Connected as {who} · draft upload is on</h3>'
+            '<span class="sub">Hit <b>Send to TikTok</b> on any winner below and it uploads to your '
+            'TikTok app as a <b>draft</b> — open TikTok, tap the notification, add a caption and post it '
+            'when you want. Nothing goes live until you post it yourself.</span>'
             '</div>'
             '<a class="btn" href="/tiktok/disconnect">Disconnect</a>'
             '</div>'

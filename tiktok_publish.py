@@ -35,11 +35,15 @@ TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/"
 USER_INFO_URL = "https://open.tiktokapis.com/v2/user/info/"
 CREATOR_INFO_URL = "https://open.tiktokapis.com/v2/post/publish/creator_info/query/"
 POST_INIT_URL = "https://open.tiktokapis.com/v2/post/publish/video/init/"
+INBOX_INIT_URL = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/"
 POST_STATUS_URL = "https://open.tiktokapis.com/v2/post/publish/status/fetch/"
 
-# Scopes: user.info.basic is required to show the creator's name/avatar before
-# posting (a TikTok review requirement); video.publish enables Direct Post.
-SCOPES = "user.info.basic,video.publish"
+# Scopes: user.info.basic shows the creator's name/avatar (a TikTok review
+# requirement); video.upload enables uploading clips to the creator's TikTok
+# inbox as drafts (no audit needed); video.publish enables Direct Post once the
+# Direct Post audit is approved. We request all three so a single connect covers
+# both draft-upload now and direct posting later.
+SCOPES = "user.info.basic,video.upload,video.publish"
 
 TOKEN_FILE = config.CREDENTIALS_DIR / "tiktok_token.json"
 
@@ -115,8 +119,18 @@ def _post_json(url: str, body: dict, access_token: str) -> dict:
             "Content-Type": "application/json; charset=UTF-8",
         },
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        # Surface TikTok's actual error body (code + message) instead of a bare
+        # "HTTP Error 403: Forbidden", so failures are diagnosable.
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+        raise RuntimeError(f"TikTok API {exc.code} error: {detail or exc.reason}") from exc
 
 
 def exchange_code(code: str, code_verifier: str = "") -> dict:
@@ -215,6 +229,51 @@ def connected_display() -> dict:
     except Exception as exc:  # noqa: BLE001
         logger.warning("Could not fetch TikTok user info: %s", exc)
         return {}
+
+
+# --- Upload to inbox (draft) -------------------------------------------------
+def upload_video_draft(video_path: Path) -> dict:
+    """Upload a local clip to the connected creator's TikTok inbox as a DRAFT.
+
+    Uses the Upload endpoint (scope video.upload), which needs no Direct Post
+    audit. The clip lands in the creator's TikTok app as a notification/draft;
+    the creator taps it to add caption/settings and publish. Returns
+    {publish_id} or raises RuntimeError with TikTok's error detail.
+    """
+    if not video_path.exists():
+        raise FileNotFoundError(f"Clip not found: {video_path}")
+
+    token = valid_access_token()
+    video_size = video_path.stat().st_size
+    init_body = {
+        "source_info": {
+            "source": "FILE_UPLOAD",
+            "video_size": video_size,
+            "chunk_size": video_size,
+            "total_chunk_count": 1,
+        }
+    }
+    init = _post_json(INBOX_INIT_URL, init_body, token)
+    data = init.get("data", {}) or {}
+    publish_id = data.get("publish_id", "")
+    upload_url = data.get("upload_url", "")
+    if not upload_url or not publish_id:
+        raise RuntimeError(f"TikTok upload init failed: {init}")
+
+    with video_path.open("rb") as fh:
+        video_bytes = fh.read()
+    put_req = urllib.request.Request(
+        upload_url, data=video_bytes, method="PUT",
+        headers={
+            "Content-Type": "video/mp4",
+            "Content-Range": f"bytes 0-{video_size - 1}/{video_size}",
+            "Content-Length": str(video_size),
+        },
+    )
+    with urllib.request.urlopen(put_req, timeout=300) as resp:
+        _ = resp.read()
+
+    return {"publish_id": publish_id}
 
 
 # --- Direct posting ----------------------------------------------------------
