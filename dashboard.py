@@ -3432,28 +3432,43 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
 
     tiktok_connected = tiktok.is_connected()
 
-    def post_btn(clip_filename: str, caption: str) -> str:
-        # Owner-only one-click Direct Post. The /tiktok/post form is hidden from
-        # viewers via CSS. Posts publish as SELF_ONLY (private) until the Direct
-        # Post audit is approved, so this is safe to use for live testing.
-        if not tiktok_connected:
-            return ''
+    def post_btn(clip_filename: str, caption: str, compact: bool = False) -> str:
+        # Owner-only per-clip posting, shown under every clip. When an account is
+        # connected it Direct-Posts as SELF_ONLY (private) via /tiktok/post (that
+        # form is hidden from public viewers by CSS). When not connected it routes
+        # the owner through Connect first. `compact` renders a small inline button
+        # for the archive rows. All variants carry data-owner-only so the public
+        # showcase never sees them.
         if not clip_filename or not (config.CLIPS_DIR / clip_filename).exists():
             return ''
+        label = 'Post' if compact else 'Post to TikTok'
+        icon = '' if compact else TIKTOK_ICON
+        if compact:
+            btn_style = 'padding:4px 10px;font-size:12px'
+            wrap_style = 'display:inline'
+        else:
+            btn_style = 'width:100%;justify-content:center'
+            wrap_style = 'margin-top:8px;width:100%'
+        if not tiktok_connected:
+            a_style = btn_style if compact else 'width:100%;justify-content:center;margin-top:8px'
+            return (
+                f'<a class="btn" data-owner-only href="/tiktok/connect" style="{a_style}" '
+                f'title="Connect your TikTok account first, then post">{icon}{label}</a>'
+            )
         return (
-            '<form class="inline" action="/tiktok/post" method="post" '
+            f'<form class="inline" action="/tiktok/post" method="post" data-owner-only '
             "onsubmit=\"return confirm('Post this clip to TikTok now? It publishes as "
             "Only me (private). By posting you agree to the TikTok Music Usage Confirmation.');\" "
-            'style="margin-top:8px;width:100%">'
+            f'style="{wrap_style}">'
             f'<input type="hidden" name="clip_filename" value="{html.escape(clip_filename)}">'
             f'<input type="hidden" name="caption" value="{html.escape(caption)}">'
-            '<button class="btn" type="submit" style="width:100%;justify-content:center">'
-            + TIKTOK_ICON + 'Post to TikTok</button>'
+            f'<button class="btn" type="submit" style="{btn_style}">{icon}{label}</button>'
             '</form>'
         )
 
+    all_days = tiktok_candidate_days()
     blocks = []
-    for day in tiktok_candidate_days():
+    for day in all_days:
         try:
             d = datetime.fromisoformat(str(day["date"])).date()
         except ValueError:
@@ -3540,7 +3555,60 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
             '</div>'
         )
 
-    body = banner + connect_panel + how_panel + grid
+    # --- Collapsible full-history archive: top 5 winners per day -------------
+    # Collapsed by default so it adds no visual noise and the browser doesn't
+    # paint it until opened. Compact text rows (no video players) keep it fast.
+    arch_days = []
+    for day in all_days:
+        cands = list(day["candidates"])[:5]
+        if not cands:
+            continue
+        try:
+            day_label = datetime.fromisoformat(str(day["date"])).date().strftime("%a · %b %d, %Y")
+        except ValueError:
+            day_label = str(day["date"])
+        rows = []
+        for i, c in enumerate(cands):
+            clip_fn = str(c["clip_filename"])
+            title = html.escape(_clean_title(str(c["title"]), clip_fn))
+            exists = bool(clip_fn) and (config.CLIPS_DIR / clip_fn).exists()
+            if exists:
+                dl = (
+                    f'<a class="btn" href="/clips/{quote(clip_fn)}" download '
+                    'style="padding:4px 10px;font-size:12px">Download</a>'
+                )
+                post = post_btn(clip_fn, _clean_title(str(c["title"]), clip_fn), compact=True)
+            else:
+                dl = '<span class="sub" style="font-size:11px">no file</span>'
+                post = ''
+            rows.append(
+                '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;'
+                'border-bottom:1px solid rgba(128,128,128,.18)">'
+                f'<span style="width:26px;opacity:.6;font-weight:700">#{i + 1}</span>'
+                '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;'
+                f'white-space:nowrap">{title}</span>'
+                f'<span class="sub" style="white-space:nowrap;font-size:12px">'
+                f'{int(c["views"]):,} views · {int(c["likes"]):,} likes</span>'
+                f'<span style="display:flex;gap:6px;flex-shrink:0">{dl}{post}</span>'
+                '</div>'
+            )
+        arch_days.append(
+            '<div style="margin:14px 0 4px;font-weight:700">' + html.escape(day_label) + '</div>'
+            + ''.join(rows)
+        )
+    archive = ''
+    if arch_days:
+        archive = (
+            '<details class="panel" style="margin-top:16px">'
+            '<summary style="cursor:pointer;font-weight:700;font-size:15px">'
+            'All past candidates · top 5 per day, full history</summary>'
+            '<div class="sub" style="margin:6px 0 4px">Every winner ever, oldest days below newest. '
+            'Post any of them privately with one tap — collapsed by default so it stays out of the way.</div>'
+            + ''.join(arch_days)
+            + '</details>'
+        )
+
+    body = banner + connect_panel + how_panel + grid + archive
     top_actions = (
         '<a class="btn" href="https://www.tiktok.com/tiktokstudio/upload" target="_blank" rel="noopener">'
         + TIKTOK_ICON + 'Open TikTok</a>'
