@@ -3430,6 +3430,28 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
             + DOWNLOAD_CLIP_ICON + 'Download clip</a>'
         )
 
+    tiktok_connected = tiktok.is_connected()
+
+    def post_btn(clip_filename: str, caption: str) -> str:
+        # Owner-only one-click Direct Post. The /tiktok/post form is hidden from
+        # viewers via CSS. Posts publish as SELF_ONLY (private) until the Direct
+        # Post audit is approved, so this is safe to use for live testing.
+        if not tiktok_connected:
+            return ''
+        if not clip_filename or not (config.CLIPS_DIR / clip_filename).exists():
+            return ''
+        return (
+            '<form class="inline" action="/tiktok/post" method="post" '
+            "onsubmit=\"return confirm('Post this clip to TikTok now? It publishes as "
+            "Only me (private). By posting you agree to the TikTok Music Usage Confirmation.');\" "
+            'style="margin-top:8px;width:100%">'
+            f'<input type="hidden" name="clip_filename" value="{html.escape(clip_filename)}">'
+            f'<input type="hidden" name="caption" value="{html.escape(caption)}">'
+            '<button class="btn" type="submit" style="width:100%;justify-content:center">'
+            + TIKTOK_ICON + 'Post to TikTok</button>'
+            '</form>'
+        )
+
     blocks = []
     for day in tiktok_candidate_days():
         try:
@@ -3447,7 +3469,7 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
                 f'<div class="pod {cls[i]}"><div class="medal">{medal[i]}</div><div class="w">{title}</div>'
                 f'<div class="c">{html.escape(clip_fn)}</div>'
                 f'<div class="met"><b>{int(c["views"]):,}</b> views · <b>{int(c["likes"]):,}</b> likes</div>'
-                f'{download_btn(clip_fn)}</div>'
+                f'{download_btn(clip_fn)}{post_btn(clip_fn, _clean_title(str(c["title"]), clip_fn))}</div>'
             )
         while len(pods) < 3:
             pods.append('<div class="pod"><div class="met sub">—</div></div>')
@@ -3478,7 +3500,47 @@ def render_tiktok_candidates_page(selected_date: str = "") -> str:
         '</div>'
     )
 
-    body = how_panel + grid
+    # --- Owner-only TikTok connection panel + last-action banner -------------
+    banner = ''
+    if TIKTOK_RESULT.get("error"):
+        banner = (
+            '<div class="panel" data-owner-only style="margin-bottom:16px;border-left:3px solid #e5484d">'
+            f'<b style="color:#e5484d">{html.escape(TIKTOK_RESULT["error"])}</b></div>'
+        )
+    elif TIKTOK_RESULT.get("message"):
+        banner = (
+            '<div class="panel" data-owner-only style="margin-bottom:16px;border-left:3px solid #30a46c">'
+            f'<b style="color:#30a46c">{html.escape(TIKTOK_RESULT["message"])}</b></div>'
+        )
+
+    if tiktok_connected:
+        disp = tiktok.connected_display()
+        who = html.escape(disp.get("display_name") or "your TikTok account")
+        connect_panel = (
+            '<div class="panel" data-owner-only style="margin-bottom:16px;display:flex;'
+            'align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">'
+            '<div style="max-width:640px">'
+            f'<h3 style="margin:0 0 4px">Connected as {who} · one-click posting is on</h3>'
+            '<span class="sub">Hit <b>Post to TikTok</b> on any winner below. Clips publish as '
+            '<b>Only me (private)</b> while your Direct Post audit is pending — flip to public once it clears.</span>'
+            '</div>'
+            '<a class="btn" href="/tiktok/disconnect">Disconnect</a>'
+            '</div>'
+        )
+    else:
+        connect_panel = (
+            '<div class="panel" data-owner-only style="margin-bottom:16px;display:flex;'
+            'align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">'
+            '<div style="max-width:640px">'
+            '<h3 style="margin:0 0 4px">Connect your TikTok account</h3>'
+            '<span class="sub">Authorize once to turn on one-click posting from this page. '
+            f'Callback in use: <code>{html.escape(tiktok.redirect_uri())}</code></span>'
+            '</div>'
+            '<a class="btn primary" href="/tiktok/connect">' + TIKTOK_ICON + 'Connect TikTok</a>'
+            '</div>'
+        )
+
+    body = banner + connect_panel + how_panel + grid
     top_actions = (
         '<a class="btn" href="https://www.tiktok.com/tiktokstudio/upload" target="_blank" rel="noopener">'
         + TIKTOK_ICON + 'Open TikTok</a>'
