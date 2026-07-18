@@ -3116,6 +3116,137 @@ def _busy_autoreload() -> str:
     return ""
 
 
+def _mood_of(title: str) -> str:
+    """First word of a clip title (the mood word), upper-cased."""
+    clean = _clean_title(title)
+    if not clean:
+        return ""
+    first = clean.split()[0].strip().upper()
+    # strip any stray emoji/punctuation
+    return "".join(ch for ch in first if ch.isalpha())
+
+
+def landing_page_data() -> dict:
+    """Everything the scrollable landing page needs, computed live from the same
+    tracker/stats files the tabs use. No new data files, no restructuring."""
+    rows = latest_video_stats()
+    public = [r for r in rows if (r.get("privacy_status") or "").lower() == "public"]
+    base = public or rows
+
+    views = [parse_stat_int(r.get("view_count", "")) for r in base]
+    total_views = sum(views)
+    total_likes = sum(parse_stat_int(r.get("like_count", "")) for r in base)
+    total_comments = sum(parse_stat_int(r.get("comment_count", "")) for r in base)
+    clip_count = len(base)
+    avg_views = round(total_views / clip_count) if clip_count else 0
+    median_views = 0
+    if views:
+        sv = sorted(views)
+        mid = len(sv) // 2
+        median_views = sv[mid] if len(sv) % 2 else round((sv[mid - 1] + sv[mid]) / 2)
+
+    # ---- mood-word rankings (all 15 config words) ----
+    mood_agg: dict[str, list[int]] = {m: [] for m in config.MOOD_WORDS}
+    for r in base:
+        m = _mood_of(r.get("title", ""))
+        if m in mood_agg:
+            mood_agg[m].append(parse_stat_int(r.get("view_count", "")))
+    moods = []
+    for m, vlist in mood_agg.items():
+        n = len(vlist)
+        tot = sum(vlist)
+        moods.append({"mood": m, "n": n, "avg": round(tot / n) if n else 0, "total": tot})
+    moods.sort(key=lambda d: d["avg"], reverse=True)
+
+    # ---- top clips by views ----
+    ranked = sorted(base, key=lambda r: parse_stat_int(r.get("view_count", "")), reverse=True)
+    top_clips = []
+    for i, r in enumerate(ranked[:6]):
+        cid = Path(r.get("clip_filename", "")).stem or f"clip_{i+1}"
+        top_clips.append({
+            "id": cid,
+            "mood": _mood_of(r.get("title", "")) or "CLIP",
+            "views": parse_stat_int(r.get("view_count", "")),
+            "likes": parse_stat_int(r.get("like_count", "")),
+            "rank": f"#{i+1} all-time",
+        })
+
+    # ---- weekly views (grouped by project week of scheduled publish) ----
+    start = datetime.fromisoformat(config.PROJECT_WEEK_1_START_DATE).date()
+    total_weeks = config.PROJECT_TOTAL_WEEKS
+    week_totals = [0] * (total_weeks + 1)  # 1-indexed
+    for r in base:
+        dt = parse_iso_datetime(r.get("scheduled_publish_time", "")) or parse_iso_datetime(r.get("checked_at", ""))
+        if not dt:
+            continue
+        wk = (dt.date() - start).days // 7 + 1
+        if 1 <= wk <= total_weeks:
+            week_totals[wk] += parse_stat_int(r.get("view_count", ""))
+    cur_week = experiment_week()
+    weekly_views = [
+        {"week": w, "views": week_totals[w], "actual": w <= cur_week}
+        for w in range(1, total_weeks + 1)
+    ]
+
+    # ---- best time to post (avg views by scheduled hour) ----
+    hour_agg: dict[int, list[int]] = {}
+    for r in base:
+        hr_raw = r.get("scheduled_hour", "")
+        try:
+            hr = int(hr_raw)
+        except (TypeError, ValueError):
+            dt = parse_iso_datetime(r.get("scheduled_publish_time", ""))
+            if not dt:
+                continue
+            hr = dt.hour
+        hour_agg.setdefault(hr, []).append(parse_stat_int(r.get("view_count", "")))
+
+    def _hour_label(h: int) -> str:
+        ampm = "AM" if h < 12 else "PM"
+        h12 = h % 12 or 12
+        return f"{h12}{ampm}"
+
+    best_hours = [
+        {"hour": h, "label": _hour_label(h), "avg": round(sum(v) / len(v)) if v else 0, "n": len(v)}
+        for h, v in sorted(hour_agg.items())
+    ]
+
+    # ---- TikTok snapshot (separate from YouTube) ----
+    tt_videos = list(read_tiktok_video_stats().get("videos", []) or [])
+    tiktok = {
+        "posts": len(tt_videos),
+        "views": sum(_tt_int(v.get("view_count")) for v in tt_videos),
+        "likes": sum(_tt_int(v.get("like_count")) for v in tt_videos),
+        "shares": sum(_tt_int(v.get("share_count")) for v in tt_videos),
+    }
+
+    return {
+        "week": cur_week,
+        "total_weeks": total_weeks,
+        "start_date": config.PROJECT_WEEK_1_START_DATE,
+        "total_views": total_views,
+        "total_likes": total_likes,
+        "total_comments": total_comments,
+        "clip_count": clip_count,
+        "avg_views": avg_views,
+        "median_views": median_views,
+        "moods": moods,
+        "top_clips": top_clips,
+        "weekly_views": weekly_views,
+        "best_hours": best_hours,
+        "hashtags": list(config.HASHTAGS),
+        "tiktok": tiktok,
+        "connected_tiktok": tiktok_is_connected_safe(),
+    }
+
+
+def tiktok_is_connected_safe() -> bool:
+    try:
+        return bool(tiktok.is_connected())
+    except Exception:  # noqa: BLE001
+        return False
+
+
 # ---------------------------------------------------------------------------
 # HOME  (/)
 # ---------------------------------------------------------------------------
