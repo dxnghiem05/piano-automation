@@ -3469,7 +3469,7 @@ body.loading{overflow:hidden;height:100vh}
 .mood-hint{color:var(--ivory-dim);font-size:12px;font-weight:600;letter-spacing:.02em;margin-top:14px}
 /* ===== FIX (a): flowing waveform — slow, calm, fades behind content ===== */
 #wave{position:fixed;inset:0;width:100vw;height:100vh;z-index:1;pointer-events:none;transition:opacity .4s ease}
-#waveGlow{position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(34vw 74vh at 50% 46%,rgba(77,132,255,.12),transparent 70%)}
+#waveGlow{position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(36vw 78vh at 50% 44%,rgba(77,132,255,.20),transparent 70%)}
 /* reduced motion: strip the showpiece motion, keep it readable & instant */
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
@@ -3881,14 +3881,14 @@ function wireCounters(){document.querySelectorAll('[data-count]').forEach(el=>cO
   let W,H,DPR;
   function resize(){DPR=Math.min(window.devicePixelRatio||1,2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);}
   resize();addEventListener('resize',resize);
-  const LINES=22;
+  const LINES=26;
   let t=0,energy=0,lastY=window.scrollY;
   function frame(){
     t+=0.004+energy*0.010;      /* FIX (a): slow, calm ocean drift (was 0.022) */
     energy*=0.92;
     ctx.clearRect(0,0,W,H);
     ctx.globalCompositeOperation='lighter';
-    const cx=W*0.5,band=Math.min(W*0.15,165);
+    const cx=W*0.5,band=Math.min(W*0.24,260);   /* wider ribbon so it's clearly visible behind the hero */
     for(let i=0;i<LINES;i++){
       const p=i/(LINES-1);ctx.beginPath();
       const amp=band*(0.30+0.70*p);
@@ -3899,15 +3899,15 @@ function wireCounters(){document.querySelectorAll('[data-count]').forEach(el=>cO
         y===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
       }
       const g=ctx.createLinearGradient(0,0,0,H);
-      g.addColorStop(0,'rgba(47,230,214,0.15)');g.addColorStop(0.5,'rgba(77,132,255,0.17)');g.addColorStop(1,'rgba(162,115,255,0.15)');
-      ctx.strokeStyle=g;ctx.lineWidth=1.1;ctx.stroke();
+      g.addColorStop(0,'rgba(47,230,214,0.30)');g.addColorStop(0.5,'rgba(77,132,255,0.34)');g.addColorStop(1,'rgba(162,115,255,0.30)');
+      ctx.strokeStyle=g;ctx.lineWidth=1.4;ctx.stroke();
     }
     ctx.globalCompositeOperation='source-over';
     requestAnimationFrame(frame);
   }
   frame();
   /* fade the wave to a faint glow once past the hero so it never competes with data */
-  function fade(){const vh=innerHeight;const o=Math.max(0.12,1-(window.scrollY/(vh*0.9))*0.9);cv.style.opacity=o.toFixed(3);}
+  function fade(){const vh=innerHeight;const o=Math.max(0.16,1-(window.scrollY/(vh*1.1))*0.85);cv.style.opacity=o.toFixed(3);}
   fade();
   addEventListener('scroll',()=>{const dy=Math.abs(window.scrollY-lastY);lastY=window.scrollY;energy=Math.min(1.0,energy+dy*0.003);fade();},{passive:true});
 })();
