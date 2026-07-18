@@ -8,7 +8,7 @@
 #   2) ngrok config add-authtoken <your token>   (from ngrok.com dashboard)
 #   3) In .env set:  DASHBOARD_PASSWORD=...  and  NGROK_DOMAIN=yourname.ngrok-free.dev
 
-PROJECT_DIR="/Users/dustinnghiem/.codex/workspaces/default"
+PROJECT_DIR="/Users/dustinnghiem/Claude/PianoDashboard"
 PORT="8000"
 
 cd "$PROJECT_DIR" || exit 1

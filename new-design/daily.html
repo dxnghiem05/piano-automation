@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PianoClip — Daily Top 3 · TikTok Poster</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --ink:#05091a;--ink-2:#0a1330;--ink-3:#111e44;--ivory:#eef3ff;--ivory-dim:#9fb0d6;
+  --blue:#4d84ff;--blue-hot:#79a5ff;--cyan:#2fe6d6;--violet:#a273ff;--pink:#ff5c9d;--green:#37e28b;--amber:#ffc24b;
+  --line:rgba(160,185,255,.12);--glass:rgba(110,140,255,.055);--shadow:0 34px 90px -30px rgba(0,0,0,.85);--maxw:1180px;
+  --f-ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","Figtree","Inter",sans-serif;
+  --f-display:"Figtree",-apple-system,BlinkMacSystemFont,"SF Pro Display",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--ink);color:var(--ivory);font-family:var(--f-ui);line-height:1.6;overflow-x:hidden;-webkit-font-smoothing:antialiased;letter-spacing:-.01em}
+body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(60vw 60vw at 85% -12%,rgba(77,132,255,.26),transparent 60%),radial-gradient(52vw 52vw at -8% 22%,rgba(162,115,255,.2),transparent 60%),radial-gradient(46vw 46vw at 95% 108%,rgba(47,230,214,.14),transparent 62%),radial-gradient(40vw 40vw at 20% 96%,rgba(255,92,157,.1),transparent 62%)}
+body::after{content:"";position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.045;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 26px;position:relative;z-index:3}
+#progress{position:fixed;top:0;left:0;height:3px;width:0;z-index:50;background:linear-gradient(90deg,var(--cyan),var(--blue),var(--violet),var(--pink));box-shadow:0 0 20px rgba(77,132,255,.7)}
+
+nav{position:fixed;top:0;left:0;right:0;z-index:40;display:flex;align-items:center;justify-content:space-between;padding:16px clamp(18px,4vw,44px);transition:.4s}
+nav.solid{background:rgba(5,9,26,.74);backdrop-filter:blur(18px);border-bottom:1px solid var(--line);padding-top:12px;padding-bottom:12px}
+.brand{display:flex;align-items:center;gap:11px;font-family:var(--f-display);font-weight:800;font-size:20px;letter-spacing:-.02em;color:var(--ivory);text-decoration:none}
+.brand .dot{width:12px;height:22px;border-radius:3px;background:linear-gradient(180deg,#fff,#c8d4f5);box-shadow:0 0 22px rgba(77,132,255,.7);position:relative}
+.brand .dot::after{content:"";position:absolute;right:-6px;top:0;width:6px;height:14px;background:linear-gradient(180deg,#16203f,#03060f);border-radius:2px}
+.nav-cta{font-family:var(--f-display);font-size:13.5px;font-weight:700;padding:9px 17px;border-radius:100px;border:1px solid rgba(121,165,255,.5);color:var(--blue-hot);text-decoration:none;transition:.25s;white-space:nowrap}
+.nav-cta:hover{background:rgba(77,132,255,.16);box-shadow:0 0 26px rgba(77,132,255,.4)}
+
+.head{padding:130px 0 30px}
+.eyebrow{display:inline-flex;align-items:center;gap:9px;font-family:var(--f-display);font-size:13px;font-weight:700;color:var(--cyan);margin-bottom:18px}
+.eyebrow .pulse{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(55,226,139,.7);animation:pulse 2.4s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(55,226,139,.6)}70%{box-shadow:0 0 0 12px rgba(55,226,139,0)}100%{box-shadow:0 0 0 0 rgba(55,226,139,0)}}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(40px,7vw,84px);line-height:.96;letter-spacing:-.045em;margin-bottom:20px}
+h1 em{font-style:normal;background:linear-gradient(115deg,var(--cyan),var(--blue) 50%,var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent}
+.lede{max-width:640px;color:var(--ivory-dim);font-size:clamp(15px,1.8vw,18.5px)}
+.summary{display:flex;gap:16px;flex-wrap:wrap;margin-top:34px}
+.schip{background:var(--glass);border:1px solid var(--line);border-radius:16px;padding:16px 22px}
+.schip .n{font-family:var(--f-display);font-weight:800;font-size:26px;font-variant-numeric:tabular-nums;background:linear-gradient(120deg,#fff,var(--blue-hot));-webkit-background-clip:text;background-clip:text;color:transparent}
+.schip .l{font-size:12.5px;color:var(--ivory-dim);font-weight:600;margin-top:2px}
+
+.toolbar{position:sticky;top:70px;z-index:20;display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:24px 0 8px;padding:14px;background:rgba(10,19,48,.7);backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:18px}
+.toolbar input{flex:1;min-width:180px;background:rgba(0,0,0,.3);border:1px solid var(--line);color:var(--ivory);font-family:inherit;font-size:14px;padding:12px 16px;border-radius:100px;outline:none}
+.toolbar input:focus{border-color:rgba(121,165,255,.6)}
+.toolbar .count{font-family:var(--f-display);font-weight:700;font-size:13px;color:var(--ivory-dim);padding-right:6px}
+
+.day{margin:26px 0;background:var(--glass);border:1px solid var(--line);border-radius:24px;padding:26px;backdrop-filter:blur(10px);transition:.4s}
+.day:hover{border-color:rgba(121,165,255,.3)}
+.day-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;margin-bottom:20px}
+.day-date{font-family:var(--f-display);font-weight:800;font-size:22px;letter-spacing:-.02em;display:flex;align-items:baseline;gap:12px}
+.day-date .wd{color:var(--cyan);font-size:14px;font-weight:700}
+.day-meta{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.day-total{font-family:var(--f-display);font-weight:700;font-size:14px;color:var(--ivory-dim)}
+.day-total b{color:var(--ivory);font-variant-numeric:tabular-nums}
+.postall{font-family:var(--f-display);font-weight:700;font-size:13px;padding:10px 18px;border-radius:100px;cursor:pointer;border:none;background:linear-gradient(120deg,var(--pink),var(--violet));color:#fff;transition:.25s}
+.postall:hover{transform:translateY(-2px);box-shadow:0 12px 28px -10px rgba(255,92,157,.6)}
+
+.trio{display:flex;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding:4px 4px 16px;scroll-padding-left:4px}
+.trio::-webkit-scrollbar{height:8px}
+.trio::-webkit-scrollbar-track{background:rgba(0,0,0,.25);border-radius:100px}
+.trio::-webkit-scrollbar-thumb{background:linear-gradient(90deg,var(--blue),var(--violet));border-radius:100px}
+.trio{scrollbar-width:thin;scrollbar-color:var(--blue) rgba(0,0,0,.25)}
+.c{flex:0 0 min(380px,82%);scroll-snap-align:start;background:linear-gradient(165deg,rgba(120,150,255,.08),rgba(120,150,255,.02));border:1px solid var(--line);border-radius:18px;overflow:hidden;transition:.35s}
+@media(max-width:820px){.c{flex:0 0 86%}}
+.c:hover{transform:translateY(-4px);border-color:rgba(162,115,255,.5)}
+.c-top{height:96px;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(120% 120% at 50% 0%,rgba(77,132,255,.2),transparent 65%)}
+.c-top .mood{font-family:var(--f-display);font-weight:800;font-size:30px;letter-spacing:-.03em;color:rgba(238,243,255,.95);text-shadow:0 2px 26px rgba(77,132,255,.6)}
+.medal{position:absolute;top:10px;left:10px;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--f-display);font-weight:800;font-size:12px;color:#05091a}
+.m1{background:linear-gradient(135deg,#ffd76b,#ffb020)}.m2{background:linear-gradient(135deg,#e6ecff,#aebbd8)}.m3{background:linear-gradient(135deg,#ffb083,#e07a4a)}
+.c-id{position:absolute;top:12px;right:12px;font-family:var(--f-display);font-weight:600;font-size:10.5px;color:var(--ivory-dim)}
+.c-body{padding:16px}
+.c-metrics{display:flex;gap:14px;font-size:12px;color:var(--ivory-dim);margin-bottom:12px}
+.c-metrics b{color:var(--ivory);font-family:var(--f-display);font-weight:700;font-variant-numeric:tabular-nums}
+.c-cap{font-size:11.5px;color:var(--ivory-dim);background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:10px;padding:10px;line-height:1.45;margin-bottom:12px;word-break:break-word}
+.c-actions{display:flex;gap:8px}
+.pill{flex:1;text-align:center;font-family:var(--f-display);font-size:11.5px;font-weight:700;padding:9px 6px;border-radius:100px;cursor:pointer;transition:.25s;border:1px solid var(--line);background:transparent;color:var(--ivory);text-decoration:none;display:flex;align-items:center;justify-content:center}
+.pill:hover{border-color:rgba(121,165,255,.6);background:rgba(77,132,255,.1)}
+.pill.tt{background:linear-gradient(120deg,var(--pink),var(--violet));color:#fff;border:none}
+.pill.tt:hover{box-shadow:0 8px 20px -8px rgba(255,92,157,.6)}
+.pill.copied{background:var(--green);color:#032a1a;border:none}
+.pill.yt{flex:0 0 auto;padding:9px 12px}
+.empty{text-align:center;color:var(--ivory-dim);padding:60px 0;font-size:16px}
+
+footer{border-top:1px solid var(--line);padding:40px 0 60px;margin-top:40px;color:var(--ivory-dim);font-size:13px;position:relative;z-index:3;display:flex;justify-content:space-between;flex-wrap:wrap;gap:14px}
+footer a{color:var(--ivory-dim);text-decoration:none;font-weight:600;margin-left:18px}
+footer a:hover{color:var(--cyan)}
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(140%);z-index:60;background:var(--ink-3);border:1px solid rgba(55,226,139,.5);color:var(--ivory);padding:14px 22px;border-radius:100px;font-size:14px;font-weight:600;box-shadow:var(--shadow);transition:transform .4s cubic-bezier(.19,1,.22,1)}
+.toast.show{transform:translateX(-50%) translateY(0)}
+::selection{background:rgba(77,132,255,.4);color:#fff}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<nav id="nav">
+  <a href="index.html" class="brand"><span class="dot"></span>PianoClip</a>
+  <a href="index.html" class="nav-cta">← Back to main site</a>
+</nav>
+
+<header class="head wrap">
+  <div class="eyebrow"><span class="pulse"></span>Daily poster · pulled from PianoDashboard</div>
+  <h1>The <em>Daily Top 3.</em></h1>
+  <p class="lede">Every day of the 12-week plan, ranked newest first. Scroll through the three best-performing clips from each day — ready to copy, or push straight to TikTok.</p>
+  <div class="summary" id="summary"></div>
+</header>
+
+<div class="wrap">
+  <div id="days"></div>
+</div>
+
+<footer class="wrap">
+  <div>© 2026 PianoClip · Daily Top 3 poster</div>
+  <div>
+    <a href="index.html">Main site</a>
+    <a href="https://www.youtube.com/@dustin.nghiem" target="_blank" rel="noopener">YouTube</a>
+    <a href="https://www.tiktok.com/@dustinspiano" target="_blank" rel="noopener">TikTok</a>
+    <a href="https://www.instagram.com/dustin.nghiem" target="_blank" rel="noopener">Instagram</a>
+  </div>
+</footer>
+
+<div class="toast" id="toast">Copied ✓</div>
+
+<script>
+const HASH='#foryou #shorts #viral #music #church #Jesus #God #love';
+const DAILY=[{"date": "2026-07-17", "total": 170, "items": [{"id": "clip_000591", "mood": "DREAM", "views": 101, "likes": 1, "vid": "hJbEG742TCc"}, {"id": "clip_000592", "mood": "DREAM", "views": 65, "likes": 2, "vid": "8PpF6K4r7nU"}, {"id": "clip_000590", "mood": "VIBE", "views": 4, "likes": 1, "vid": "W7AWNYqKaiY"}]}, {"date": "2026-07-16", "total": 750, "items": [{"id": "clip_000589", "mood": "FLOW", "views": 261, "likes": 9, "vid": "Xk2dQC5sxtI"}, {"id": "clip_000580", "mood": "STILL", "views": 246, "likes": 5, "vid": "eUZXjUByEBo"}, {"id": "clip_000578", "mood": "SERENE", "views": 243, "likes": 6, "vid": "z62G26-dGqc"}]}, {"date": "2026-07-15", "total": 3098, "items": [{"id": "clip_000572", "mood": "DREAM", "views": 1378, "likes": 15, "vid": "ZvjvKAU5rtA"}, {"id": "clip_000568", "mood": "DREAM", "views": 1087, "likes": 6, "vid": "M9szigCy29M"}, {"id": "clip_000574", "mood": "VIBE", "views": 633, "likes": 12, "vid": "s-RdoCW7900"}]}, {"date": "2026-07-14", "total": 2484, "items": [{"id": "clip_000562", "mood": "SERENE", "views": 884, "likes": 4, "vid": "G0StmiDswNo"}, {"id": "clip_000554", "mood": "SERENE", "views": 867, "likes": 27, "vid": "Xj3EZYshFWs"}, {"id": "clip_000555", "mood": "FREE", "views": 733, "likes": 14, "vid": "zxMkVrXYrPc"}]}, {"date": "2026-07-13", "total": 3494, "items": [{"id": "clip_000548", "mood": "DREAM", "views": 1285, "likes": 6, "vid": "1BKOW3urKUo"}, {"id": "clip_000540", "mood": "DREAM", "views": 1265, "likes": 16, "vid": "ZTetFgzrYYQ"}, {"id": "clip_000546", "mood": "VIBE", "views": 944, "likes": 18, "vid": "QpsXxk2Dqlg"}]}, {"date": "2026-07-12", "total": 2084, "items": [{"id": "clip_000528", "mood": "BLISS", "views": 837, "likes": 7, "vid": "dr-Mk1O0JCM"}, {"id": "clip_000529", "mood": "FLOAT", "views": 677, "likes": 17, "vid": "E5c8K-4hYzM"}, {"id": "clip_000533", "mood": "FREE", "views": 570, "likes": 15, "vid": "XiSZJIYrntI"}]}, {"date": "2026-07-11", "total": 2022, "items": [{"id": "clip_000513", "mood": "PEACE", "views": 687, "likes": 8, "vid": "SJpOQaCqDSY"}, {"id": "clip_000524", "mood": "FLOW", "views": 670, "likes": 7, "vid": "AU8oFGlln-0"}, {"id": "clip_000512", "mood": "PEACE", "views": 665, "likes": 15, "vid": "D5lkHo8q3YY"}]}, {"date": "2026-07-10", "total": 2089, "items": [{"id": "clip_000503", "mood": "SOFT", "views": 738, "likes": 14, "vid": "UvlLyvuDrTQ"}, {"id": "clip_000508", "mood": "CALM", "views": 713, "likes": 8, "vid": "7hkiqxiWLOs"}, {"id": "clip_000511", "mood": "GENTLE", "views": 638, "likes": 13, "vid": "0rwj2TrNzw8"}]}, {"date": "2026-07-09", "total": 3490, "items": [{"id": "clip_000488", "mood": "SERENE", "views": 1977, "likes": 24, "vid": "lo1bh3JWgQ8"}, {"id": "clip_000498", "mood": "FLOW", "views": 836, "likes": 11, "vid": "FAyqRVJbwvw"}, {"id": "clip_000496", "mood": "STILL", "views": 677, "likes": 12, "vid": "JjFGEuuhBdM"}]}, {"date": "2026-07-08", "total": 2229, "items": [{"id": "clip_000482", "mood": "CALM", "views": 826, "likes": 16, "vid": "HWeTZcUbWPg"}, {"id": "clip_000485", "mood": "FLOW", "views": 748, "likes": 17, "vid": "doNPptnERYc"}, {"id": "clip_000483", "mood": "STILL", "views": 655, "likes": 7, "vid": "75piHnOnUCM"}]}, {"date": "2026-07-07", "total": 2393, "items": [{"id": "clip_000463", "mood": "BLISS", "views": 856, "likes": 10, "vid": "S7QWf1nhFAU"}, {"id": "clip_000461", "mood": "PEACE", "views": 829, "likes": 9, "vid": "4d02H_QZMfk"}, {"id": "clip_000460", "mood": "GENTLE", "views": 708, "likes": 5, "vid": "M3vqSiXNt18"}]}, {"date": "2026-07-06", "total": 2532, "items": [{"id": "clip_000447", "mood": "GENTLE", "views": 1361, "likes": 9, "vid": "7q3Av8dcS2Q"}, {"id": "clip_000457", "mood": "STILL", "views": 681, "likes": 13, "vid": "rBZWP_p-U1g"}, {"id": "clip_000455", "mood": "FREE", "views": 490, "likes": 12, "vid": "gC_GNj1FWsY"}]}, {"date": "2026-07-05", "total": 2757, "items": [{"id": "clip_000442", "mood": "FREE", "views": 1001, "likes": 23, "vid": "0WFnELhjXeY"}, {"id": "clip_000437", "mood": "BLISS", "views": 903, "likes": 6, "vid": "j32PsT_Kk7w"}, {"id": "clip_000443", "mood": "CALM", "views": 853, "likes": 20, "vid": "vx3ALpI1otI"}]}, {"date": "2026-07-04", "total": 2933, "items": [{"id": "clip_000432", "mood": "VIBE", "views": 995, "likes": 15, "vid": "a_BlqoJGkBU"}, {"id": "clip_000425", "mood": "SOFT", "views": 979, "likes": 9, "vid": "mpvgdeeHnH8"}, {"id": "clip_000421", "mood": "GENTLE", "views": 959, "likes": 21, "vid": "bHyAK7E5kGk"}]}, {"date": "2026-07-03", "total": 2169, "items": [{"id": "clip_000416", "mood": "SOFT", "views": 847, "likes": 11, "vid": "-eqaMqqbX2g"}, {"id": "clip_000418", "mood": "NOSTALGIA", "views": 734, "likes": 14, "vid": "LQQe6PdD8JM"}, {"id": "clip_000420", "mood": "FREE", "views": 588, "likes": 3, "vid": "_ZhFZ-rWwv0"}]}, {"date": "2026-07-02", "total": 3761, "items": [{"id": "clip_000407", "mood": "DREAM", "views": 1356, "likes": 11, "vid": "TZFbUp6mNgk"}, {"id": "clip_000397", "mood": "MIDNIGHT", "views": 1234, "likes": 7, "vid": "G38bR3kgOCA"}, {"id": "clip_000404", "mood": "STILL", "views": 1171, "likes": 15, "vid": "KqxU3LNabkE"}]}, {"date": "2026-07-01", "total": 1372, "items": [{"id": "clip_000390", "mood": "VIBE", "views": 616, "likes": 17, "vid": "D7KcIiSPW4s"}, {"id": "clip_000394", "mood": "PEACE", "views": 402, "likes": 5, "vid": "Mghqo3ipFn8"}, {"id": "clip_000391", "mood": "FLOW", "views": 354, "likes": 12, "vid": "pbBeUgjOuwE"}]}, {"date": "2026-06-30", "total": 1548, "items": [{"id": "clip_000377", "mood": "DREAM", "views": 1069, "likes": 17, "vid": "sux3PlqqFLQ"}, {"id": "clip_000372", "mood": "FREE", "views": 248, "likes": 5, "vid": "8R5ob1_sImg"}, {"id": "clip_000380", "mood": "SERENE", "views": 231, "likes": 8, "vid": "HHW6cr3sjIo"}]}, {"date": "2026-06-29", "total": 2890, "items": [{"id": "clip_000365", "mood": "SERENE", "views": 1118, "likes": 9, "vid": "a9wdlI0qIxU"}, {"id": "clip_000364", "mood": "PEACE", "views": 886, "likes": 8, "vid": "T51wAaoTu-8"}, {"id": "clip_000366", "mood": "BLISS", "views": 886, "likes": 19, "vid": "srEWUJ1kiN4"}]}, {"date": "2026-06-28", "total": 2210, "items": [{"id": "clip_000347", "mood": "DREAM", "views": 1256, "likes": 19, "vid": "9Yh1MiTIghE"}, {"id": "clip_000352", "mood": "MIDNIGHT", "views": 683, "likes": 16, "vid": "UvZCkCB6J8A"}, {"id": "clip_000351", "mood": "BLISS", "views": 271, "likes": 9, "vid": "ansqZ98bMcw"}]}, {"date": "2026-06-27", "total": 2576, "items": [{"id": "clip_000342", "mood": "FREE", "views": 974, "likes": 12, "vid": "GekQd8jKWk4"}, {"id": "clip_000332", "mood": "DREAM", "views": 971, "likes": 19, "vid": "pm4qwcn09do"}, {"id": "clip_000340", "mood": "NOSTALGIA", "views": 631, "likes": 20, "vid": "Cger9rhFlw4"}]}, {"date": "2026-06-26", "total": 2366, "items": [{"id": "clip_000325", "mood": "NOSTALGIA", "views": 885, "likes": 15, "vid": "KNK9Tm6Pu6w"}, {"id": "clip_000320", "mood": "SERENE", "views": 862, "likes": 17, "vid": "cB-lNE2oNsg"}, {"id": "clip_000319", "mood": "PEACE", "views": 619, "likes": 9, "vid": "A4jeRGEL3uY"}]}, {"date": "2026-06-25", "total": 1648, "items": [{"id": "clip_000316", "mood": "FLOW", "views": 892, "likes": 15, "vid": "WZEEPOeuSKg"}, {"id": "clip_000307", "mood": "MIDNIGHT", "views": 433, "likes": 17, "vid": "QRQDZZG_7tA"}, {"id": "clip_000308", "mood": "SOFT", "views": 323, "likes": 8, "vid": "dhyzVsXWTjs"}]}, {"date": "2026-06-24", "total": 1099, "items": [{"id": "clip_000294", "mood": "FLOAT", "views": 536, "likes": 10, "vid": "quJAhilFcJg"}, {"id": "clip_000301", "mood": "FLOW", "views": 291, "likes": 12, "vid": "FPXqJvtVfaI"}, {"id": "clip_000299", "mood": "STILL", "views": 272, "likes": 10, "vid": "8JwVjhClU_w"}]}, {"date": "2026-06-23", "total": 1809, "items": [{"id": "clip_000286", "mood": "FLOW", "views": 850, "likes": 16, "vid": "dKO7fb1Wsfo"}, {"id": "clip_000287", "mood": "DREAM", "views": 486, "likes": 8, "vid": "8GFxVrF5B1o"}, {"id": "clip_000288", "mood": "GENTLE", "views": 473, "likes": 20, "vid": "c2rEgfQRHQ8"}]}, {"date": "2026-06-22", "total": 1673, "items": [{"id": "clip_000267", "mood": "FREE", "views": 830, "likes": 11, "vid": "89LkIOhbeEk"}, {"id": "clip_000274", "mood": "PEACE", "views": 435, "likes": 7, "vid": "adJZxe3ypbs"}, {"id": "clip_000276", "mood": "BLISS", "views": 408, "likes": 3, "vid": "zwmMQ06mrcA"}]}, {"date": "2026-06-21", "total": 1783, "items": [{"id": "clip_000264", "mood": "FLOAT", "views": 844, "likes": 15, "vid": "0gifNaWe8Fg"}, {"id": "clip_000255", "mood": "VIBE", "views": 489, "likes": 8, "vid": "VXWbAwt6QiE"}, {"id": "clip_000252", "mood": "FREE", "views": 450, "likes": 7, "vid": "IseJPzdyB24"}]}, {"date": "2026-06-20", "total": 3445, "items": [{"id": "clip_000250", "mood": "NOSTALGIA", "views": 1172, "likes": 11, "vid": "0b9k-kZOM3w"}, {"id": "clip_000242", "mood": "DREAM", "views": 1170, "likes": 14, "vid": "rAwBD4uiNE0"}, {"id": "clip_000248", "mood": "SOFT", "views": 1103, "likes": 10, "vid": "RC7gcMJ_PNI"}]}, {"date": "2026-06-19", "total": 3316, "items": [{"id": "clip_000230", "mood": "SERENE", "views": 1139, "likes": 8, "vid": "g-BwEVtCarY"}, {"id": "clip_000233", "mood": "SOFT", "views": 1098, "likes": 17, "vid": "u2ZHUvqSMU0"}, {"id": "clip_000228", "mood": "GENTLE", "views": 1079, "likes": 10, "vid": "L2flmUzrQkQ"}]}, {"date": "2026-06-18", "total": 3122, "items": [{"id": "clip_000225", "mood": "VIBE", "views": 1085, "likes": 6, "vid": "b1U0c595N6A"}, {"id": "clip_000219", "mood": "FLOAT", "views": 1073, "likes": 16, "vid": "OrT1OKrK1ww"}, {"id": "clip_000217", "mood": "MIDNIGHT", "views": 964, "likes": 15, "vid": "frpldh0heQk"}]}, {"date": "2026-06-17", "total": 3249, "items": [{"id": "clip_000214", "mood": "PEACE", "views": 1120, "likes": 16, "vid": "W8lCA5GY6PM"}, {"id": "clip_000212", "mood": "DREAM", "views": 1082, "likes": 10, "vid": "VrjpPquvcFU"}, {"id": "clip_000206", "mood": "WANDER", "views": 1047, "likes": 9, "vid": "PGuFnMoB6RA"}]}, {"date": "2026-06-16", "total": 3407, "items": [{"id": "clip_000199", "mood": "PEACE", "views": 1162, "likes": 10, "vid": "3zWJpNlpHeI"}, {"id": "clip_000196", "mood": "FLOW", "views": 1129, "likes": 11, "vid": "0_IVZk8wgn4"}, {"id": "clip_000197", "mood": "DREAM", "views": 1116, "likes": 15, "vid": "mwfMHmFMDNU"}]}, {"date": "2026-06-15", "total": 3033, "items": [{"id": "clip_000194", "mood": "STILL", "views": 1134, "likes": 13, "vid": "I5f3jT66mVo"}, {"id": "clip_000160", "mood": "NOSTALGIA", "views": 1016, "likes": 26, "vid": "5FkppgXnFsU"}, {"id": "clip_000157", "mood": "MIDNIGHT", "views": 883, "likes": 8, "vid": "U5vijkyl5E0"}]}, {"date": "2026-06-14", "total": 2526, "items": [{"id": "clip_000154", "mood": "PEACE", "views": 940, "likes": 18, "vid": "3AcCoMLwYNo"}, {"id": "clip_000146", "mood": "WANDER", "views": 796, "likes": 20, "vid": "sbh0B3Dw0cQ"}, {"id": "clip_000145", "mood": "NOSTALGIA", "views": 790, "likes": 16, "vid": "eWopn0oE4BY"}]}, {"date": "2026-06-13", "total": 3167, "items": [{"id": "clip_000143", "mood": "SOFT", "views": 1161, "likes": 13, "vid": "rARqoOmv4hw"}, {"id": "clip_000140", "mood": "SERENE", "views": 1061, "likes": 6, "vid": "APdHYGo3Ssw"}, {"id": "clip_000135", "mood": "VIBE", "views": 945, "likes": 12, "vid": "JHB9gxh7V4c"}]}, {"date": "2026-06-12", "total": 3639, "items": [{"id": "clip_000127", "mood": "MIDNIGHT", "views": 1323, "likes": 18, "vid": "l5mc5qada6g"}, {"id": "clip_000133", "mood": "CALM", "views": 1170, "likes": 11, "vid": "raRM-wC0TJ4"}, {"id": "clip_000129", "mood": "FLOAT", "views": 1146, "likes": 14, "vid": "Q9KXRJhS5j8"}]}, {"date": "2026-06-11", "total": 3260, "items": [{"id": "clip_000121", "mood": "FLOW", "views": 1160, "likes": 14, "vid": "tQ6whRDwjLs"}, {"id": "clip_000117", "mood": "FREE", "views": 1134, "likes": 9, "vid": "LHgpeFUsVHE"}, {"id": "clip_000116", "mood": "WANDER", "views": 966, "likes": 11, "vid": "UM_6VH2tf-0"}]}, {"date": "2026-06-10", "total": 2834, "items": [{"id": "clip_000110", "mood": "SERENE", "views": 1223, "likes": 6, "vid": "QNEN3XOz0J0"}, {"id": "clip_000111", "mood": "BLISS", "views": 872, "likes": 10, "vid": "l_6ObbIsF0Q"}, {"id": "clip_000109", "mood": "PEACE", "views": 739, "likes": 9, "vid": "4rlTRwr4tYY"}]}, {"date": "2026-06-09", "total": 5376, "items": [{"id": "clip_000091", "mood": "FLOW", "views": 2060, "likes": 47, "vid": "Xra0WldqVIA"}, {"id": "clip_000170", "mood": "SERENE", "views": 1662, "likes": 30, "vid": "2L1jzMixpGU"}, {"id": "clip_000182", "mood": "DREAM", "views": 1654, "likes": 17, "vid": "OFJH2XrhmEc"}]}];
+
+/* progress + nav */
+const prog=document.getElementById('progress'),nav=document.getElementById('nav');
+addEventListener('scroll',()=>{const h=document.documentElement,sc=h.scrollTop/(h.scrollHeight-h.clientHeight);prog.style.width=(sc*100)+'%';nav.classList.toggle('solid',h.scrollTop>40);});
+
+/* date helpers (avoid TZ shift) — defined before use */
+const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function parts(s){const[y,m,d]=s.split('-').map(Number);return{y,m,d,wd:new Date(Date.UTC(y,m-1,d)).getUTCDay()};}
+function fmtShort(s){const p=parts(s);return MO[p.m-1]+' '+p.d;}
+function fmtLong(s){const p=parts(s);return{wd:WD[p.wd],main:MO[p.m-1]+' '+p.d+', '+p.y};}
+
+/* summary chips */
+const totalViews=DAILY.reduce((s,d)=>s+d.total,0);
+const best=DAILY.reduce((a,b)=>b.total>a.total?b:a);
+document.getElementById('summary').innerHTML=[
+  ['n', DAILY.length, 'Days tracked'],
+  ['n', totalViews.toLocaleString(), 'Views in the top 3s'],
+  ['n', best.total.toLocaleString(), 'Best day ('+fmtShort(best.date)+')']
+].map(x=>`<div class="schip"><div class="n">${x[1]}</div><div class="l">${x[2]}</div></div>`).join('');
+
+/* render */
+const daysEl=document.getElementById('days');
+function render(list){
+  daysEl.innerHTML=list.map(d=>{
+    const f=fmtLong(d.date);
+    const cards=d.items.map((it,i)=>{
+      const cap=it.mood+' 🍃 '+HASH;
+      return `<div class="c">
+        <div class="c-top"><span class="medal m${i+1}">${i+1}</span><span class="mood">${it.mood}</span><span class="c-id">${it.id.replace('clip_0','#')}</span></div>
+        <div class="c-body">
+          <div class="c-metrics"><span>Views <b>${it.views.toLocaleString()}</b></span><span>Likes <b>${it.likes}</b></span></div>
+          <div class="c-cap">${cap}</div>
+          <div class="c-actions">
+            <button class="pill copy" data-cap="${cap}">Copy</button>
+            <button class="pill tt" data-mood="${it.mood}">TikTok ▶</button>
+            <a class="pill yt" href="https://youtu.be/${it.vid}" target="_blank" rel="noopener" title="Watch on YouTube">▶</a>
+          </div>
+        </div></div>`;
+    }).join('');
+    return `<div class="day">
+      <div class="day-head">
+        <div class="day-date"><span class="wd">${f.wd}</span>${f.main}</div>
+        <div class="day-meta"><span class="day-total">Top-3 views: <b>${d.total.toLocaleString()}</b></span>
+          <button class="postall" data-date="${d.date}">Send all 3 to TikTok ▶</button></div>
+      </div>
+      <div class="trio">${cards}</div>
+    </div>`;
+  }).join('');
+}
+render(DAILY);
+
+/* actions */
+const toast=document.getElementById('toast');
+function showToast(m){toast.textContent=m;toast.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>toast.classList.remove('show'),2200);}
+daysEl.addEventListener('click',e=>{
+  const cp=e.target.closest('.copy'),tt=e.target.closest('.tt'),pa=e.target.closest('.postall');
+  if(cp){navigator.clipboard&&navigator.clipboard.writeText(cp.dataset.cap);cp.textContent='Copied ✓';cp.classList.add('copied');showToast('Caption copied ✓');setTimeout(()=>{cp.textContent='Copy';cp.classList.remove('copied')},1600);}
+  if(tt){showToast('Sent '+tt.dataset.mood+' to your TikTok drafts ▶');}
+  if(pa){showToast('Sent all 3 clips from '+fmtShort(pa.dataset.date)+' to TikTok drafts ▶');}
+});
+</script>
+</body>
+</html>

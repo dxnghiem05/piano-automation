@@ -7,7 +7,7 @@
 3. Paste this path:
 
 ```text
-/Users/dustinnghiem/.codex/workspaces/default
+/Users/dustinnghiem/Claude/PianoDashboard
 ```
 
 4. Press `Enter`.

@@ -2,7 +2,7 @@
 
 set -e
 
-PROJECT_DIR="/Users/dustinnghiem/.codex/workspaces/default"
+PROJECT_DIR="/Users/dustinnghiem/Claude/PianoDashboard"
 PORT="8000"
 
 cd "$PROJECT_DIR"

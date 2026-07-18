@@ -10,6 +10,34 @@ python main.py
 
 The app discovers videos, skips the quiet intro, creates varied Shorts-length clips, generates metadata, schedules hourly YouTube uploads, uploads through OAuth, tracks completed uploads, and prevents duplicate uploads.
 
+## Location
+
+This project lives at `~/Claude/PianoDashboard`. It was relocated out of `~/.codex/workspaces/default` — if you still see it there, run the one-time move script in Terminal:
+
+```bash
+zsh ops/migrate_to_claude.sh
+```
+
+That moves everything (all data included) to `~/Claude/PianoDashboard`, rebuilds the virtualenv, fixes every hard-coded path, and reloads the launchd jobs. After it finishes, connect the new folder in the Claude desktop app.
+
+## Project layout
+
+```
+PianoDashboard/
+  *.py                    core app (dashboard.py, main.py, config.py, pipeline modules) — kept flat; they import each other
+  *.command               double-click launchers (Start dashboard, Cloudflare/ngrok link, Push to GitHub)
+  requirements.txt  .env  .env.example  .gitignore
+  credentials/            YouTube OAuth client + token (git-ignored, 600)
+  input/ clips/ uploaded/ processing/   pipeline folders (raw drop → clips → sources archived)
+  logs/ metadata/         CSVs, dataset, app log (git-ignored)
+  design/                 UI mockups + design/concepts/ (the 6 concept explorations; #4 "Vision" is live)
+  guides/                 DASHBOARD_HANDOFF.md, HOW_TO_OPEN_DASHBOARD.md
+  ops/                    launchd plist templates + migrate_to_claude.sh
+  docs/                   public compliance site + platform verification files
+```
+
+Code modules stay at the root on purpose — they import each other flatly and the launchers/launchd jobs invoke them by name, so moving them into subfolders would break imports. Only the non-code files were grouped.
+
 ## Features
 
 - Recursively scans `input/` for `.mp4`, `.MP4`, `.mov`, and `.MOV`

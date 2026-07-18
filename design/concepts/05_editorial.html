@@ -1,0 +1,226 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Concept 5 · Editorial — Piano Shorts</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#faf8f3;--ink:#141414;--sub:#6f6b62;--line:#141414;--hair:rgba(20,20,20,.16);--red:#e0311f;--serif:'Playfair Display',Georgia,serif}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:14.5px/1.55 Inter,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+.mast{border-bottom:3px solid var(--line);padding:18px clamp(18px,4vw,48px) 14px;display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;position:sticky;top:0;background:var(--paper);z-index:9}
+.mast .t{font:800 22px var(--serif);letter-spacing:-.01em}
+.mast .t i{color:var(--red);font-style:normal}
+.mast .date{font-size:11px;text-transform:uppercase;letter-spacing:.14em;color:var(--sub);font-weight:600}
+.tabs{margin-left:auto;display:flex;gap:0;overflow-x:auto}
+.tabs a{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;color:var(--sub)}
+.tabs a:hover{color:var(--ink)}
+.tabs a.on{color:var(--ink);border-color:var(--red)}
+.wrap{max-width:1160px;margin:0 auto;padding:30px clamp(18px,4vw,48px) 80px}
+.page{display:none}.page.on{display:block;animation:f .3s}
+@keyframes f{from{opacity:0}to{opacity:1}}
+.kick{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.22em;color:var(--red);margin:0 0 8px}
+h1{font:800 clamp(34px,5.4vw,58px) var(--serif);letter-spacing:-.02em;margin:0 0 8px;line-height:1.04}
+.deck{color:var(--sub);font-size:15px;max-width:640px;margin:0 0 26px}
+.rule{border:none;border-top:1px solid var(--hair);margin:26px 0}
+.rule.heavy{border-top:3px solid var(--line)}
+.cols{display:grid;gap:0;border-top:3px solid var(--line)}
+.c4{grid-template-columns:repeat(4,1fr)}.c2{grid-template-columns:1.6fr 1fr}.c3{grid-template-columns:repeat(3,1fr)}
+@media(max-width:860px){.c4{grid-template-columns:1fr 1fr}.c2,.c3{grid-template-columns:1fr}}
+.cell{padding:20px 22px 24px;border-right:1px solid var(--hair);border-bottom:1px solid var(--hair)}
+.cell:last-child{border-right:none}
+.lab{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.18em;color:var(--sub)}
+.num{font:800 42px var(--serif);letter-spacing:-.02em;margin-top:8px;font-variant-numeric:lining-nums}
+.num small{font:600 13px Inter;color:var(--sub);letter-spacing:0}
+.delta{font-size:12px;font-weight:700;margin-top:4px}
+.delta.up{color:#1a7a33}.delta.dim{color:var(--sub)}.delta.red{color:var(--red)}
+.hero-num{font:800 clamp(64px,10vw,120px) var(--serif);letter-spacing:-.03em;line-height:1}
+.btn{display:inline-flex;align-items:center;gap:8px;font:700 12px Inter;text-transform:uppercase;letter-spacing:.1em;border:1.5px solid var(--line);background:none;color:var(--ink);padding:11px 20px;cursor:pointer;transition:.15s}
+.btn:hover{background:var(--ink);color:var(--paper)}
+.btn.pri{background:var(--ink);color:var(--paper)}
+.btn.pri:hover{background:var(--red);border-color:var(--red)}
+.btn.stop{border-color:var(--red);color:var(--red)}
+.btn.stop:hover{background:var(--red);color:#fff}
+.toprow{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:24px}
+.actions{display:flex;gap:10px;flex-wrap:wrap}
+.folio{display:flex;justify-content:space-between;font-size:10.5px;text-transform:uppercase;letter-spacing:.14em;color:var(--sub);font-weight:700;margin-bottom:10px}
+.prog{height:6px;background:rgba(20,20,20,.08);margin:12px 0 8px;position:relative}
+.prog i{display:block;height:100%;width:63%;background:var(--red)}
+.plbl{display:flex;justify-content:space-between;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--sub)}
+.log{margin-top:14px;border-top:1px solid var(--hair);font:12px ui-monospace,Menlo,monospace;color:var(--sub);max-height:170px;overflow:auto}
+.log div{padding:7px 0;border-bottom:1px solid rgba(20,20,20,.07)}
+.log .ok{color:#1a7a33}.log .err{color:var(--red)}.log b{color:var(--ink);font-weight:600}
+.story{display:flex;gap:14px;align-items:baseline;padding:13px 0;border-bottom:1px solid var(--hair)}
+.story .n{font:800 20px var(--serif);color:var(--red);min-width:26px}
+.story .m{flex:1}.story .m b{font-size:14.5px;font-weight:700}.story .m small{display:block;color:var(--sub);font-size:11px;font-family:ui-monospace,monospace;margin-top:1px}
+.story .v{font:800 17px var(--serif)}
+.tag{display:inline-block;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;border:1px solid var(--line);padding:4px 10px;margin:0 6px 6px 0;cursor:pointer}
+.tag.on{background:var(--ink);color:var(--paper)}
+.tag.red{border-color:var(--red);color:var(--red)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:9.5px;text-transform:uppercase;letter-spacing:.16em;color:var(--sub);padding:12px 14px;border-bottom:2px solid var(--line)}
+td{padding:12px 14px;border-bottom:1px solid var(--hair);font-variant-numeric:lining-nums}
+tr:hover td{background:rgba(224,49,31,.035)}
+.wk{display:flex;gap:0;border:1.5px solid var(--line);margin:16px 0}
+.wk i{flex:1;height:52px;display:grid;place-items:center;font:800 12px var(--serif);border-right:1px solid var(--hair);font-style:normal;color:var(--sub)}
+.wk i:last-child{border:none}
+.wk i.done{background:rgba(20,20,20,.06);color:var(--ink)}
+.wk i.live{background:var(--red);color:#fff}
+.lib{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0;border-top:1px solid var(--hair);border-left:1px solid var(--hair)}
+.alb{border-right:1px solid var(--hair);border-bottom:1px solid var(--hair);padding:16px;cursor:pointer;transition:.15s}
+.alb:hover{background:#fff}
+.alb .cv{height:80px;display:grid;place-items:center;font:800 26px var(--serif);background:var(--ink);color:var(--paper);margin-bottom:10px}
+.alb b{font-size:12.5px;display:block}.alb small{color:var(--sub);font-size:10px;font-family:ui-monospace,monospace}
+.home{text-align:center;padding:8vh 0 4vh}
+.home .brand{font:800 clamp(52px,9vw,110px) var(--serif);letter-spacing:-.03em;line-height:.98}
+.home .brand i{color:var(--red);font-style:normal}
+.ticker{border-top:3px solid var(--line);border-bottom:1px solid var(--line);padding:12px 0;margin:30px 0;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;display:flex;gap:34px;overflow-x:auto;white-space:nowrap}
+.ticker b{color:var(--red)}
+.idx{display:grid;grid-template-columns:repeat(5,1fr);gap:0;border-top:3px solid var(--line);text-align:left}
+@media(max-width:860px){.idx{grid-template-columns:1fr 1fr}}
+.idx a{padding:20px 18px;border-right:1px solid var(--hair);border-bottom:1px solid var(--hair);cursor:pointer;transition:.15s}
+.idx a:hover{background:#fff}
+.idx .no{font:800 13px var(--serif);color:var(--red)}
+.idx b{display:block;font:800 19px var(--serif);margin:6px 0 3px}
+.idx small{color:var(--sub);font-size:11.5px}
+.note{margin:44px auto 0;text-align:center;color:var(--sub);font-size:11px;text-transform:uppercase;letter-spacing:.14em}
+.pcard{padding:22px;border-right:1px solid var(--hair);border-bottom:1px solid var(--hair);text-align:center}
+.pcard .med{font:800 13px Inter;text-transform:uppercase;letter-spacing:.2em;color:var(--sub)}
+.pcard b{display:block;font:800 24px var(--serif);margin:8px 0 2px}
+.pcard small{color:var(--sub);font:10.5px ui-monospace,monospace}
+.pcard .v{font:800 30px var(--serif);margin:10px 0 2px}
+</style></head><body>
+<div class="mast"><span class="t">The Piano <i>Shorts</i> Ledger</span><span class="date">Sunday, July 5 · Week 3 of 12</span>
+<div class="tabs" id="tabs"><a data-p="home" class="on">Front Page</a><a data-p="overview">Overview</a><a data-p="stats">Stats</a><a data-p="tiktok">TikTok</a><a data-p="tracker">Tracker</a><a data-p="experiment">Experiment</a><a data-p="data">Data</a></div></div>
+<div class="wrap">
+
+<section class="page on" id="home">
+<div class="home">
+<p class="kick">Creator analytics · Daily edition</p>
+<div class="brand">Piano <i>Shorts</i></div>
+<div class="ticker"><span>TOTAL VIEWS <b>159,443</b></span><span>TODAY <b>+1,597</b></span><span>CLIPS <b>641</b></span><span>UPLOADS TODAY <b>19/20</b></span><span>NEXT POST <b>12:00 PM</b></span><span>BEST HOUR <b>12 PM</b></span><span>EXPERIMENT <b>WEEK 3</b></span></div>
+</div>
+<div class="idx">
+<a data-go="overview"><span class="no">№ 1</span><b>Overview</b><small>Mission control &amp; the live pipeline</small></a>
+<a data-go="stats"><span class="no">№ 2</span><b>Stats</b><small>Growth, queue and posting hours</small></a>
+<a data-go="tiktok"><span class="no">№ 3</span><b>TikTok</b><small>The daily repost podium</small></a>
+<a data-go="tracker"><span class="no">№ 4</span><b>Tracker</b><small>Every clip on the record</small></a>
+<a data-go="experiment"><span class="no">№ 5</span><b>Experiment</b><small>The 12-week study</small></a>
+</div></section>
+
+<section class="page" id="overview">
+<div class="toprow"><div><p class="kick">№ 1 · Mission Control</p><h1>The Overview</h1>
+<p class="deck" style="margin:0">One broadsheet for the whole operation — and the presses are running.</p></div>
+<div class="actions"><button class="btn pri">＋ Clip + Upload</button><button class="btn">↻ Refresh</button><button class="btn stop">■ Stop</button></div></div>
+<div class="cols c2">
+<div class="cell"><span class="lab">Total channel views</span>
+<div class="hero-num">159,443</div>
+<p class="delta up" style="font-size:13px">▲ 1,597 today — best hour 12 PM</p>
+<svg viewBox="0 0 700 180" style="width:100%;margin-top:10px" id="c1"></svg></div>
+<div class="cell"><span class="lab">The live wire</span>
+<div class="prog"><i></i></div>
+<div class="plbl"><span>Uploading clip 12 of 19</span><span>~2 min left</span></div>
+<div class="plbl" style="margin-top:14px"><span>Uploads today</span><span class="delta red">19 of 20 — one left</span></div>
+<div class="prog"><i style="width:95%;background:var(--ink)"></i></div>
+<div class="log">
+<div><b>10:19</b> — <span class="ok">Uploaded clip_000612 as k2Xw9…</span></div>
+<div><b>10:18</b> — Generated clip_000617.mp4</div>
+<div><b>10:17</b> — Generated clip_000616.mp4</div>
+<div><b>10:15</b> — <span class="ok">Uploaded clip_000611 as p9Lm2…</span></div>
+<div><b>10:14</b> — <span class="err">Upload failed clip_000610 — retrying</span></div>
+</div></div></div>
+<div class="cols c4" style="border-top:none">
+<div class="cell"><span class="lab">Input videos</span><div class="num">0</div><div class="delta dim">Folder clear</div></div>
+<div class="cell"><span class="lab">Clips ready</span><div class="num">641</div><div class="delta up">+17 this run</div></div>
+<div class="cell"><span class="lab">Next post</span><div class="num" style="font-size:22px;margin-top:16px">Jul 5 — 12:00 PM</div><div class="delta dim">Auto-scheduled</div></div>
+<div class="cell"><span class="lab">Uploaded today</span><div class="num">19</div><div class="delta red">Quota nearly full</div></div>
+</div></section>
+
+<section class="page" id="stats">
+<div class="toprow"><div><p class="kick">№ 2 · Performance Desk</p><h1>The Numbers</h1></div>
+<div class="actions"><button class="btn">Dataset</button><button class="btn pri">↻ Refresh Stats</button></div></div>
+<div class="cols c4">
+<div class="cell"><span class="lab">Total views</span><div class="num">159,443</div><div class="delta up">▲ 1,597 today</div></div>
+<div class="cell"><span class="lab">Tracked clips</span><div class="num">588</div><div class="delta dim">641 ready</div></div>
+<div class="cell"><span class="lab">Upload records</span><div class="num">588</div><div class="delta up">▲ 19 today</div></div>
+<div class="cell"><span class="lab">Engagement</span><div class="num">4.32<small>%</small></div><div class="delta dim">6,412 likes</div></div>
+</div>
+<div class="cols c2" style="border-top:none">
+<div class="cell"><span class="lab">Views gained · the week in review</span><svg viewBox="0 0 700 210" style="width:100%;margin-top:12px" id="c2"></svg></div>
+<div class="cell"><span class="lab">The leaderboard</span>
+<div class="story"><span class="n">1</span><div class="m"><b>PEACE ♪</b><small>clip_000512.mp4</small></div><span class="v">12,480</span></div>
+<div class="story"><span class="n">2</span><div class="m"><b>MIDNIGHT ♪</b><small>clip_000488.mp4</small></div><span class="v">9,872</span></div>
+<div class="story"><span class="n">3</span><div class="m"><b>FLOW ♪</b><small>clip_000531.mp4</small></div><span class="v">8,455</span></div>
+<div class="story"><span class="n">4</span><div class="m"><b>SERENE ♪</b><small>clip_000466.mp4</small></div><span class="v">7,210</span></div>
+</div></div>
+<hr class="rule heavy">
+<span class="lab">The queue · 192 scheduled ahead</span>
+<div class="story"><span class="n">▶</span><div class="m"><b>GENTLE ♪</b><small>clip_000618.mp4</small></div><span class="delta dim" style="margin-right:16px">Jul 5 · 12:00 PM</span><span class="tag red">Scheduled</span></div>
+<div class="story"><span class="n">2</span><div class="m"><b>BLISS ♪</b><small>clip_000619.mp4</small></div><span class="delta dim" style="margin-right:16px">Jul 5 · 1:00 PM</span><span class="tag">Scheduled</span></div>
+<div class="story"><span class="n">3</span><div class="m"><b>WANDER ♪</b><small>clip_000620.mp4</small></div><span class="delta dim" style="margin-right:16px">Jul 5 · 2:00 PM</span><span class="tag">Scheduled</span></div>
+</section>
+
+<section class="page" id="tiktok">
+<div class="toprow"><div><p class="kick">№ 3 · The Repost Desk</p><h1>TikTok Candidates</h1>
+<p class="deck" style="margin:0">Yesterday's champions, ready for a second life. Download and post them yourself — nothing is automatic.</p></div>
+<div class="actions"><button class="btn pri">↗ TikTok Studio</button><button class="btn">↓ CSV</button></div></div>
+<span class="lab">Today · July 5 — the podium</span>
+<div class="cols c3" style="margin-top:12px">
+<div class="pcard"><span class="med">Second</span><b>MIDNIGHT ♪</b><small>clip_000488.mp4</small><div class="v">9,872</div><small>views · 512 likes</small><br><button class="btn" style="margin-top:14px;width:100%">↓ Download</button></div>
+<div class="pcard" style="background:#fff"><span class="med" style="color:var(--red)">First</span><b style="font-size:30px">PEACE ♪</b><small>clip_000512.mp4</small><div class="v" style="font-size:38px">12,480</div><small>views · 731 likes</small><br><button class="btn pri" style="margin-top:14px;width:100%">↓ Download</button></div>
+<div class="pcard"><span class="med">Third</span><b>FLOW ♪</b><small>clip_000531.mp4</small><div class="v">8,455</div><small>views · 402 likes</small><br><button class="btn" style="margin-top:14px;width:100%">↓ Download</button></div>
+</div></section>
+
+<section class="page" id="tracker">
+<div class="toprow"><div><p class="kick">№ 4 · The Record</p><h1>Video Tracker</h1></div>
+<div class="actions"><button class="btn pri">↓ Tracker CSV</button></div></div>
+<div class="cols c3">
+<div class="cell"><span class="lab">Clips in library</span><div class="num">641</div></div>
+<div class="cell"><span class="lab">Tracked on YouTube</span><div class="num">588</div></div>
+<div class="cell"><span class="lab">With 24h data</span><div class="num">402</div></div>
+</div>
+<hr class="rule">
+<span class="lab">Recent clips · the latest fourteen</span>
+<div class="lib" id="lib1" style="margin-top:12px"></div>
+</section>
+
+<section class="page" id="experiment">
+<div class="toprow"><div><p class="kick">№ 5 · The Study</p><h1>Twelve Weeks</h1>
+<p class="deck" style="margin:0">A controlled experiment in what makes a piano Short travel. Currently in week three.</p></div></div>
+<span class="lab">The octave · each key is a week</span>
+<div class="wk" id="wk1"></div>
+<div class="cols c2" style="margin-top:8px">
+<div class="cell"><span class="lab">Wk 3–4 · Posting-time test <span class="tag red" style="margin-left:8px">Live</span></span>
+<p style="margin:12px 0 8px;font-size:14px">Morning windows against evening windows, randomly assigned to remove content bias. Two-sample t-test on 24-hour views; effect size with a 95% confidence interval.</p>
+<span class="tag">A/B test</span><span class="tag">t-test</span><span class="tag">Effect size</span></div>
+<div class="cell" style="opacity:.65"><span class="lab">Wk 5–6 · Caption test <span class="tag" style="margin-left:8px">Next</span></span>
+<p style="margin:12px 0 8px;font-size:14px">Emotional words (PEACE, SERENE) against energy words (FLOW, VIBE), balanced across posting times. Logistic regression controlling for hour.</p>
+<span class="tag">A/B test</span><span class="tag">Logistic regression</span></div>
+</div></section>
+
+<section class="page" id="data">
+<div class="toprow"><div><p class="kick">Appendix · The Dataset</p><h1>Data Tracker</h1></div>
+<div class="actions"><button class="btn">↓ CSV</button><button class="btn">↓ XLSX</button></div></div>
+<div style="margin-bottom:14px"><span class="tag on">All weeks · 641</span><span class="tag">Week 0</span><span class="tag">Week 1</span><span class="tag">Week 2</span><span class="tag red">Week 3 · live</span></div>
+<table>
+<tr><th>Week</th><th>Clip</th><th>Caption</th><th>Group</th><th>Length</th><th>Live views</th><th>24h views</th><th>High performer</th></tr>
+<tr><td>W3</td><td style="font-family:ui-monospace,monospace;font-size:12px">clip_000612</td><td><b>PEACE</b></td><td>AM</td><td>27s</td><td>1,204</td><td>987</td><td style="color:var(--red);font-weight:800">★ Yes</td></tr>
+<tr><td>W3</td><td style="font-family:ui-monospace,monospace;font-size:12px">clip_000611</td><td><b>FLOW</b></td><td>PM</td><td>24s</td><td>640</td><td>512</td><td>No</td></tr>
+<tr><td>W3</td><td style="font-family:ui-monospace,monospace;font-size:12px">clip_000610</td><td><b>MIDNIGHT</b></td><td>AM</td><td>29s</td><td>2,180</td><td>1,733</td><td style="color:var(--red);font-weight:800">★ Yes</td></tr>
+<tr><td>W2</td><td style="font-family:ui-monospace,monospace;font-size:12px">clip_000586</td><td><b>SERENE</b></td><td>PM</td><td>22s</td><td>455</td><td>301</td><td>No</td></tr>
+</table></section>
+
+<p class="note">Concept 5 of 6 · “Editorial” — Swiss broadsheet: paper, hairlines, serif numerals, one red · mockup only</p>
+</div>
+<script>
+function go(p){document.querySelectorAll('.page').forEach(s=>s.classList.toggle('on',s.id===p));
+document.querySelectorAll('#tabs a').forEach(a=>a.classList.toggle('on',a.dataset.p===p));window.scrollTo(0,0);}
+document.querySelectorAll('#tabs a').forEach(a=>a.addEventListener('click',()=>go(a.dataset.p)));
+document.querySelectorAll('[data-go]').forEach(t=>t.addEventListener('click',()=>go(t.dataset.go)));
+function bars(id,data,labels){const el=document.getElementById(id);if(!el)return;const W=700,H=el.viewBox.baseVal.height,pb=24,max=Math.max(...data);let s='';
+const slot=W/data.length,bw=Math.min(40,slot*.55);
+data.forEach((v,i)=>{const h=(v/max)*(H-pb-8),x=slot*i+(slot-bw)/2,y=H-pb-h,hot=v===max;
+s+=`<rect x="${x}" y="${y}" width="${bw}" height="${h}" fill="${hot?'#e0311f':'#141414'}"/>`;
+s+=`<text x="${x+bw/2}" y="${H-6}" text-anchor="middle" font-size="9.5" fill="#6f6b62" font-family="Inter" font-weight="600">${labels[i]||''}</text>`;});el.innerHTML=s;}
+bars('c1',[420,180,90,260,510,880,1240,975,640,410,720,530,380],['NGT','9A','10','11','12P','1','2','3','4','5','6','7','8']);
+bars('c2',[2100,3400,2800,4100,3650,5200,1597],['J29','30','JL1','2','3','4','5']);
+document.getElementById('lib1').innerHTML=['PEACE','FLOW','MIDNIGHT','DREAM','SERENE','BLISS','GENTLE'].map((n,i)=>`<div class="alb"><div class="cv">♪</div><b>${n} ♪</b><small>clip_0006${10+i} · ${(Math.random()*9+1).toFixed(1)}k views</small></div>`).join('');
+document.getElementById('wk1').innerHTML=Array.from({length:12},(_,i)=>`<i class="${i<2?'done':i===2?'live':''}">${i+1}</i>`).join('');
+</script></body></html>

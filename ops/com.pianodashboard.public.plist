@@ -11,11 +11,11 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/zsh</string>
-        <string>/Users/dustinnghiem/.codex/workspaces/default/serve_public.command</string>
+        <string>/Users/dustinnghiem/Claude/PianoDashboard/serve_public.command</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/dustinnghiem/.codex/workspaces/default</string>
+    <string>/Users/dustinnghiem/Claude/PianoDashboard</string>
 
     <!-- Start automatically at login, and relaunch if it stops. -->
     <key>RunAtLoad</key>
@@ -24,8 +24,8 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/Users/dustinnghiem/.codex/workspaces/default/logs/public_link.out</string>
+    <string>/Users/dustinnghiem/Claude/PianoDashboard/logs/public_link.out</string>
     <key>StandardErrorPath</key>
-    <string>/Users/dustinnghiem/.codex/workspaces/default/logs/public_link.err</string>
+    <string>/Users/dustinnghiem/Claude/PianoDashboard/logs/public_link.err</string>
 </dict>
 </plist>

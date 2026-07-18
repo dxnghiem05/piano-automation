@@ -9,12 +9,12 @@
          No --clean-junk here on purpose: the scheduled job never deletes anything. -->
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/dustinnghiem/.codex/workspaces/default/.venv/bin/python</string>
-        <string>/Users/dustinnghiem/.codex/workspaces/default/daily_health_check.py</string>
+        <string>/Users/dustinnghiem/Claude/PianoDashboard/.venv/bin/python</string>
+        <string>/Users/dustinnghiem/Claude/PianoDashboard/daily_health_check.py</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/dustinnghiem/.codex/workspaces/default</string>
+    <string>/Users/dustinnghiem/Claude/PianoDashboard</string>
 
     <!-- Every morning at 8:30 AM local time. -->
     <key>StartCalendarInterval</key>
@@ -31,8 +31,8 @@
 
     <!-- launchd's own stdout/stderr (the script also writes logs/health_check_latest.txt). -->
     <key>StandardOutPath</key>
-    <string>/Users/dustinnghiem/.codex/workspaces/default/logs/health_check_launchd.out</string>
+    <string>/Users/dustinnghiem/Claude/PianoDashboard/logs/health_check_launchd.out</string>
     <key>StandardErrorPath</key>
-    <string>/Users/dustinnghiem/.codex/workspaces/default/logs/health_check_launchd.err</string>
+    <string>/Users/dustinnghiem/Claude/PianoDashboard/logs/health_check_launchd.err</string>
 </dict>
 </plist>

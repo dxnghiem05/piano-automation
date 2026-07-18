@@ -1,0 +1,236 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Concept 6 · Grand — Piano Shorts</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0e0e12;--panel:#15151b;--ink:#f2ecdf;--sub:#8f8a7d;--gold:#d4af6a;--gold2:#f0d9a8;--line:rgba(212,175,106,.18);--red:#c9564a;--green:#7fae7f;--serif:'Cormorant Garamond',Georgia,serif}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(120% 90% at 50% -10%,#1c1a22 0%,var(--bg) 55%);color:var(--ink);font:14px/1.6 Inter,sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh}
+a{color:inherit;text-decoration:none}
+.keys-strip{height:5px;background:repeating-linear-gradient(90deg,#f2ecdf 0 26px,#0a0a0c 26px 30px)}
+.nav{position:sticky;top:0;z-index:9;display:flex;align-items:center;gap:20px;padding:16px clamp(18px,4vw,48px);background:rgba(14,14,18,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.brand{font:600 21px var(--serif);letter-spacing:.04em;display:flex;align-items:center;gap:12px}
+.brand .dot{width:30px;height:30px;border-radius:50%;border:1px solid var(--gold);display:grid;place-items:center;color:var(--gold);font-size:14px}
+.tabs{margin-left:auto;display:flex;gap:2px;overflow-x:auto}
+.tabs a{font:600 11px Inter;text-transform:uppercase;letter-spacing:.18em;color:var(--sub);padding:9px 15px;cursor:pointer;white-space:nowrap;border-bottom:1px solid transparent;transition:.2s}
+.tabs a:hover{color:var(--gold2)}
+.tabs a.on{color:var(--gold);border-color:var(--gold)}
+.wrap{max-width:1140px;margin:0 auto;padding:38px clamp(18px,4vw,48px) 90px}
+.page{display:none}.page.on{display:block;animation:f .5s}
+@keyframes f{from{opacity:0;transform:translateY(8px)}to{opacity:1}}
+.kick{font:600 10.5px Inter;text-transform:uppercase;letter-spacing:.3em;color:var(--gold);margin:0 0 10px}
+h1{font:600 clamp(36px,5.4vw,58px) var(--serif);letter-spacing:.01em;margin:0 0 6px;line-height:1.05}
+h1 em{font-style:italic;color:var(--gold2)}
+.deck{color:var(--sub);font-size:14px;max-width:620px;margin:0 0 28px}
+.card{background:linear-gradient(180deg,rgba(212,175,106,.05),transparent 40%),var(--panel);border:1px solid var(--line);border-radius:6px;padding:26px;position:relative;transition:.3s}
+.card::before{content:"";position:absolute;top:8px;left:8px;right:8px;bottom:8px;border:1px solid rgba(212,175,106,.08);border-radius:3px;pointer-events:none}
+.card:hover{border-color:rgba(212,175,106,.4);transform:translateY(-2px)}
+.card h3{font:600 19px var(--serif);margin:0 0 14px;letter-spacing:.02em}
+.grid{display:grid;gap:16px}.g4{grid-template-columns:repeat(4,1fr)}.g2{grid-template-columns:1.55fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}
+@media(max-width:880px){.g4{grid-template-columns:1fr 1fr}.g2,.g3{grid-template-columns:1fr}}
+.mt{margin-top:16px}
+.lab{font:600 9.5px Inter;text-transform:uppercase;letter-spacing:.26em;color:var(--sub)}
+.num{font:600 44px var(--serif);margin-top:10px;color:var(--ink)}
+.num small{font:500 12px Inter;color:var(--sub)}
+.delta{font-size:11.5px;font-weight:600;margin-top:2px;letter-spacing:.04em}
+.delta.up{color:var(--green)}.delta.dim{color:var(--sub)}.delta.red{color:var(--red)}
+.hero-num{font:600 clamp(60px,9vw,104px) var(--serif);line-height:1;background:linear-gradient(180deg,var(--gold2),var(--gold));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.btn{display:inline-flex;align-items:center;gap:9px;font:600 10.5px Inter;text-transform:uppercase;letter-spacing:.22em;border:1px solid var(--gold);background:none;color:var(--gold);padding:12px 22px;cursor:pointer;transition:.25s;border-radius:2px}
+.btn:hover{background:var(--gold);color:#141310;box-shadow:0 8px 30px rgba(212,175,106,.25)}
+.btn.pri{background:var(--gold);color:#141310}
+.btn.pri:hover{background:var(--gold2)}
+.btn.stop{border-color:var(--red);color:var(--red)}
+.btn.stop:hover{background:var(--red);color:#fff}
+.toprow{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:26px}
+.actions{display:flex;gap:10px;flex-wrap:wrap}
+.orn{display:flex;align-items:center;gap:14px;margin:6px 0 22px;color:var(--gold);font-size:12px}
+.orn::before,.orn::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--line))}
+.orn::after{background:linear-gradient(90deg,var(--line),transparent)}
+.prog{height:3px;background:rgba(212,175,106,.15);margin:16px 0 10px;position:relative}
+.prog i{display:block;height:100%;width:63%;background:var(--gold);box-shadow:0 0 12px rgba(212,175,106,.6)}
+.plbl{display:flex;justify-content:space-between;font:600 10px Inter;text-transform:uppercase;letter-spacing:.14em;color:var(--sub)}
+.log{margin-top:16px;border-top:1px solid var(--line);font:12px ui-monospace,Menlo,monospace;color:var(--sub);max-height:170px;overflow:auto}
+.log div{padding:8px 0;border-bottom:1px solid rgba(212,175,106,.07)}
+.log .ok{color:var(--green)}.log .err{color:var(--red)}.log b{color:var(--gold);font-weight:500}
+.story{display:flex;gap:16px;align-items:baseline;padding:13px 0;border-bottom:1px solid rgba(212,175,106,.1)}
+.story:last-child{border:none}
+.story .n{font:600 22px var(--serif);color:var(--gold);min-width:24px;font-style:italic}
+.story .m{flex:1}.story .m b{font-size:14px;font-weight:600}.story .m small{display:block;color:var(--sub);font-size:10.5px;font-family:ui-monospace,monospace}
+.story .v{font:600 19px var(--serif)}
+.badge{font:600 9px Inter;text-transform:uppercase;letter-spacing:.2em;border:1px solid var(--line);color:var(--gold);padding:5px 12px;border-radius:2px}
+.wk{display:flex;gap:4px;margin:18px 0}
+.wk i{flex:1;height:64px;border-radius:0 0 4px 4px;background:linear-gradient(180deg,#23222a,#17161c);border:1px solid rgba(212,175,106,.12);display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px;font:600 11px var(--serif);color:var(--sub);font-style:normal;transition:.2s}
+.wk i:hover{transform:translateY(-4px)}
+.wk i.done{background:linear-gradient(180deg,#2a2417,#1c180e);color:var(--gold2)}
+.wk i.live{background:linear-gradient(180deg,var(--gold2),var(--gold));color:#141310;box-shadow:0 0 30px rgba(212,175,106,.4)}
+.lib{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}
+.alb{border:1px solid var(--line);border-radius:4px;overflow:hidden;background:var(--panel);cursor:pointer;transition:.25s}
+.alb:hover{border-color:var(--gold);transform:translateY(-3px)}
+.alb .cv{height:88px;display:grid;place-items:center;font:600 30px var(--serif);color:var(--gold);background:linear-gradient(135deg,#1d1c24,#121117)}
+.alb .meta{padding:10px 13px;border-top:1px solid var(--line)}
+.alb .meta b{font-size:12px;display:block}.alb .meta small{color:var(--sub);font-size:10px;font-family:ui-monospace,monospace}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font:600 9px Inter;text-transform:uppercase;letter-spacing:.24em;color:var(--sub);padding:12px 14px;border-bottom:1px solid var(--gold)}
+td{padding:12px 14px;border-bottom:1px solid rgba(212,175,106,.1)}
+tr:hover td{background:rgba(212,175,106,.04)}
+.chip{font:600 10px Inter;text-transform:uppercase;letter-spacing:.16em;border:1px solid var(--line);border-radius:2px;padding:7px 14px;color:var(--sub);cursor:pointer}
+.chip.on{border-color:var(--gold);color:var(--gold);background:rgba(212,175,106,.08)}
+.home{text-align:center;padding:9vh 0 5vh}
+.home .pre{font:italic 500 clamp(17px,2.4vw,22px) var(--serif);color:var(--sub);letter-spacing:.06em}
+.home h1{font-size:clamp(56px,10vw,120px);margin:6px 0 10px}
+.stat-line{display:flex;justify-content:center;gap:40px;margin:34px 0;flex-wrap:wrap}
+.stat-line div{text-align:center}
+.stat-line .v{font:600 34px var(--serif);color:var(--gold2)}
+.stat-line .l{font:600 9.5px Inter;text-transform:uppercase;letter-spacing:.26em;color:var(--sub);margin-top:2px}
+.doors{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:26px}
+@media(max-width:880px){.doors{grid-template-columns:1fr 1fr}}
+.door{border:1px solid var(--line);border-radius:4px;padding:26px 14px;cursor:pointer;transition:.3s;background:var(--panel)}
+.door:hover{border-color:var(--gold);transform:translateY(-5px);box-shadow:0 20px 50px rgba(0,0,0,.5)}
+.door .no{font:italic 600 15px var(--serif);color:var(--gold)}
+.door b{display:block;font:600 20px var(--serif);margin:6px 0 2px}
+.door small{color:var(--sub);font-size:11px}
+.pcard{text-align:center}
+.pcard .med{font:italic 600 15px var(--serif);color:var(--gold)}
+.pcard b{display:block;font:600 26px var(--serif);margin:8px 0 0}
+.pcard small{color:var(--sub);font:10px ui-monospace,monospace}
+.pcard .v{font:600 36px var(--serif);color:var(--gold2);margin:12px 0 0}
+.note{margin:46px auto 0;text-align:center;color:var(--sub);font:italic 500 13px var(--serif);letter-spacing:.06em}
+</style></head><body>
+<div class="keys-strip"></div>
+<nav class="nav"><span class="brand"><span class="dot">♪</span>Piano Shorts</span>
+<div class="tabs" id="tabs"><a data-p="home" class="on">Foyer</a><a data-p="overview">Overview</a><a data-p="stats">Stats</a><a data-p="tiktok">TikTok</a><a data-p="tracker">Tracker</a><a data-p="experiment">Experiment</a><a data-p="data">Data</a></div></nav>
+<div class="wrap">
+
+<section class="page on" id="home"><div class="home">
+<p class="pre">— a private studio for —</p>
+<h1>Piano <em>Shorts</em></h1>
+<div class="orn">❖</div>
+<div class="stat-line">
+<div><div class="v">159,443</div><div class="l">Total views</div></div>
+<div><div class="v">+1,597</div><div class="l">Today</div></div>
+<div><div class="v">641</div><div class="l">Clips</div></div>
+<div><div class="v">III</div><div class="l">Week of XII</div></div>
+</div>
+<div class="doors">
+<div class="door" data-go="overview"><span class="no">I.</span><b>Overview</b><small>Mission control</small></div>
+<div class="door" data-go="stats"><span class="no">II.</span><b>Stats</b><small>The performance</small></div>
+<div class="door" data-go="tiktok"><span class="no">III.</span><b>TikTok</b><small>The encore</small></div>
+<div class="door" data-go="tracker"><span class="no">IV.</span><b>Tracker</b><small>The archive</small></div>
+<div class="door" data-go="experiment"><span class="no">V.</span><b>Experiment</b><small>The study</small></div>
+</div></div></section>
+
+<section class="page" id="overview">
+<div class="toprow"><div><p class="kick">Movement I · Mission Control</p><h1>The <em>Overview</em></h1>
+<p class="deck" style="margin:0">The whole studio, conducted from one desk. The orchestra is playing.</p></div>
+<div class="actions"><button class="btn pri">＋ Clip &amp; Upload</button><button class="btn">Refresh</button><button class="btn stop">Stop</button></div></div>
+<div class="grid g2">
+<div class="card"><span class="lab">Total channel views</span>
+<div class="hero-num">159,443</div>
+<p class="delta up" style="font-size:12.5px;margin-top:8px">▲ 1,597 today · best hour 12 PM</p>
+<svg viewBox="0 0 700 180" style="width:100%;margin-top:12px" id="c1"></svg></div>
+<div class="card"><h3>Tonight's programme <em style="color:var(--gold);font-size:14px">· live</em></h3>
+<div class="prog"><i></i></div>
+<div class="plbl"><span>Uploading clip 12 of 19</span><span>~2 min left</span></div>
+<div class="plbl" style="margin-top:16px"><span>Uploads today</span><span style="color:var(--gold)">19 of 20 · one left</span></div>
+<div class="prog" style="margin-top:8px"><i style="width:95%"></i></div>
+<div class="log">
+<div><b>10:19</b> <span class="ok">Uploaded clip_000612 · k2Xw9…</span></div>
+<div><b>10:18</b> Generated clip_000617.mp4</div>
+<div><b>10:17</b> Generated clip_000616.mp4</div>
+<div><b>10:15</b> <span class="ok">Uploaded clip_000611 · p9Lm2…</span></div>
+<div><b>10:14</b> <span class="err">Upload failed clip_000610 — retrying</span></div>
+</div></div></div>
+<div class="grid g4 mt">
+<div class="card"><span class="lab">Input videos</span><div class="num">0</div><div class="delta dim">folder clear</div></div>
+<div class="card"><span class="lab">Clips ready</span><div class="num">641</div><div class="delta up">+17 this run</div></div>
+<div class="card"><span class="lab">Next post</span><div class="num" style="font-size:24px;margin-top:18px">Jul 5 · 12:00 PM</div><div class="delta dim">auto-scheduled</div></div>
+<div class="card"><span class="lab">Uploaded today</span><div class="num">19</div><div class="delta red">quota nearly full</div></div>
+</div></section>
+
+<section class="page" id="stats">
+<div class="toprow"><div><p class="kick">Movement II · The Performance</p><h1>YouTube <em>Stats</em></h1></div>
+<div class="actions"><button class="btn">Dataset</button><button class="btn pri">Refresh Stats</button></div></div>
+<div class="grid g4">
+<div class="card"><span class="lab">Total views</span><div class="num">159,443</div><div class="delta up">▲ 1,597 today</div></div>
+<div class="card"><span class="lab">Tracked clips</span><div class="num">588</div><div class="delta dim">641 ready</div></div>
+<div class="card"><span class="lab">Upload records</span><div class="num">588</div><div class="delta up">▲ 19 today</div></div>
+<div class="card"><span class="lab">Engagement</span><div class="num">4.32<small>%</small></div><div class="delta dim">6,412 likes</div></div>
+</div>
+<div class="grid g2 mt">
+<div class="card"><h3>Views gained · <em style="color:var(--sub)">the week</em></h3><svg viewBox="0 0 700 200" style="width:100%" id="c2"></svg></div>
+<div class="card"><h3>The <em>soloists</em></h3>
+<div class="story"><span class="n">i.</span><div class="m"><b>PEACE ♪</b><small>clip_000512.mp4</small></div><span class="v">12,480</span></div>
+<div class="story"><span class="n">ii.</span><div class="m"><b>MIDNIGHT ♪</b><small>clip_000488.mp4</small></div><span class="v">9,872</span></div>
+<div class="story"><span class="n">iii.</span><div class="m"><b>FLOW ♪</b><small>clip_000531.mp4</small></div><span class="v">8,455</span></div>
+<div class="story"><span class="n">iv.</span><div class="m"><b>SERENE ♪</b><small>clip_000466.mp4</small></div><span class="v">7,210</span></div>
+</div></div>
+<div class="card mt"><h3>The programme ahead <em style="color:var(--sub);font-size:14px">· 192 scheduled</em></h3>
+<div class="story"><span class="n">▶</span><div class="m"><b>GENTLE ♪</b><small>clip_000618.mp4</small></div><span class="delta dim" style="margin-right:14px">Jul 5 · 12:00 PM</span><span class="badge">Scheduled</span></div>
+<div class="story"><span class="n">2.</span><div class="m"><b>BLISS ♪</b><small>clip_000619.mp4</small></div><span class="delta dim" style="margin-right:14px">Jul 5 · 1:00 PM</span><span class="badge">Scheduled</span></div>
+<div class="story"><span class="n">3.</span><div class="m"><b>WANDER ♪</b><small>clip_000620.mp4</small></div><span class="delta dim" style="margin-right:14px">Jul 5 · 2:00 PM</span><span class="badge">Scheduled</span></div>
+</div></section>
+
+<section class="page" id="tiktok">
+<div class="toprow"><div><p class="kick">Movement III · The Encore</p><h1>TikTok <em>Candidates</em></h1>
+<p class="deck" style="margin:0">Yesterday's finest, invited back for a second performance. You hold the baton — nothing posts itself.</p></div>
+<div class="actions"><button class="btn pri">Open TikTok</button><button class="btn">CSV</button></div></div>
+<div class="orn">❖ Today · July 5 ❖</div>
+<div class="grid g3">
+<div class="card pcard"><span class="med">Second chair</span><b>MIDNIGHT ♪</b><small>clip_000488.mp4</small><div class="v">9,872</div><small>views · 512 likes</small><br><button class="btn" style="margin-top:16px;width:100%">Download</button></div>
+<div class="card pcard" style="border-color:var(--gold)"><span class="med">First chair</span><b style="font-size:32px">PEACE ♪</b><small>clip_000512.mp4</small><div class="v" style="font-size:44px">12,480</div><small>views · 731 likes</small><br><button class="btn pri" style="margin-top:16px;width:100%">Download</button></div>
+<div class="card pcard"><span class="med">Third chair</span><b>FLOW ♪</b><small>clip_000531.mp4</small><div class="v">8,455</div><small>views · 402 likes</small><br><button class="btn" style="margin-top:16px;width:100%">Download</button></div>
+</div></section>
+
+<section class="page" id="tracker">
+<div class="toprow"><div><p class="kick">Movement IV · The Archive</p><h1>Video <em>Tracker</em></h1></div>
+<div class="actions"><button class="btn pri">Tracker CSV</button></div></div>
+<div class="grid g3">
+<div class="card"><span class="lab">Clips in library</span><div class="num">641</div></div>
+<div class="card"><span class="lab">Tracked on YouTube</span><div class="num">588</div></div>
+<div class="card"><span class="lab">With 24h data</span><div class="num">402</div></div>
+</div>
+<div class="card mt"><h3>Recent <em>recordings</em></h3><div class="lib" id="lib1"></div></div>
+</section>
+
+<section class="page" id="experiment">
+<div class="toprow"><div><p class="kick">Movement V · The Study</p><h1>Twelve <em>Weeks</em></h1>
+<p class="deck" style="margin:0">A twelve-key octave — one key per week. We are on the third.</p></div></div>
+<div class="card"><span class="lab">The octave</span><div class="wk" id="wk1"></div>
+<div class="plbl"><span>Week 3 of 12</span><span>Primary metric · 24h views</span></div></div>
+<div class="grid g2 mt">
+<div class="card"><h3>Wk 3–4 · Posting-time test <span class="badge" style="margin-left:10px;border-color:var(--gold);color:var(--gold2)">Live</span></h3>
+<p style="color:var(--sub);margin:0;font-size:13.5px">Morning against evening windows, randomly assigned. Two-sample t-test on 24-hour views; effect size with 95% confidence.</p></div>
+<div class="card" style="opacity:.65"><h3>Wk 5–6 · Caption test <span class="badge" style="margin-left:10px">Next</span></h3>
+<p style="color:var(--sub);margin:0;font-size:13.5px">Emotional against energetic caption words, balanced across hours. Logistic regression.</p></div>
+</div></section>
+
+<section class="page" id="data">
+<div class="toprow"><div><p class="kick">Appendix · The Ledger</p><h1>Data <em>Tracker</em></h1></div>
+<div class="actions"><button class="btn">CSV</button><button class="btn">XLSX</button></div></div>
+<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+<span class="chip on">All weeks · 641</span><span class="chip">Week 0</span><span class="chip">Week I</span><span class="chip">Week II</span><span class="chip">Week III ●</span></div>
+<div class="card" style="padding:8px 4px"><table>
+<tr><th>Week</th><th>Clip</th><th>Caption</th><th>Group</th><th>Length</th><th>Live views</th><th>24h views</th><th>High perf.</th></tr>
+<tr><td>III</td><td style="font-family:ui-monospace,monospace;font-size:11.5px">clip_000612</td><td><b>PEACE</b></td><td>AM</td><td>27s</td><td>1,204</td><td>987</td><td style="color:var(--gold2)">★ Yes</td></tr>
+<tr><td>III</td><td style="font-family:ui-monospace,monospace;font-size:11.5px">clip_000611</td><td><b>FLOW</b></td><td>PM</td><td>24s</td><td>640</td><td>512</td><td style="color:var(--sub)">No</td></tr>
+<tr><td>III</td><td style="font-family:ui-monospace,monospace;font-size:11.5px">clip_000610</td><td><b>MIDNIGHT</b></td><td>AM</td><td>29s</td><td>2,180</td><td>1,733</td><td style="color:var(--gold2)">★ Yes</td></tr>
+<tr><td>II</td><td style="font-family:ui-monospace,monospace;font-size:11.5px">clip_000586</td><td><b>SERENE</b></td><td>PM</td><td>22s</td><td>455</td><td>301</td><td style="color:var(--sub)">No</td></tr>
+</table></div></section>
+
+<p class="note">Concept 6 of 6 · “Grand” — concert-hall charcoal, ivory &amp; brass · mockup only, no live data</p>
+</div>
+<div class="keys-strip"></div>
+<script>
+function go(p){document.querySelectorAll('.page').forEach(s=>s.classList.toggle('on',s.id===p));
+document.querySelectorAll('#tabs a').forEach(a=>a.classList.toggle('on',a.dataset.p===p));window.scrollTo(0,0);}
+document.querySelectorAll('#tabs a').forEach(a=>a.addEventListener('click',()=>go(a.dataset.p)));
+document.querySelectorAll('[data-go]').forEach(t=>t.addEventListener('click',()=>go(t.dataset.go)));
+function bars(id,data,labels){const el=document.getElementById(id);if(!el)return;const W=700,H=el.viewBox.baseVal.height,pb=24,max=Math.max(...data);let s='';
+const slot=W/data.length,bw=Math.min(34,slot*.5);
+data.forEach((v,i)=>{const h=(v/max)*(H-pb-8),x=slot*i+(slot-bw)/2,y=H-pb-h,hot=v===max;
+s+=`<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="2" fill="${hot?'#f0d9a8':'#d4af6a'}" opacity="${hot?1:.28+.5*(v/max)}"/>`;
+s+=`<text x="${x+bw/2}" y="${H-6}" text-anchor="middle" font-size="9.5" fill="#8f8a7d" font-family="Inter">${labels[i]||''}</text>`;});el.innerHTML=s;}
+bars('c1',[420,180,90,260,510,880,1240,975,640,410,720,530,380],['Ngt','9A','10','11','12P','1','2','3','4','5','6','7','8']);
+bars('c2',[2100,3400,2800,4100,3650,5200,1597],['J29','30','Jl1','2','3','4','5']);
+document.getElementById('lib1').innerHTML=['PEACE','FLOW','MIDNIGHT','DREAM','SERENE','BLISS','GENTLE'].map((n,i)=>`<div class="alb"><div class="cv">♪</div><div class="meta"><b>${n} ♪</b><small>clip_0006${10+i} · ${(Math.random()*9+1).toFixed(1)}k views</small></div></div>`).join('');
+document.getElementById('wk1').innerHTML=Array.from({length:12},(_,i)=>`<i class="${i<2?'done':i===2?'live':''}">${['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'][i]}</i>`).join('');
+</script></body></html>

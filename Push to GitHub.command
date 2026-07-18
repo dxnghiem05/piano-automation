@@ -2,7 +2,7 @@
 # Double-click this file to push all committed changes to GitHub.
 # It runs on your Mac, so it uses your saved GitHub login — no token needed.
 
-cd "/Users/dustinnghiem/.codex/workspaces/default" || exit 1
+cd "/Users/dustinnghiem/Claude/PianoDashboard" || exit 1
 
 echo "Pushing committed changes to GitHub (origin/main)..."
 echo ""

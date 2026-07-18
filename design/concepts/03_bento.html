@@ -1,0 +1,224 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Concept 3 · Bento — Piano Shorts</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0a0a;--card:#111112;--ink:#ededed;--sub:#8a8a93;--line:#222226;--lime:#c8ff00;--red:#ff4d6d;--blue:#5ba8ff;--mono:'JetBrains Mono',ui-monospace,monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 Inter,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+.nav{position:sticky;top:0;z-index:9;display:flex;align-items:center;gap:14px;padding:13px clamp(16px,3vw,32px);background:rgba(10,10,10,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.brand{font-weight:800;font-size:14px;letter-spacing:-.01em;display:flex;align-items:center;gap:9px}
+.brand .sq{width:22px;height:22px;border-radius:6px;background:var(--lime);color:#000;display:grid;place-items:center;font-size:12px;font-weight:800}
+.status{display:flex;align-items:center;gap:7px;font:600 11px var(--mono);color:var(--lime);border:1px solid #2a3a00;background:#141a02;padding:5px 11px;border-radius:99px}
+.status .d{width:6px;height:6px;border-radius:50%;background:var(--lime);animation:bl 1.6s infinite}
+@keyframes bl{50%{opacity:.3}}
+.tabs{margin-left:auto;display:flex;gap:2px;overflow-x:auto}
+.tabs a{font:600 12px Inter;color:var(--sub);padding:7px 13px;border-radius:8px;cursor:pointer;white-space:nowrap}
+.tabs a:hover{color:var(--ink);background:#1a1a1c}
+.tabs a.on{color:#000;background:var(--lime)}
+.wrap{max-width:1240px;margin:0 auto;padding:26px clamp(14px,3vw,32px) 70px}
+.page{display:none}.page.on{display:block;animation:f .3s}
+@keyframes f{from{opacity:0}to{opacity:1}}
+.crumb{font:600 11px var(--mono);color:var(--sub);text-transform:uppercase;letter-spacing:.1em;margin:4px 0 18px}
+.crumb b{color:var(--lime)}
+.bento{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
+.b{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;position:relative;overflow:hidden;transition:border-color .2s}
+.b:hover{border-color:#3a3a40}
+.b .l{font:600 10.5px var(--mono);text-transform:uppercase;letter-spacing:.12em;color:var(--sub)}
+.b .v{font:700 34px var(--mono);letter-spacing:-.05em;margin-top:10px}
+.b .v em{font-style:normal;color:var(--lime)}
+.b .d{font:600 11px var(--mono);margin-top:4px;color:var(--lime)}
+.b .d.dim{color:var(--sub)}.b .d.red{color:var(--red)}
+.s12{grid-column:span 12}.s8{grid-column:span 8}.s6{grid-column:span 6}.s4{grid-column:span 4}.s3{grid-column:span 3}
+@media(max-width:900px){.s8,.s6{grid-column:span 12}.s4,.s3{grid-column:span 6}}
+@media(max-width:560px){.s4,.s3{grid-column:span 12}}
+h1{font-size:clamp(24px,3.4vw,34px);font-weight:800;letter-spacing:-.03em;margin:0 0 2px}
+.sub{color:var(--sub);font-size:13.5px;margin:0 0 20px}
+.btn{display:inline-flex;align-items:center;gap:7px;font:700 12.5px Inter;border:1px solid var(--line);background:#161618;color:var(--ink);padding:9px 16px;border-radius:10px;cursor:pointer;transition:.15s}
+.btn:hover{border-color:#444}
+.btn.pri{background:var(--lime);color:#000;border-color:var(--lime)}
+.btn.pri:hover{box-shadow:0 0 24px rgba(200,255,0,.3)}
+.btn.stop{color:var(--red);border-color:#3a1520}
+.toprow{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.spark{position:absolute;right:0;bottom:0;left:0;height:44px;opacity:.85}
+.prog{height:8px;border-radius:99px;background:#1c1c20;overflow:hidden;margin:14px 0 8px}
+.prog i{display:block;height:100%;width:63%;background:var(--lime);border-radius:99px;box-shadow:0 0 16px rgba(200,255,0,.4)}
+.plbl{display:flex;justify-content:space-between;font:600 11px var(--mono);color:var(--sub)}
+.log{font:12px var(--mono);color:#7d8087;max-height:180px;overflow:auto;line-height:1.9}
+.log .ok{color:#9dff57}.log .err{color:var(--red)}.log .t{color:#4a4a52;margin-right:8px}
+.rk{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
+.rk:last-child{border:none}
+.rk .n{font:700 12px var(--mono);color:var(--lime);width:18px}
+.rk .m{flex:1}.rk .m small{display:block;color:var(--sub);font:11px var(--mono)}
+.rk .v{font:700 13px var(--mono)}
+.hours{display:flex;align-items:flex-end;gap:6px;height:130px;margin-top:14px}
+.hours i{flex:1;background:#26262c;border-radius:5px 5px 2px 2px;position:relative;transition:.2s;font-style:normal}
+.hours i.hot{background:var(--lime);box-shadow:0 0 20px rgba(200,255,0,.35)}
+.hours i:hover{transform:translateY(-3px)}
+.hours i span{position:absolute;bottom:-18px;left:0;right:0;text-align:center;font:600 9px var(--mono);color:var(--sub)}
+.tag{display:inline-block;font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.08em;padding:4px 10px;border-radius:6px;background:#1c1c20;color:var(--sub);margin:0 6px 6px 0}
+.tag.on{background:#1e2a02;color:var(--lime)}
+.tag.b{background:#0f1d2e;color:var(--blue)}
+table{width:100%;border-collapse:collapse;font:12.5px var(--mono)}
+th{text-align:left;font:600 10px var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--sub);padding:10px 12px;border-bottom:1px solid var(--line)}
+td{padding:10px 12px;border-bottom:1px solid var(--line)}
+tr:hover td{background:#151517}
+.wk{display:flex;gap:5px;margin-top:14px}
+.wk i{flex:1;height:40px;border-radius:7px;background:#1c1c20;display:grid;place-items:center;font:700 10px var(--mono);color:var(--sub);font-style:normal}
+.wk i.done{background:#1e2a02;color:#9dff57}.wk i.live{background:var(--lime);color:#000}
+.lib{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.alb{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#141416;cursor:pointer;transition:.2s}
+.alb:hover{border-color:var(--lime)}
+.alb .cv{height:86px;display:grid;place-items:center;font-size:24px;color:rgba(255,255,255,.85)}
+.alb .meta{padding:9px 11px}.alb .meta b{font-size:12px;display:block}.alb .meta small{color:var(--sub);font:10px var(--mono)}
+.home-hero{padding:60px 0 30px;text-align:center}
+.home-hero h1{font-size:clamp(36px,6vw,58px)}
+.home-hero .big{font:700 clamp(52px,9vw,110px) var(--mono);letter-spacing:-.06em;color:var(--lime);text-shadow:0 0 60px rgba(200,255,0,.25);margin:10px 0 4px}
+.note{margin:36px auto 0;text-align:center;color:#555;font-size:12px}
+.pcard{text-align:center}
+.pcard .med{font-size:22px}.pcard b{display:block;margin:6px 0 2px;font-size:15px}.pcard small{color:var(--sub);font:10.5px var(--mono)}
+</style></head><body>
+<nav class="nav"><span class="brand"><span class="sq">♪</span>PIANO_SHORTS <span style="color:var(--sub);font-weight:500">/ bento</span></span>
+<span class="status"><span class="d"></span>PIPELINE: RUNNING · 12/19</span>
+<div class="tabs" id="tabs"><a data-p="home" class="on">Home</a><a data-p="overview">Overview</a><a data-p="stats">Stats</a><a data-p="tiktok">TikTok</a><a data-p="tracker">Tracker</a><a data-p="experiment">Experiment</a><a data-p="data">Data</a></div></nav>
+<div class="wrap">
+
+<section class="page on" id="home">
+<div class="home-hero"><div class="crumb" style="text-align:center">CREATOR OS <b>v6</b></div>
+<h1>Piano Shorts</h1><div class="big">159,443</div>
+<p class="sub" style="text-align:center">total channel views · +1,597 today · week 3/12 of the experiment</p></div>
+<div class="bento">
+<div class="b s4" data-go="overview" style="cursor:pointer"><div class="l">01 / Overview</div><div class="v" style="font-size:20px;margin-top:8px">Mission control →</div><div class="d dim">run pipeline · watch it live</div></div>
+<div class="b s4" data-go="stats" style="cursor:pointer"><div class="l">02 / Stats</div><div class="v" style="font-size:20px;margin-top:8px">Performance →</div><div class="d dim">growth · queue · best hours</div></div>
+<div class="b s4" data-go="tiktok" style="cursor:pointer"><div class="l">03 / TikTok</div><div class="v" style="font-size:20px;margin-top:8px">Daily podium →</div><div class="d dim">winners worth reposting</div></div>
+<div class="b s4" data-go="tracker" style="cursor:pointer"><div class="l">04 / Tracker</div><div class="v" style="font-size:20px;margin-top:8px">Library →</div><div class="d dim">641 clips logged</div></div>
+<div class="b s4" data-go="experiment" style="cursor:pointer"><div class="l">05 / Experiment</div><div class="v" style="font-size:20px;margin-top:8px">12-week study →</div><div class="d dim">posting-time test live</div></div>
+<div class="b s4" data-go="data" style="cursor:pointer"><div class="l">06 / Data</div><div class="v" style="font-size:20px;margin-top:8px">Dataset →</div><div class="d dim">csv · xlsx exports</div></div>
+</div></section>
+
+<section class="page" id="overview">
+<div class="crumb">PIANO_SHORTS / <b>OVERVIEW</b></div>
+<div class="toprow"><div><h1>Mission control</h1><p class="sub">Everything the pipeline is doing, in real time.</p></div>
+<div class="actions"><button class="btn pri">＋ CLIP + UPLOAD</button><button class="btn">↻ REFRESH</button><button class="btn stop">■ STOP</button></div></div>
+<div class="bento">
+<div class="b s8"><div class="l">Total channel views</div><div class="v" style="font-size:clamp(40px,5vw,62px)">159,<em>443</em></div>
+<div class="d">▲ 1,597 TODAY · BEST HOUR 12:00</div><svg class="spark" viewBox="0 0 400 44" preserveAspectRatio="none" id="sp1"></svg></div>
+<div class="b s4"><div class="l">Run progress</div>
+<div class="prog"><i></i></div><div class="plbl"><span>UPLOADING 12/19</span><span>~2 MIN LEFT</span></div>
+<div style="margin-top:16px" class="l">Quota</div>
+<div class="prog" style="margin-top:8px"><i style="width:95%;background:linear-gradient(90deg,var(--lime),var(--red))"></i></div>
+<div class="plbl"><span>19/20 UPLOADS TODAY</span><span class="red" style="color:var(--red)">1 LEFT</span></div></div>
+<div class="b s3"><div class="l">Input videos</div><div class="v">0</div><div class="d dim">FOLDER CLEAR</div></div>
+<div class="b s3"><div class="l">Clips ready</div><div class="v">641</div><div class="d">+17 THIS RUN</div></div>
+<div class="b s3"><div class="l">Next post</div><div class="v" style="font-size:19px;margin-top:16px">12:00 PM</div><div class="d dim">JUL 5 · AUTO</div></div>
+<div class="b s3"><div class="l">Uploaded today</div><div class="v">19</div><div class="d red">QUOTA NEARLY FULL</div></div>
+<div class="b s12"><div class="l" style="margin-bottom:10px">Live log · <span style="color:var(--lime)">streaming</span></div>
+<div class="log">
+<div><span class="t">10:19:44</span><span class="ok">✔ uploaded clip_000612.mp4 → yt:k2Xw9pQ</span></div>
+<div><span class="t">10:18:24</span>generated clip_000617.mp4 (27.4s, 1080×1920)</div>
+<div><span class="t">10:17:26</span>generated clip_000616.mp4 (24.1s, 1080×1920)</div>
+<div><span class="t">10:15:46</span><span class="ok">✔ uploaded clip_000611.mp4 → yt:p9Lm2xD</span></div>
+<div><span class="t">10:14:02</span><span class="err">✘ upload failed clip_000610.mp4 — retry queued</span></div>
+<div><span class="t">10:12:19</span>scanning input/ … 1 video found (14:32 min)</div></div></div>
+</div></section>
+
+<section class="page" id="stats">
+<div class="crumb">PIANO_SHORTS / <b>STATS</b></div>
+<div class="toprow"><div><h1>Performance</h1><p class="sub">Where and when your clips actually land.</p></div>
+<div class="actions"><button class="btn">DATASET</button><button class="btn pri">↻ REFRESH STATS</button></div></div>
+<div class="bento">
+<div class="b s3"><div class="l">Total views</div><div class="v">159,443</div><div class="d">▲ 1,597</div></div>
+<div class="b s3"><div class="l">Tracked clips</div><div class="v">588</div><div class="d dim">641 READY</div></div>
+<div class="b s3"><div class="l">Uploads</div><div class="v">588</div><div class="d">▲ 19 TODAY</div></div>
+<div class="b s3"><div class="l">Engagement</div><div class="v">4.32<em>%</em></div><div class="d dim">6,412 LIKES</div></div>
+<div class="b s8"><div class="l">Views gained · 7 days</div><svg viewBox="0 0 700 210" style="width:100%;margin-top:12px" id="c2"></svg></div>
+<div class="b s4"><div class="l">Top performers</div>
+<div style="margin-top:10px">
+<div class="rk"><span class="n">01</span><div class="m">PEACE ♪<small>clip_000512</small></div><span class="v">12,480</span></div>
+<div class="rk"><span class="n">02</span><div class="m">MIDNIGHT ♪<small>clip_000488</small></div><span class="v">9,872</span></div>
+<div class="rk"><span class="n">03</span><div class="m">FLOW ♪<small>clip_000531</small></div><span class="v">8,455</span></div>
+<div class="rk"><span class="n">04</span><div class="m">SERENE ♪<small>clip_000466</small></div><span class="v">7,210</span></div></div></div>
+<div class="b s6"><div class="l">Best posting hours</div>
+<div class="hours" id="h1"></div></div>
+<div class="b s6"><div class="l">Upcoming queue · 192 scheduled</div>
+<div style="margin-top:10px">
+<div class="rk"><span class="n">▶</span><div class="m">GENTLE ♪<small>clip_000618 · Jul 5, 12:00 PM</small></div><span class="tag b">SCHEDULED</span></div>
+<div class="rk"><span class="n">02</span><div class="m">BLISS ♪<small>clip_000619 · Jul 5, 1:00 PM</small></div><span class="tag b">SCHEDULED</span></div>
+<div class="rk"><span class="n">03</span><div class="m">WANDER ♪<small>clip_000620 · Jul 5, 2:00 PM</small></div><span class="tag b">SCHEDULED</span></div></div></div>
+</div></section>
+
+<section class="page" id="tiktok">
+<div class="crumb">PIANO_SHORTS / <b>TIKTOK</b></div>
+<div class="toprow"><div><h1>Daily podium</h1><p class="sub">Download a winner, post it yourself. Nothing goes out automatically.</p></div>
+<div class="actions"><button class="btn pri">↗ OPEN TIKTOK STUDIO</button><button class="btn">↓ CSV</button></div></div>
+<div class="bento">
+<div class="b s4 pcard"><div class="med">🥈</div><b>MIDNIGHT ♪</b><small>clip_000488.mp4</small><div class="v" style="font-size:24px">9,872</div><div class="d dim">512 LIKES · 5.2% ENG</div><button class="btn" style="width:100%;justify-content:center;margin-top:12px">↓ DOWNLOAD</button></div>
+<div class="b s4 pcard" style="border-color:var(--lime)"><div class="med">🥇</div><b>PEACE ♪</b><small>clip_000512.mp4</small><div class="v" style="font-size:28px;color:var(--lime)">12,480</div><div class="d dim">731 LIKES · 5.9% ENG</div><button class="btn pri" style="width:100%;justify-content:center;margin-top:12px">↓ DOWNLOAD</button></div>
+<div class="b s4 pcard"><div class="med">🥉</div><b>FLOW ♪</b><small>clip_000531.mp4</small><div class="v" style="font-size:24px">8,455</div><div class="d dim">402 LIKES · 4.8% ENG</div><button class="btn" style="width:100%;justify-content:center;margin-top:12px">↓ DOWNLOAD</button></div>
+<div class="b s12"><div class="l">Yesterday · Jul 4</div><div style="display:flex;gap:24px;margin-top:12px;flex-wrap:wrap;font:12px var(--mono);color:var(--sub)">
+<span>🥇 DREAM ♪ — 11,204 views</span><span>🥈 SERENE ♪ — 8,730 views</span><span>🥉 VIBE ♪ — 7,411 views</span></div></div>
+</div></section>
+
+<section class="page" id="tracker">
+<div class="crumb">PIANO_SHORTS / <b>TRACKER</b></div>
+<div class="toprow"><div><h1>Library</h1><p class="sub">Every clip logged by the automation.</p></div>
+<div class="actions"><button class="btn pri">↓ TRACKER CSV</button></div></div>
+<div class="bento">
+<div class="b s4"><div class="l">Clips in library</div><div class="v">641</div></div>
+<div class="b s4"><div class="l">Tracked on YouTube</div><div class="v">588</div></div>
+<div class="b s4"><div class="l">With 24h data</div><div class="v">402</div></div>
+<div class="b s12"><div class="l" style="margin-bottom:12px">Recent clips</div><div class="lib" id="lib1"></div></div>
+</div></section>
+
+<section class="page" id="experiment">
+<div class="crumb">PIANO_SHORTS / <b>EXPERIMENT</b></div>
+<div class="toprow"><div><h1>12-week study</h1><p class="sub">Twelve weeks, twelve keys — currently week 3.</p></div></div>
+<div class="bento">
+<div class="b s12"><div class="l">The octave · each key is a week</div><div class="wk" id="wk1"></div>
+<div class="prog" style="margin-top:16px"><i style="width:25%"></i></div>
+<div class="plbl"><span>WEEK 3 OF 12</span><span>PRIMARY METRIC: 24H VIEWS</span></div></div>
+<div class="b s6"><div class="l">WK 3–4 · POSTING-TIME TEST <span class="tag on" style="margin-left:8px">LIVE</span></div>
+<p class="sub" style="margin:12px 0 8px">9 AM–3 PM vs 4 PM–9 PM windows, random assignment.</p>
+<span class="tag">A/B TEST</span><span class="tag">T-TEST</span><span class="tag">EFFECT SIZE</span><span class="tag">95% CI</span></div>
+<div class="b s6" style="opacity:.65"><div class="l">WK 5–6 · CAPTION TEST <span class="tag b" style="margin-left:8px">NEXT</span></div>
+<p class="sub" style="margin:12px 0 8px">Emotional vs energy caption words, hour-controlled.</p>
+<span class="tag">A/B TEST</span><span class="tag">LOGISTIC REGRESSION</span></div>
+</div></section>
+
+<section class="page" id="data">
+<div class="crumb">PIANO_SHORTS / <b>DATA</b></div>
+<div class="toprow"><div><h1>Dataset</h1><p class="sub">641 tagged clips for the 12-week experiment.</p></div>
+<div class="actions"><button class="btn">↓ CSV</button><button class="btn">↓ XLSX</button></div></div>
+<div style="margin-bottom:14px"><span class="tag on">ALL WEEKS · 641</span><span class="tag">WEEK 0</span><span class="tag">WEEK 1</span><span class="tag">WEEK 2</span><span class="tag">WEEK 3 ●</span><span class="tag">WEEK 4</span></div>
+<div class="b s12" style="padding:0;overflow:auto"><table>
+<tr><th>WEEK</th><th>CLIP</th><th>CAPTION</th><th>GROUP</th><th>LEN</th><th>LIVE VIEWS</th><th>24H VIEWS</th><th>HIGH PERF</th></tr>
+<tr><td>W3</td><td>clip_000612</td><td>PEACE</td><td>AM</td><td>27s</td><td>1,204</td><td>987</td><td style="color:var(--lime)">★ YES</td></tr>
+<tr><td>W3</td><td>clip_000611</td><td>FLOW</td><td>PM</td><td>24s</td><td>640</td><td>512</td><td>NO</td></tr>
+<tr><td>W3</td><td>clip_000610</td><td>MIDNIGHT</td><td>AM</td><td>29s</td><td>2,180</td><td>1,733</td><td style="color:var(--lime)">★ YES</td></tr>
+<tr><td>W2</td><td>clip_000586</td><td>SERENE</td><td>PM</td><td>22s</td><td>455</td><td>301</td><td>NO</td></tr>
+<tr><td>W2</td><td>clip_000585</td><td>DREAM</td><td>AM</td><td>26s</td><td>1,876</td><td>1,405</td><td style="color:var(--lime)">★ YES</td></tr>
+</table></div></section>
+
+<p class="note">Concept 3 of 6 · “Bento” — modular grid, monospace numerals, single lime accent · mockup only</p>
+</div>
+<script>
+function go(p){document.querySelectorAll('.page').forEach(s=>s.classList.toggle('on',s.id===p));
+document.querySelectorAll('#tabs a').forEach(a=>a.classList.toggle('on',a.dataset.p===p));window.scrollTo(0,0);}
+document.querySelectorAll('#tabs a').forEach(a=>a.addEventListener('click',()=>go(a.dataset.p)));
+document.querySelectorAll('[data-go]').forEach(t=>t.addEventListener('click',()=>go(t.dataset.go)));
+function line(id,data){const el=document.getElementById(id);if(!el)return;const W=400,H=44,max=Math.max(...data);
+const pts=data.map((v,i)=>`${(i/(data.length-1))*W},${H-3-(v/max)*(H-8)}`).join(' ');
+el.innerHTML=`<polygon points="0,${H} ${pts} ${W},${H}" fill="#c8ff00" opacity=".07"/><polyline points="${pts}" fill="none" stroke="#c8ff00" stroke-width="1.6"/>`;}
+line('sp1',[12,18,15,26,22,31,29,38,35,47,44,58,52,63]);
+function bars(id,data,labels){const el=document.getElementById(id);if(!el)return;const W=700,H=210,pb=24,max=Math.max(...data);let s='';
+const slot=W/data.length,bw=Math.min(52,slot*.6);
+data.forEach((v,i)=>{const h=(v/max)*(H-pb-12),x=slot*i+(slot-bw)/2,y=H-pb-h,hot=v===max;
+s+=`<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="5" fill="${hot?'#c8ff00':'#2c2c33'}"/>`;
+s+=`<text x="${x+bw/2}" y="${H-6}" text-anchor="middle" font-size="10" fill="#8a8a93" font-family="JetBrains Mono">${labels[i]}</text>`;});el.innerHTML=s;}
+bars('c2',[2100,3400,2800,4100,3650,5200,1597],['JUN29','30','JUL1','2','3','4','5']);
+const hv=[38,55,72,100,88,64,51,43];const hl=['9A','10A','11A','12P','1P','2P','3P','4P'];
+document.getElementById('h1').innerHTML=hv.map((v,i)=>`<i class="${v===100?'hot':''}" style="height:${v}%"><span>${hl[i]}</span></i>`).join('');
+const G=[['#c8ff00','#3a4a00'],['#5ba8ff','#12304f'],['#ff4d6d','#4a0f1e'],['#b78aff','#2d1a52'],['#4ef0c8','#0d3a2e'],['#ffb14e','#4a2a08'],['#ff7ab8','#47123a']];
+document.getElementById('lib1').innerHTML=['PEACE','FLOW','MIDNIGHT','DREAM','SERENE','BLISS','GENTLE'].map((n,i)=>`<div class="alb"><div class="cv" style="background:linear-gradient(135deg,${G[i][1]},#0a0a0a)"><span style="color:${G[i][0]}">♪</span></div><div class="meta"><b>${n}</b><small>clip_0006${10+i} · ${(Math.random()*9+1).toFixed(1)}K</small></div></div>`).join('');
+document.getElementById('wk1').innerHTML=Array.from({length:12},(_,i)=>`<i class="${i<2?'done':i===2?'live':''}">W${i+1}</i>`).join('');
+</script></body></html>
