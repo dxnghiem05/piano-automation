@@ -3250,51 +3250,697 @@ def tiktok_is_connected_safe() -> bool:
 # ---------------------------------------------------------------------------
 # HOME  (/)
 # ---------------------------------------------------------------------------
+_LANDING_TEMPLATE = r'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PianoClip — Piano, Measured in Data</title>
+<meta name="description" content="PianoClip turns lamp-lit piano performances into a growing audience — a 12-week plan, live analytics, and one-click cross-posting.">
+__FONTHEAD__
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --ink:#05091a;--ink-2:#0a1330;--ink-3:#111e44;
+  --ivory:#eef3ff;--ivory-dim:#9fb0d6;
+  --blue:#4d84ff;--blue-hot:#79a5ff;--cyan:#2fe6d6;--violet:#a273ff;--pink:#ff5c9d;--green:#37e28b;--amber:#ffc24b;
+  --line:rgba(160,185,255,.12);--glass:rgba(110,140,255,.055);
+  --shadow:0 34px 90px -30px rgba(0,0,0,.85);--maxw:1180px;
+  --f-ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","Figtree","Inter",sans-serif;
+  --f-display:"Figtree",-apple-system,BlinkMacSystemFont,"SF Pro Display",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--ink);color:var(--ivory);font-family:var(--f-ui);line-height:1.6;overflow-x:hidden;-webkit-font-smoothing:antialiased;letter-spacing:-.01em}
+body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(60vw 60vw at 82% -12%,rgba(77,132,255,.28),transparent 60%),radial-gradient(52vw 52vw at -8% 28%,rgba(162,115,255,.22),transparent 60%),radial-gradient(46vw 46vw at 95% 108%,rgba(47,230,214,.16),transparent 62%),radial-gradient(40vw 40vw at 25% 92%,rgba(255,92,157,.12),transparent 62%)}
+body::after{content:"";position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.045;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 26px;position:relative;z-index:3}
+#progress{position:fixed;top:0;left:0;height:3px;width:0;z-index:50;background:linear-gradient(90deg,var(--cyan),var(--blue),var(--violet),var(--pink));box-shadow:0 0 20px rgba(77,132,255,.7)}
+nav{position:fixed;top:0;left:0;right:0;z-index:40;display:flex;align-items:center;justify-content:space-between;padding:16px clamp(18px,4vw,44px);transition:background .4s,backdrop-filter .4s,padding .4s}
+nav.solid{background:rgba(5,9,26,.72);backdrop-filter:blur(18px);border-bottom:1px solid var(--line);padding-top:12px;padding-bottom:12px}
+.brand{display:flex;align-items:center;gap:11px;font-family:var(--f-display);font-weight:800;font-size:20px;letter-spacing:-.02em;color:var(--ivory);text-decoration:none}
+.brand .dot{width:12px;height:22px;border-radius:3px;background:linear-gradient(180deg,#fff,#c8d4f5);box-shadow:0 0 22px rgba(77,132,255,.7);position:relative}
+.brand .dot::after{content:"";position:absolute;right:-6px;top:0;width:6px;height:14px;background:linear-gradient(180deg,#16203f,#03060f);border-radius:2px}
+.navlinks{display:flex;gap:4px;background:var(--glass);border:1px solid var(--line);padding:5px;border-radius:100px;backdrop-filter:blur(8px)}
+.navlinks a{color:var(--ivory-dim);text-decoration:none;font-size:14px;padding:8px 15px;border-radius:100px;transition:.25s;white-space:nowrap;font-weight:600}
+.navlinks a:hover{color:var(--ivory)}
+.navlinks a.active{background:linear-gradient(120deg,rgba(77,132,255,.32),rgba(162,115,255,.32));color:#fff;box-shadow:inset 0 0 0 1px rgba(121,165,255,.5)}
+.nav-cta{font-family:var(--f-display);font-size:13.5px;font-weight:700;padding:9px 17px;border-radius:100px;border:1px solid rgba(121,165,255,.5);color:var(--blue-hot);text-decoration:none;transition:.25s;white-space:nowrap}
+.nav-cta:hover{background:rgba(77,132,255,.16);box-shadow:0 0 26px rgba(77,132,255,.4)}
+@media(max-width:980px){.navlinks{display:none}}
+.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;position:relative;padding-top:96px;padding-bottom:40px}
+.eyebrow{display:inline-flex;align-items:center;gap:9px;font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--cyan);margin-bottom:26px;font-family:var(--f-display)}
+.eyebrow .pulse{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(55,226,139,.7);animation:pulse 2.4s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(55,226,139,.6)}70%{box-shadow:0 0 0 12px rgba(55,226,139,0)}100%{box-shadow:0 0 0 0 rgba(55,226,139,0)}}
+h1.hero-title{font-family:var(--f-display);font-weight:800;font-size:clamp(46px,8.8vw,120px);line-height:.95;letter-spacing:-.045em;margin-bottom:32px}
+h1.hero-title em{font-style:normal;background:linear-gradient(115deg,var(--cyan),var(--blue) 45%,var(--violet) 82%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero-title .line{display:block;overflow:hidden}
+.hero-title .line span{display:inline-block;transform:translateY(115%);animation:rise .9s cubic-bezier(.19,1,.22,1) forwards}
+.hero-title .line:nth-child(2) span{animation-delay:.12s}
+@keyframes rise{to{transform:translateY(0)}}
+.hero-sub{max-width:660px;font-size:clamp(16px,2vw,20px);color:var(--ivory-dim);margin-bottom:40px;line-height:1.75;opacity:0;animation:fade 1s ease .5s forwards}
+@keyframes fade{to{opacity:1}}
+.hero-actions{display:flex;gap:14px;flex-wrap:wrap;opacity:0;animation:fade 1s ease .7s forwards}
+.btn{font-family:var(--f-display);font-size:15px;font-weight:700;padding:15px 28px;border-radius:100px;cursor:pointer;text-decoration:none;transition:.3s;border:none;display:inline-flex;align-items:center;gap:9px}
+.btn-primary{background:linear-gradient(120deg,var(--blue),var(--violet));color:#fff;box-shadow:0 14px 44px -12px rgba(77,132,255,.8)}
+.btn-primary:hover{transform:translateY(-3px);box-shadow:0 24px 56px -12px rgba(77,132,255,.95)}
+.btn-ghost{background:transparent;color:var(--ivory);border:1px solid var(--line)}
+.btn-ghost:hover{border-color:rgba(121,165,255,.6);background:rgba(77,132,255,.08)}
+.note{position:absolute;color:rgba(121,165,255,.55);font-size:24px;animation:float 9s ease-in-out infinite;z-index:2;pointer-events:none;user-select:none}
+@keyframes float{0%,100%{transform:translateY(0) rotate(-6deg);opacity:.22}50%{transform:translateY(-38px) rotate(8deg);opacity:.7}}
+.keyboard-shell{margin-top:54px;opacity:0;animation:fade 1.2s ease .9s forwards}
+.keyboard-label{display:flex;justify-content:space-between;align-items:center;color:var(--ivory-dim);font-size:12.5px;font-weight:600;letter-spacing:.02em;margin-bottom:12px}
+.keyboard-label #notename{font-family:var(--f-display);color:var(--cyan);font-weight:700}
+.keyboard{position:relative;height:clamp(120px,17vw,160px);border-radius:0 0 16px 16px;overflow:hidden;box-shadow:var(--shadow),0 0 70px -22px rgba(77,132,255,.6);border:1px solid var(--line);border-top:3px solid rgba(121,165,255,.7);background:#0a1330}
+.wkey{position:absolute;top:0;bottom:0;background:linear-gradient(180deg,#f4f7ff,#d3dbf0);border-right:1px solid #aeb8d6;cursor:pointer;transition:background .08s,box-shadow .08s;z-index:1}
+.wkey:hover,.wkey.on{background:linear-gradient(180deg,#fff,var(--blue-hot));box-shadow:0 0 42px rgba(77,132,255,.7)}
+.bkey{position:absolute;top:0;height:62%;background:linear-gradient(180deg,#16203f,#03060f);z-index:5;border-radius:0 0 6px 6px;cursor:pointer;box-shadow:0 7px 14px rgba(0,0,0,.6);transition:background .08s,box-shadow .08s}
+.bkey:hover,.bkey.on{background:linear-gradient(180deg,#22407e,var(--blue));box-shadow:0 0 34px rgba(77,132,255,.85)}
+section{padding:clamp(96px,15vh,180px) 0;position:relative;z-index:3}
+.sec-tag{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--cyan);margin-bottom:16px;display:flex;align-items:center;gap:10px;font-family:var(--f-display)}
+.sec-tag::before{content:"";width:34px;height:2px;background:var(--cyan);opacity:.7;border-radius:2px}
+h2.sec-title{font-family:var(--f-display);font-weight:800;font-size:clamp(32px,5vw,60px);line-height:1.02;letter-spacing:-.04em;margin-bottom:26px}
+h2.sec-title em{font-style:normal;background:linear-gradient(115deg,var(--cyan),var(--blue) 55%,var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent}
+.lede{max-width:640px;color:var(--ivory-dim);font-size:clamp(15px,1.8vw,18.5px);margin-bottom:8px;line-height:1.7}
+.reveal{opacity:0;transform:translateY(38px);transition:opacity .9s cubic-bezier(.19,1,.22,1),transform .9s cubic-bezier(.19,1,.22,1)}
+.reveal.in{opacity:1;transform:none}
+.reveal.d1{transition-delay:.08s}.reveal.d2{transition-delay:.16s}.reveal.d3{transition-delay:.24s}.reveal.d4{transition-delay:.32s}
+.mission-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:64px}
+@media(max-width:820px){.mission-grid{grid-template-columns:1fr}}
+.mcard{background:var(--glass);border:1px solid var(--line);border-radius:22px;padding:38px 34px;backdrop-filter:blur(10px);position:relative;overflow:hidden;transition:.4s}
+.mcard:hover{transform:translateY(-6px);border-color:rgba(121,165,255,.5);box-shadow:var(--shadow)}
+.mcard .num{font-family:var(--f-display);font-size:13px;font-weight:700;color:var(--cyan);letter-spacing:.08em}
+.mcard h3{font-family:var(--f-display);font-weight:700;font-size:23px;margin:18px 0 14px;letter-spacing:-.02em}
+.mcard p{color:var(--ivory-dim);font-size:15px}
+.mcard .glyph{position:absolute;right:-8px;bottom:-24px;font-size:120px;opacity:.06;font-family:var(--f-display)}
+.statstrip{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:72px}
+@media(max-width:820px){.statstrip{grid-template-columns:repeat(2,1fr)}}
+.stat{padding:26px 22px;border-radius:20px;background:linear-gradient(160deg,rgba(120,150,255,.09),rgba(120,150,255,.015));border:1px solid var(--line)}
+.stat .n{font-family:var(--f-display);font-weight:800;font-size:clamp(30px,4vw,48px);line-height:1;font-variant-numeric:tabular-nums;background:linear-gradient(120deg,#fff,var(--blue-hot));-webkit-background-clip:text;background-clip:text;color:transparent}
+.stat .l{color:var(--ivory-dim);font-size:13px;margin-top:10px;font-weight:600}
+.stat .d{font-size:12.5px;margin-top:6px;font-weight:700}
+.up{color:var(--green)}.down{color:var(--pink)}.neu{color:var(--ivory-dim)}
+.timeline{margin-top:56px;overflow-x:auto;padding-bottom:20px;scrollbar-width:thin}
+.track{display:flex;gap:14px;min-width:1000px;position:relative}
+.track::before{content:"";position:absolute;left:0;right:0;top:26px;height:2px;background:var(--line)}
+.wkcard{flex:1;min-width:140px;position:relative;background:var(--glass);border:1px solid var(--line);border-radius:18px;padding:20px 16px;transition:.35s}
+.wkcard:hover{transform:translateY(-5px);border-color:rgba(121,165,255,.5)}
+.wkcard .bead{width:14px;height:14px;border-radius:50%;background:var(--ink-3);border:2px solid var(--ivory-dim);margin:0 auto 18px;position:relative;z-index:2}
+.wkcard.done .bead{background:var(--green);border-color:var(--green);box-shadow:0 0 16px var(--green)}
+.wkcard.now .bead{background:var(--blue);border-color:var(--blue-hot);box-shadow:0 0 20px var(--blue);animation:pulse 2s infinite}
+.wkcard .wk{font-family:var(--f-display);font-size:12px;font-weight:700;color:var(--cyan);letter-spacing:.05em}
+.wkcard h4{font-size:15px;font-family:var(--f-display);font-weight:700;margin:6px 0 8px;letter-spacing:-.01em}
+.wkcard p{font-size:12.5px;color:var(--ivory-dim);line-height:1.45}
+.wkcard.now{border-color:rgba(121,165,255,.6);box-shadow:0 0 44px -14px rgba(77,132,255,.7)}
+.phase-legend{display:flex;gap:22px;flex-wrap:wrap;margin-top:40px;font-size:13px;color:var(--ivory-dim);font-weight:600}
+.phase-legend span{display:flex;align-items:center;gap:8px}
+.dotc{width:11px;height:11px;border-radius:50%}
+.chart-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:22px;margin-top:56px}
+@media(max-width:900px){.chart-grid{grid-template-columns:1fr!important}}
+.panel{background:var(--glass);border:1px solid var(--line);border-radius:22px;padding:28px;backdrop-filter:blur(10px)}
+.panel h3{font-family:var(--f-display);font-weight:700;font-size:20px;margin-bottom:4px;letter-spacing:-.02em}
+.panel .sub{color:var(--ivory-dim);font-size:13px;margin-bottom:20px}
+.chart-box{position:relative;height:300px}
+.chart-box.sm{height:236px}
+.datanote{margin-top:20px;font-size:12.5px;color:var(--ivory-dim);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.datanote .live{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);animation:pulse 2.4s infinite}
+.taplink{color:var(--blue-hot);text-decoration:none;font-weight:700;font-family:var(--f-display);white-space:nowrap}
+.taplink:hover{text-decoration:underline}
+.queue-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:52px}
+@media(max-width:900px){.queue-grid{grid-template-columns:1fr}}
+.clip{background:linear-gradient(165deg,rgba(120,150,255,.09),rgba(120,150,255,.02));border:1px solid var(--line);border-radius:22px;overflow:hidden;transition:.4s}
+.clip:hover{transform:translateY(-6px);border-color:rgba(162,115,255,.55);box-shadow:var(--shadow)}
+.clip .thumb{height:168px;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(120% 120% at 50% 18%,rgba(77,132,255,.2),transparent 62%)}
+.clip .thumb .keys{position:absolute;left:0;right:0;bottom:0;display:flex;gap:4px;align-items:flex-end;height:42px;padding:0 18px;opacity:.38}
+.clip .thumb .keys i{flex:1;background:linear-gradient(180deg,var(--cyan),var(--violet));border-radius:2px 2px 0 0;animation:eq 1.4s ease-in-out infinite}
+@keyframes eq{0%,100%{height:22%}50%{height:100%}}
+.clip .mood{position:relative;z-index:2;font-family:var(--f-display);font-weight:800;font-size:40px;letter-spacing:-.03em;color:rgba(238,243,255,.96);text-shadow:0 4px 40px rgba(5,9,26,.9),0 2px 30px rgba(77,132,255,.5);margin-bottom:8px}
+.clip .badge{position:absolute;top:12px;left:12px;font-family:var(--f-display);font-weight:600;font-size:11px;background:rgba(5,9,26,.72);padding:5px 10px;border-radius:100px;border:1px solid var(--line);backdrop-filter:blur(6px)}
+.clip .rank{position:absolute;top:12px;right:12px;font-family:var(--f-display);font-weight:700;font-size:11px;color:var(--green)}
+.clip .body{padding:20px}
+.clip .title{font-family:var(--f-display);font-size:18px;font-weight:700;line-height:1.25;margin-bottom:10px;letter-spacing:-.01em}
+.clip .cap{font-size:12.5px;color:var(--ivory-dim);background:rgba(0,0,0,.28);border:1px solid var(--line);border-radius:12px;padding:12px;line-height:1.5;margin-bottom:14px;word-break:break-word}
+.clip .metrics{display:flex;gap:16px;font-size:12.5px;color:var(--ivory-dim);margin-bottom:16px}
+.clip .metrics b{color:var(--ivory);font-family:var(--f-display);font-weight:700;font-variant-numeric:tabular-nums}
+.clip-actions{display:flex;gap:10px;align-items:stretch}
+.clip-actions form{flex:1;margin:0;display:flex}
+.pill{flex:1;width:100%;text-align:center;font-family:var(--f-display);font-size:12.5px;font-weight:700;padding:11px;border-radius:100px;cursor:pointer;transition:.25s;border:1px solid var(--line);background:transparent;color:var(--ivory)}
+.pill:hover{border-color:rgba(121,165,255,.6);background:rgba(77,132,255,.1)}
+.pill.tt{background:linear-gradient(120deg,var(--pink),var(--violet));color:#fff;border:none}
+.pill.tt:hover{box-shadow:0 10px 26px -8px rgba(255,92,157,.6);transform:translateY(-1px)}
+.pill.copied{background:var(--green);color:#032a1a;border:none}
+.tt-grid{display:grid;grid-template-columns:1fr 1.3fr;gap:22px;margin-top:56px;align-items:start}
+@media(max-width:900px){.tt-grid{grid-template-columns:1fr}}
+.tt-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.tt-stat{background:var(--glass);border:1px solid var(--line);border-radius:18px;padding:22px}
+.tt-stat .n{font-family:var(--f-display);font-weight:800;font-size:30px;font-variant-numeric:tabular-nums;background:linear-gradient(120deg,var(--pink),var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent}
+.tt-stat .l{color:var(--ivory-dim);font-size:12.5px;margin-top:6px;font-weight:600}
+.tt-badge{grid-column:1/-1;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--amber);background:rgba(255,194,75,.08);border:1px solid rgba(255,194,75,.3);border-radius:14px;padding:14px 16px;font-weight:600}
+.tt-badge.ok{color:var(--green);background:rgba(55,226,139,.08);border-color:rgba(55,226,139,.3)}
+.flow{list-style:none}
+.flow li{display:flex;gap:16px;padding:16px 0;border-bottom:1px solid var(--line)}
+.flow li:last-child{border-bottom:none}
+.flow .step{width:34px;height:34px;flex-shrink:0;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--f-display);font-weight:800;font-size:14px;background:linear-gradient(120deg,var(--pink),var(--violet));color:#fff}
+.flow h4{font-family:var(--f-display);font-size:15.5px;margin-bottom:3px;font-weight:700;letter-spacing:-.01em}
+.flow p{font-size:13.5px;color:var(--ivory-dim)}
+.cta{text-align:center;padding:clamp(90px,14vh,160px) 0}
+.cta h2{font-family:var(--f-display);font-weight:800;font-size:clamp(34px,6vw,74px);line-height:1.0;margin-bottom:24px;letter-spacing:-.045em}
+.cta h2 em{font-style:normal;background:linear-gradient(115deg,var(--cyan),var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent}
+footer{border-top:1px solid var(--line);padding:56px 0 64px;position:relative;z-index:3}
+.foot-top{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:34px;margin-bottom:40px}
+.foot-blurb{max-width:340px;color:var(--ivory-dim);font-size:14px;margin-top:14px}
+.foot-tabs{display:flex;flex-wrap:wrap;gap:10px 18px;margin-top:18px}
+.foot-tabs a{color:var(--ivory-dim);text-decoration:none;font-size:13.5px;font-weight:600;transition:.2s}
+.foot-tabs a:hover{color:var(--cyan)}
+.socials{display:flex;gap:14px}
+.socials a{width:52px;height:52px;border-radius:16px;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);background:var(--glass);color:var(--ivory);transition:.3s;text-decoration:none}
+.socials a:hover{transform:translateY(-4px)}
+.socials a.yt:hover{border-color:#ff4d4d;background:rgba(255,77,77,.14);box-shadow:0 12px 30px -10px rgba(255,77,77,.6)}
+.socials a.tt:hover{border-color:var(--cyan);background:rgba(47,230,214,.14);box-shadow:0 12px 30px -10px rgba(47,230,214,.6)}
+.socials a.ig:hover{border-color:var(--pink);background:rgba(255,92,157,.14);box-shadow:0 12px 30px -10px rgba(255,92,157,.6)}
+.socials a svg{width:24px;height:24px;fill:currentColor}
+.social-label{text-align:right}
+.social-label .h{font-family:var(--f-display);font-weight:700;font-size:15px}
+.social-label .s{font-size:13px;color:var(--ivory-dim);margin-top:2px}
+.foot-bottom{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;padding-top:26px;border-top:1px solid var(--line);color:var(--ivory-dim);font-size:13px}
+.foot-bottom a{color:var(--ivory-dim);text-decoration:none;margin-left:20px;transition:.2s;font-weight:600}
+.foot-bottom a:hover{color:var(--cyan)}
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(140%);z-index:60;background:var(--ink-3);border:1px solid rgba(55,226,139,.5);color:var(--ivory);padding:14px 22px;border-radius:100px;font-size:14px;font-weight:600;box-shadow:var(--shadow);transition:transform .4s cubic-bezier(.19,1,.22,1)}
+.toast.show{transform:translateX(-50%) translateY(0)}
+::selection{background:rgba(77,132,255,.4);color:#fff}
+.statement{padding:clamp(120px,22vh,240px) 0;text-align:center}
+.statement p{font-family:var(--f-display);font-weight:800;font-size:clamp(30px,6vw,76px);line-height:1.05;letter-spacing:-.04em;max-width:16ch;margin:0 auto}
+.statement .w{display:inline-block;opacity:.14;transition:opacity .1s linear}
+.statement em{font-style:normal;background:linear-gradient(115deg,var(--cyan),var(--blue) 50%,var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent}
+/* preloader */
+#preload{position:fixed;inset:0;z-index:200;background:radial-gradient(120% 90% at 50% 20%,#0c1738,#05091a 70%);display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .9s ease,visibility .9s}
+#preload.done{opacity:0;visibility:hidden}
+.pl-brand{font-family:var(--f-display);font-weight:800;font-size:clamp(30px,5vw,52px);letter-spacing:-.04em;margin-bottom:6px;background:linear-gradient(115deg,#fff,var(--cyan) 45%,var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent}
+.pl-tag{color:var(--ivory-dim);font-size:13.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;margin-bottom:40px}
+.pl-keys{display:flex;gap:5px;height:120px;align-items:flex-end}
+.pl-keys .pk{position:relative;width:clamp(20px,4vw,34px);height:100%;background:linear-gradient(180deg,#1a2547,#0c1430);border:1px solid rgba(160,185,255,.15);border-radius:0 0 7px 7px;transition:transform .12s,background .12s,box-shadow .12s;transform-origin:top}
+.pl-keys .pk.lit{background:linear-gradient(180deg,#fff,var(--blue-hot));box-shadow:0 0 34px rgba(77,132,255,.8);transform:scaleY(.94)}
+.pl-keys .pk.blk{width:clamp(12px,2.4vw,20px);height:62%;background:linear-gradient(180deg,#0a1024,#02040c);z-index:2;margin:0 -12px 0 -12px;align-self:flex-start}
+.pl-keys .pk.blk.lit{background:linear-gradient(180deg,#2a4a8f,var(--blue));box-shadow:0 0 26px rgba(77,132,255,.9)}
+.pl-meta{margin-top:36px;display:flex;flex-direction:column;align-items:center;gap:10px}
+.pl-bar{width:min(320px,60vw);height:3px;background:rgba(160,185,255,.14);border-radius:100px;overflow:hidden}
+.pl-fill{height:100%;width:0;background:linear-gradient(90deg,var(--cyan),var(--blue),var(--violet));box-shadow:0 0 14px rgba(77,132,255,.7)}
+.pl-pct{font-family:var(--f-display);font-weight:700;font-size:13px;color:var(--ivory-dim);letter-spacing:.1em}
+body.loading{overflow:hidden;height:100vh}
+/* ===== FIX (b): moods = self-contained horizontal slider, NOT scroll-pinned ===== */
+#moods .moods-wrap{margin-top:48px;position:relative}
+.mood-slider{display:flex;gap:22px;overflow-x:auto;scroll-snap-type:x proximity;padding:6px 2px 24px;scrollbar-width:none;cursor:grab;-webkit-overflow-scrolling:touch}
+.mood-slider::-webkit-scrollbar{display:none}
+.mood-slider.dragging{cursor:grabbing;scroll-snap-type:none;scroll-behavior:auto}
+.mood-card{flex:0 0 clamp(230px,26vw,300px);scroll-snap-align:start;border-radius:24px;padding:30px 28px;background:linear-gradient(165deg,rgba(120,150,255,.1),rgba(120,150,255,.02));border:1px solid var(--line);position:relative;overflow:hidden;min-height:340px;display:flex;flex-direction:column;justify-content:space-between;user-select:none}
+.mood-card .rank{font-family:var(--f-display);font-weight:700;font-size:12.5px;color:var(--ivory-dim);letter-spacing:.06em}
+.mood-card .word{font-family:var(--f-display);font-weight:800;font-size:clamp(34px,4vw,52px);letter-spacing:-.04em;line-height:1;margin:10px 0 4px}
+.mood-card .bignum{font-family:var(--f-display);font-weight:800;font-size:44px;font-variant-numeric:tabular-nums;line-height:1}
+.mood-card .lbl{font-size:12.5px;color:var(--ivory-dim);font-weight:600}
+.mood-card .spark{display:flex;gap:3px;align-items:flex-end;height:44px;margin-top:16px}
+.mood-card .spark i{flex:1;border-radius:2px;background:linear-gradient(180deg,var(--cyan),var(--violet));opacity:.85}
+.mood-card.lead{border-color:rgba(121,165,255,.55);box-shadow:0 0 50px -18px rgba(77,132,255,.7)}
+.mood-nav{display:flex;gap:10px;margin-top:6px}
+.mood-nav button{width:46px;height:46px;border-radius:50%;border:1px solid var(--line);background:var(--glass);color:var(--ivory);font-size:18px;cursor:pointer;transition:.25s;display:flex;align-items:center;justify-content:center}
+.mood-nav button:hover{border-color:rgba(121,165,255,.6);background:rgba(77,132,255,.12)}
+.mood-nav button:disabled{opacity:.3;cursor:default}
+.mood-hint{color:var(--ivory-dim);font-size:12px;font-weight:600;letter-spacing:.02em;margin-top:14px}
+/* ===== FIX (a): flowing waveform — slow, calm, fades behind content ===== */
+#wave{position:fixed;inset:0;width:100vw;height:100vh;z-index:1;pointer-events:none;transition:opacity .4s ease}
+#waveGlow{position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(34vw 74vh at 50% 46%,rgba(77,132,255,.12),transparent 70%)}
+/* reduced motion: strip the showpiece motion, keep it readable & instant */
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+  .reveal{opacity:1!important;transform:none!important}
+  .hero-title .line span,.hero-sub,.hero-actions,.keyboard-shell{opacity:1!important;transform:none!important;animation:none!important}
+  .note{display:none!important}
+  #preload{display:none!important}
+  body.loading{overflow:auto!important;height:auto!important}
+  #wave{display:none!important}
+}
+</style>
+</head>
+<body class="loading">
+<div id="preload">
+  <div class="pl-brand">PianoClip</div>
+  <div class="pl-tag">Warming up the keys</div>
+  <div class="pl-keys" id="plKeys"></div>
+  <div class="pl-meta"><div class="pl-bar"><div class="pl-fill" id="plFill"></div></div><div class="pl-pct" id="plPct">0%</div></div>
+</div>
+<div id="progress"></div>
+<canvas id="wave"></canvas>
+<div id="waveGlow"></div>
+
+<nav id="nav">
+  <a href="#home" class="brand"><span class="dot"></span>PianoClip</a>
+  <div class="navlinks" id="navlinks">
+    <a href="#mission">Mission</a>
+    <a href="#plan">12-Week Plan</a>
+    <a href="#moods">Moods</a>
+    <a href="#stats">Stats</a>
+    <a href="#queue">Queue</a>
+    <a href="#tiktok">TikTok</a>
+  </div>
+  <a href="/overview" class="nav-cta">◆ Open Dashboard →</a>
+</nav>
+
+<header class="hero wrap" id="home">
+  <span class="note" style="left:12%;top:22%">♪</span>
+  <span class="note" style="left:78%;top:18%;animation-delay:1.4s">♫</span>
+  <span class="note" style="left:64%;top:40%;animation-delay:2.6s">♩</span>
+  <span class="note" style="left:30%;top:52%;animation-delay:.8s">♬</span>
+  <span class="note" style="left:88%;top:56%;animation-delay:3.4s">♪</span>
+  <div class="eyebrow"><span class="pulse"></span><span id="heroEyebrow">Loading…</span></div>
+  <h1 class="hero-title">
+    <span class="line"><span>Quiet piano.</span></span>
+    <span class="line"><span><em>Loud growth.</em></span></span>
+  </h1>
+  <p class="hero-sub">PianoClip is a solo creator studio that turns lamp-lit piano performances into a growing audience — a disciplined 12-week plan, live analytics on every clip, and one reviewed click from render to social.</p>
+  <div class="hero-actions">
+    <a href="#mission" class="btn btn-primary">See how it works ↓</a>
+    <a href="/overview" class="btn btn-ghost">Open the dashboard →</a>
+  </div>
+  <div class="keyboard-shell">
+    <div class="keyboard-label"><span>◂ Play me — hover or click the keys</span><span id="notename">— · —</span></div>
+    <div class="keyboard" id="keyboard"></div>
+  </div>
+</header>
+
+<section class="wrap" id="mission">
+  <div class="sec-tag reveal">What we do</div>
+  <h2 class="sec-title reveal d1">A studio that treats every clip like <em>an experiment.</em></h2>
+  <p class="lede reveal d2">Most creators post and hope. PianoClip runs a loop: record, publish, measure what actually moves views, then let the data pick the next mood-word title, the next post time, the next clip to amplify. The music stays human — the growth gets engineered.</p>
+  <div class="mission-grid">
+    <div class="mcard reveal d1"><div class="num">01 / CAPTURE</div><h3>Every performance, catalogued</h3><p id="mCapture">Each piano clip is rendered, given a single mood-word title, and scored the moment it goes live.</p><div class="glyph">♪</div></div>
+    <div class="mcard reveal d2"><div class="num">02 / LEARN</div><h3>The data picks the winners</h3><p id="mLearn">Which mood word lands? Which post hour travels? The dashboard surfaces top clips and best times.</p><div class="glyph">↗</div></div>
+    <div class="mcard reveal d3"><div class="num">03 / AMPLIFY</div><h3>One clip, every platform</h3><p>Top clips flow into a cross-post queue with captions and hashtags pre-written — reviewed, then pushed to TikTok in a single click the moment the audit clears.</p><div class="glyph">▶</div></div>
+  </div>
+  <div class="statstrip">
+    <div class="stat reveal d1"><div class="n" id="statViews" data-count="0">0</div><div class="l">Total YouTube views</div><div class="d up" id="statViewsD">▲ across public clips</div></div>
+    <div class="stat reveal d2"><div class="n" id="statClips" data-count="0">0</div><div class="l">Clips published</div><div class="d up">▲ ~90 / week</div></div>
+    <div class="stat reveal d3"><div class="n" id="statLikes" data-count="0">0</div><div class="l">Total likes</div><div class="d up" id="statLikesD">▲ comments too</div></div>
+    <div class="stat reveal d4"><div class="n" id="statAvg" data-count="0">0</div><div class="l">Avg. views / clip</div><div class="d neu" id="statAvgD">median —</div></div>
+  </div>
+</section>
+
+<section class="statement wrap"><p id="stmt" data-text="Every clip is a small experiment in what makes people |stay|."></p></section>
+
+<section class="wrap" id="plan">
+  <div class="sec-tag reveal">The commitment</div>
+  <h2 class="sec-title reveal d1">The <em>12-week plan.</em></h2>
+  <p class="lede reveal d2" id="planLede">Twelve weeks of deliberate posting — building the habit, learning the algorithm, and gathering the data that shapes everything after. Here's the whole arc, out in the open.</p>
+  <div class="timeline reveal d2" id="timeline"><div class="track" id="track"></div></div>
+  <div class="phase-legend reveal d3">
+    <span><i class="dotc" style="background:var(--green)"></i>Completed</span>
+    <span><i class="dotc" style="background:var(--blue)"></i>Current week</span>
+    <span><i class="dotc" style="background:var(--ink-3);border:2px solid var(--ivory-dim)"></i>Upcoming</span>
+  </div>
+</section>
+
+<section class="wrap" id="moods">
+  <div class="sec-tag reveal">The vocabulary</div>
+  <h2 class="sec-title reveal d1">Fifteen <em>moods.</em> One keyboard.</h2>
+  <p class="lede reveal d2">Every title is a single mood word — and the data says which ones travel. Slide through them, ranked by average views per clip.</p>
+  <div class="moods-wrap reveal d2">
+    <div class="mood-slider" id="moodTrack"></div>
+    <div class="mood-nav"><button id="moodPrev" aria-label="Previous moods">←</button><button id="moodNext" aria-label="Next moods">→</button></div>
+    <div class="mood-hint">Drag, swipe, or use the arrows — the page keeps scrolling normally.</div>
+  </div>
+</section>
+
+<section class="wrap" id="stats">
+  <div class="sec-tag reveal">Statistics</div>
+  <h2 class="sec-title reveal d1">Live <em>performance</em> across the channel.</h2>
+  <p class="lede reveal d2">The same numbers that drive our decisions — nothing hidden. Pulled straight from the dashboard.</p>
+  <div class="chart-grid">
+    <div class="panel reveal d1">
+      <h3>Views by week</h3><div class="sub">Real weekly YouTube views by project week, then a gentle projection</div>
+      <div class="chart-box"><canvas id="viewsChart"></canvas></div>
+      <div class="datanote"><span class="live"></span><span id="dataStamp">Live · pulled from PianoDashboard</span> · <a class="taplink" href="/stats">Open full stats →</a></div>
+    </div>
+    <div class="panel reveal d2">
+      <h3>Best mood words</h3><div class="sub">Avg. views per clip, by title word</div>
+      <div class="chart-box sm"><canvas id="moodChart"></canvas></div>
+    </div>
+  </div>
+  <div class="chart-grid" style="grid-template-columns:1fr 1.4fr;margin-top:22px">
+    <div class="panel reveal d1">
+      <h3>Best time to post</h3><div class="sub">Avg. views by scheduled hour</div>
+      <div class="chart-box sm"><canvas id="hourChart"></canvas></div>
+      <div class="datanote"><a class="taplink" href="/data-science">Explore the data-science tab →</a></div>
+    </div>
+    <div class="panel reveal d2">
+      <h3>Top clips of the 12 weeks</h3><div class="sub">Ranked by views · mood-word titles</div>
+      <div class="chart-box"><canvas id="topClipsChart"></canvas></div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap" id="queue">
+  <div class="sec-tag reveal">The queue</div>
+  <h2 class="sec-title reveal d1">Next up, ready to <em>fly.</em></h2>
+  <p class="lede reveal d2">The real top-performing clips, staged with a caption and hashtags already written. Copy a caption, or send it to the TikTok drafts inbox.</p>
+  <div class="queue-grid" id="queueGrid"></div>
+  <div class="reveal d3" style="margin-top:34px">
+    <a href="/tiktok-candidates" class="btn btn-primary">◆ Open the Daily Top 3 →</a>
+    <p class="lede" style="margin-top:14px;font-size:15px">The dashboard's daily podium: the top clips from every day — ready to send to TikTok.</p>
+  </div>
+</section>
+
+<section class="wrap" id="tiktok">
+  <div class="sec-tag reveal">Cross-platform</div>
+  <h2 class="sec-title reveal d1">From render to <em>TikTok</em>, in one review.</h2>
+  <p class="lede reveal d2">A dedicated TikTok surface — separate from the YouTube data — tracking every post and the exact loop that gets a clip live.</p>
+  <div class="tt-grid">
+    <div class="tt-stats reveal d1">
+      <div class="tt-stat"><div class="n" id="ttPosts" data-count="0">0</div><div class="l">Posts published</div></div>
+      <div class="tt-stat"><div class="n" id="ttViews" data-count="0">0</div><div class="l">Total views</div></div>
+      <div class="tt-stat"><div class="n" id="ttLikes" data-count="0">0</div><div class="l">Likes</div></div>
+      <div class="tt-stat"><div class="n" id="ttShares" data-count="0">0</div><div class="l">Shares</div></div>
+      <div class="tt-badge" id="ttBadge">⏳ Connect TikTok and refresh on the TikTok Stats tab — captions auto-fill and stats populate here.</div>
+    </div>
+    <div class="panel reveal d2">
+      <h3>The posting loop</h3><div class="sub">Reviewed by a human, every time</div>
+      <ul class="flow">
+        <li><span class="step">1</span><div><h4>Surface the top clip</h4><p>The dashboard ranks clips by views and stages the strongest one.</p></div></li>
+        <li><span class="step">2</span><div><h4>Auto-write the caption</h4><p>Mood-word title + the channel hashtag set — editable in one line.</p></div></li>
+        <li><span class="step">3</span><div><h4>Send to drafts</h4><p>One click drops the clip into the TikTok inbox as a draft to review.</p></div></li>
+        <li><span class="step">4</span><div><h4>Post &amp; track</h4><p>Publish, then the Stats tab pulls live views, likes, comments &amp; shares.</p></div></li>
+      </ul>
+      <div class="datanote" style="margin-top:18px"><a class="taplink" href="/tiktok-stats">Open TikTok Stats →</a> · <a class="taplink" href="/tiktok-candidates">TikTok Candidates →</a></div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap cta">
+  <div class="reveal">
+    <h2 id="ctaWeek">The <em>song</em> keeps building.</h2>
+    <p class="lede" style="margin:0 auto 34px">Follow along as the plan plays out — every clip, every number, out in the open.</p>
+    <div class="hero-actions" style="justify-content:center;animation:none;opacity:1">
+      <a href="https://www.youtube.com/@dustin.nghiem" target="_blank" rel="noopener" class="btn btn-primary">Watch on YouTube</a>
+      <a href="#home" class="btn btn-ghost">Back to top ↑</a>
+    </div>
+  </div>
+</section>
+
+<footer class="wrap">
+  <div class="foot-top">
+    <div>
+      <a href="#home" class="brand" style="font-size:22px"><span class="dot"></span>PianoClip</a>
+      <p class="foot-blurb">A solo piano studio by Dustin Nghiem — lamp-lit performances, measured in data, published daily across YouTube and TikTok.</p>
+      <div class="foot-tabs">
+        <a href="/overview">Overview</a><a href="/stats">Stats</a><a href="/tracker">Tracker</a>
+        <a href="/tiktok-candidates">TikTok Candidates</a><a href="/tiktok-stats">TikTok Stats</a>
+        <a href="/experiment">Experiment</a><a href="/data-science">Data Science</a>
+      </div>
+    </div>
+    <div>
+      <div class="social-label" style="margin-bottom:14px"><div class="h">Follow the journey</div><div class="s" id="footWeek">New clips daily</div></div>
+      <div class="socials">
+        <a class="yt" href="https://www.youtube.com/@dustin.nghiem" target="_blank" rel="noopener" aria-label="YouTube"><svg viewBox="0 0 24 24"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8zM9.5 15.5v-7l6.3 3.5-6.3 3.5z"/></svg></a>
+        <a class="tt" href="https://www.tiktok.com/@dustinspiano" target="_blank" rel="noopener" aria-label="TikTok"><svg viewBox="0 0 24 24"><path d="M16.6 5.8a5 5 0 0 1-3-2.8h-3v11.9a2.9 2.9 0 1 1-2.9-2.9c.3 0 .6 0 .9.1V6.9a6 6 0 1 0 5 5.9V9a8 8 0 0 0 4.7 1.5V7.4a5 5 0 0 1-1.7-1.6z"/></svg></a>
+        <a class="ig" href="https://www.instagram.com/dustinspiano" target="_blank" rel="noopener" aria-label="Instagram"><svg viewBox="0 0 24 24"><path d="M12 2.2c3.2 0 3.6 0 4.9.1 1.2.1 1.8.3 2.2.4.6.2 1 .5 1.4.9.4.4.7.8.9 1.4.1.4.3 1 .4 2.2.1 1.3.1 1.7.1 4.9s0 3.6-.1 4.9c-.1 1.2-.3 1.8-.4 2.2-.2.6-.5 1-.9 1.4-.4.4-.8.7-1.4.9-.4.1-1 .3-2.2.4-1.3.1-1.7.1-4.9.1s-3.6 0-4.9-.1c-1.2-.1-1.8-.3-2.2-.4-.6-.2-1-.5-1.4-.9-.4-.4-.7-.8-.9-1.4-.1-.4-.3-1-.4-2.2C2.2 15.6 2.2 15.2 2.2 12s0-3.6.1-4.9c.1-1.2.3-1.8.4-2.2.2-.6.5-1 .9-1.4.4-.4.8-.7 1.4-.9.4-.1 1-.3 2.2-.4C8.4 2.2 8.8 2.2 12 2.2zm0 1.9c-3.1 0-3.5 0-4.7.1-1.1.1-1.7.2-2.1.4-.5.2-.9.4-1.3.8-.4.4-.6.8-.8 1.3-.2.4-.3 1-.4 2.1-.1 1.2-.1 1.6-.1 4.7s0 3.5.1 4.7c.1 1.1.2 1.7.4 2.1.2.5.4.9.8 1.3.4.4.8.6 1.3.8.4.2 1 .3 2.1.4 1.2.1 1.6.1 4.7.1s3.5 0 4.7-.1c1.1-.1 1.7-.2 2.1-.4.5-.2.9-.4 1.3-.8.4-.4.6-.8.8-1.3.2-.4.3-1 .4-2.1.1-1.2.1-1.6.1-4.7s0-3.5-.1-4.7c-.1-1.1-.2-1.7-.4-2.1-.2-.5-.4-.9-.8-1.3-.4-.4-.8-.6-1.3-.8-.4-.2-1-.3-2.1-.4-1.2-.1-1.6-.1-4.7-.1zm0 3.2a4.7 4.7 0 1 1 0 9.4 4.7 4.7 0 0 1 0-9.4zm0 7.7a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm6-7.9a1.1 1.1 0 1 1-2.2 0 1.1 1.1 0 0 1 2.2 0z"/></svg></a>
+      </div>
+    </div>
+  </div>
+  <div class="foot-bottom">
+    <div>© 2026 PianoClip · Dustin Nghiem</div>
+    <div>YouTube @dustin.nghiem · TikTok @dustinspiano · Instagram @dustinspiano</div>
+  </div>
+</footer>
+
+<div class="toast" id="toast">Caption copied ✓</div>
+
+<script>
+const D = /*__DATA__*/{};
+const RM = (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) || false;
+function fmt(n){return (n||0).toLocaleString();}
+function fmtK(n){n=n||0;return n>=1000?(Math.round(n/100)/10)+'K':(''+n);}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+/* progress + nav solidify */
+const prog=document.getElementById('progress'),nav=document.getElementById('nav');
+addEventListener('scroll',()=>{const h=document.documentElement,sc=h.scrollTop/(h.scrollHeight-h.clientHeight||1);prog.style.width=(sc*100)+'%';nav.classList.toggle('solid',h.scrollTop>60);},{passive:true});
+
+/* active nav */
+const navA=[...document.querySelectorAll('#navlinks a')];
+const secObs=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){navA.forEach(a=>a.classList.toggle('active',a.getAttribute('href')==='#'+e.target.id));}});},{rootMargin:'-45% 0px -50% 0px'});
+['mission','plan','moods','stats','queue','tiktok'].forEach(id=>{const el=document.getElementById(id);if(el)secObs.observe(el)});
+
+/* reveal */
+const rObs=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');rObs.unobserve(e.target)}})},{threshold:.15});
+document.querySelectorAll('.reveal').forEach(el=>rObs.observe(el));
+
+/* parallax notes */
+if(!RM)addEventListener('scroll',()=>{const y=scrollY;document.querySelectorAll('.note').forEach((n,i)=>{n.style.transform=`translateY(${y*(.06+i*.02)}px)`;});},{passive:true});
+
+/* counters */
+function animateCount(el){const target=+el.dataset.count;if(RM){el.textContent=target.toLocaleString();return;}let t0=performance.now();const dur=1500;
+  function tick(t){const p=Math.min((t-t0)/dur,1),e=1-Math.pow(1-p,3);el.textContent=Math.round(target*e).toLocaleString();if(p<1)requestAnimationFrame(tick);else el.textContent=target.toLocaleString();}
+  requestAnimationFrame(tick);}
+const cObs=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){animateCount(e.target);cObs.unobserve(e.target)}})},{threshold:.6});
+function wireCounters(){document.querySelectorAll('[data-count]').forEach(el=>cObs.observe(el));}
+
+/* ---------- inject live data ---------- */
+(function(){
+  document.getElementById('heroEyebrow').textContent='Week '+D.week+' of '+D.total_weeks+' · '+fmt(D.clip_count)+' clips live · '+fmtK(D.total_views)+' views';
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.dataset.count=v;};
+  set('statViews',D.total_views);set('statClips',D.clip_count);set('statLikes',D.total_likes);set('statAvg',D.avg_views);
+  document.getElementById('statViewsD').textContent='▲ across '+fmt(D.clip_count)+' public clips';
+  document.getElementById('statLikesD').textContent='▲ '+fmt(D.total_comments)+' comments';
+  document.getElementById('statAvgD').textContent='median '+fmt(D.median_views);
+  set('ttPosts',D.tiktok.posts);set('ttViews',D.tiktok.views);set('ttLikes',D.tiktok.likes);set('ttShares',D.tiktok.shares);
+  const topMoods=D.moods.slice(0,3).map(m=>m.mood);
+  const bestHour=(D.best_hours.slice().sort((a,b)=>b.avg-a.avg)[0]||{}).label||'—';
+  document.getElementById('mLearn').textContent='Which mood word lands? Which post hour travels? The dashboard surfaces top clips and best times — right now '+topMoods.join(', ')+' lead, and '+bestHour+' outperforms.';
+  const ord=['zero','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve'];
+  const w=D.week;
+  document.getElementById('planLede').textContent="Twelve weeks of deliberate posting — building the habit, learning the algorithm, and gathering the data that shapes everything after. We're in Week "+w+" of "+D.total_weeks+", and the timeline below tracks it live.";
+  document.getElementById('ctaWeek').innerHTML=(ord[w]||w)+' week'+(w===1?'':'s')+' in.<br>The <em>song</em> keeps building.';
+  document.getElementById('footWeek').textContent='New clips daily · Week '+w+' of '+D.total_weeks;
+  if(D.tiktok.posts>0){const b=document.getElementById('ttBadge');b.className='tt-badge ok';b.textContent='✓ '+fmt(D.tiktok.posts)+' posts tracked · '+fmt(D.tiktok.views)+' views · '+fmt(D.tiktok.likes)+' likes.';}
+  const stamp=document.getElementById('dataStamp');if(stamp)stamp.textContent='Live · pulled from PianoDashboard, week '+w;
+})();
+
+/* ---------- 12 week plan timeline ---------- */
+(function(){
+  const CURRENT=D.week,phaseColor={'Foundation':'var(--violet)','Rhythm':'var(--blue)','Scale':'var(--cyan)','Harvest':'var(--green)'};
+  const track=document.getElementById('track');
+  D.weeks.forEach((wk,i)=>{const n=i+1,c=document.createElement('div');
+    c.className='wkcard'+(n<CURRENT?' done':'')+(n===CURRENT?' now':'');
+    c.innerHTML='<div class="bead"></div><div class="wk">WEEK '+String(n).padStart(2,'0')+'</div><h4 style="color:'+phaseColor[wk[0]]+'">'+wk[0]+'</h4><p>'+wk[1]+'</p>';
+    track.appendChild(c);});
+  requestAnimationFrame(()=>{const tl=document.getElementById('timeline'),now=track.querySelector('.now');if(now)tl.scrollLeft=now.offsetLeft-tl.clientWidth/2+now.clientWidth/2;});
+})();
+
+/* ---------- queue (real top clips, real TikTok post form) ---------- */
+(function(){
+  const HASH=D.hashtags.join(' ');
+  const qg=document.getElementById('queueGrid');
+  D.top_clips.slice(0,3).forEach((c,i)=>{
+    const cap=c.mood+' 🍃 '+HASH, capEsc=esc(cap), file=c.id+'.mp4';
+    const bars=Array.from({length:9},()=>'<i style="animation-delay:'+(Math.random()*1.4).toFixed(2)+'s"></i>').join('');
+    const el=document.createElement('div');el.className='clip reveal d'+(i+1);
+    el.innerHTML='<div class="thumb"><div class="keys">'+bars+'</div><span class="mood">'+esc(c.mood)+'</span><span class="badge">'+esc(c.id)+'.mp4</span><span class="rank">'+esc(c.rank)+'</span></div>'
+      +'<div class="body"><div class="title">'+esc(c.mood)+' 🍃</div>'
+      +'<div class="cap">'+capEsc+'</div>'
+      +'<div class="metrics"><span>Views <b>'+fmt(c.views)+'</b></span><span>Likes <b>'+fmt(c.likes)+'</b></span></div>'
+      +'<div class="clip-actions">'
+      +'<button class="pill copy" data-cap="'+capEsc+'">Copy caption</button>'
+      +'<form method="post" action="/tiktok/post" data-owner-only>'
+      +'<input type="hidden" name="clip_filename" value="'+esc(file)+'">'
+      +'<input type="hidden" name="caption" value="'+capEsc+'">'
+      +'<button type="submit" class="pill tt">Send to TikTok ▶</button>'
+      +'</form></div></div>';
+    qg.appendChild(el);rObs.observe(el);});
+  const toast=document.getElementById('toast');
+  function showToast(m){toast.textContent=m;toast.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>toast.classList.remove('show'),2200);}
+  qg.addEventListener('click',e=>{const cp=e.target.closest('.copy');
+    if(cp){const t=cp.dataset.cap;if(navigator.clipboard)navigator.clipboard.writeText(t);cp.textContent='Copied ✓';cp.classList.add('copied');showToast('Caption copied ✓');setTimeout(()=>{cp.textContent='Copy caption';cp.classList.remove('copied')},1800);}});
+})();
+
+/* ---------- charts ---------- */
+(function(){
+  if(typeof Chart==='undefined')return;
+  const CIVORY='#9fb0d6',grid={color:'rgba(160,185,255,.08)'};
+  Chart.defaults.color=CIVORY;Chart.defaults.font.family="'Figtree',-apple-system,sans-serif";
+  const anim=RM?false:undefined;
+  function grad(ctx,c1,c2){const g=ctx.createLinearGradient(0,0,0,300);g.addColorStop(0,c1);g.addColorStop(1,c2);return g;}
+
+  const wv=D.weekly_views;
+  let li=-1;wv.forEach((w,i)=>{if(w.actual)li=i;});
+  const actual=wv.map(w=>w.actual?w.views:null);
+  const baseV=li>=0?(actual[li]||actual[li-1]||actual[li-2]||0):0;
+  const proj=wv.map((w,i)=>i<li?null:Math.round(baseV*(1+0.07*(i-li))));
+  const labels=wv.map(w=>'W'+w.week);
+  const vc=document.getElementById('viewsChart').getContext('2d');
+  new Chart(vc,{type:'line',data:{labels:labels,datasets:[
+    {label:'Actual views',data:actual,borderColor:'#4d84ff',backgroundColor:grad(vc,'rgba(77,132,255,.4)','rgba(77,132,255,0)'),fill:true,tension:.4,borderWidth:3,pointRadius:3,pointBackgroundColor:'#79a5ff',spanGaps:false},
+    {label:'Projected',data:proj,borderColor:'rgba(162,115,255,.6)',borderDash:[6,6],fill:false,tension:.4,borderWidth:2,pointRadius:0}
+  ]},options:{animation:anim,responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{usePointStyle:true,boxWidth:8}}},scales:{x:{grid:grid},y:{grid:grid,ticks:{callback:v=>v>=1000?(v/1000)+'k':v}}}}});
+
+  const topMoods=D.moods.slice(0,7);
+  const mc=document.getElementById('moodChart').getContext('2d');
+  new Chart(mc,{type:'bar',data:{labels:topMoods.map(m=>m.mood),datasets:[{data:topMoods.map(m=>m.avg),borderRadius:8,backgroundColor:grad(mc,'#2fe6d6','#a273ff')}]},
+    options:{animation:anim,responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{grid:grid}}}});
+
+  const hrs=D.best_hours;const hmax=Math.max.apply(null,hrs.map(h=>h.avg).concat([1]));
+  const hc=document.getElementById('hourChart').getContext('2d');
+  new Chart(hc,{type:'bar',data:{labels:hrs.map(h=>h.label),datasets:[{data:hrs.map(h=>h.avg),borderRadius:8,
+    backgroundColor:hrs.map(h=>h.avg>=hmax*0.98?'#37e28b':(h.avg>=hmax*0.85?'#2fe6d6':'#4d84ff'))}]},
+    options:{animation:anim,responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{grid:grid}}}});
+
+  const tops=D.top_clips.slice(0,6);
+  const tcc=document.getElementById('topClipsChart').getContext('2d');
+  new Chart(tcc,{type:'bar',data:{labels:tops.map(c=>c.mood+' · '+c.id.replace('clip_','').replace(/^0+/,'')),datasets:[{data:tops.map(c=>c.views),borderRadius:8,backgroundColor:grad(tcc,'#4d84ff','#a273ff')}]},
+    options:{animation:anim,indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:grid},y:{grid:{display:false}}}}});
+})();
+
+/* ---------- moods slider (FIX b: self-contained, no scroll hijack) ---------- */
+(function(){
+  const track=document.getElementById('moodTrack');if(!track)return;
+  track.innerHTML=D.moods.map((m,i)=>{
+    const spark=Array.from({length:12},()=>'<i style="height:'+Math.round(20+Math.random()*80)+'%"></i>').join('');
+    return '<div class="mood-card'+(i===0?' lead':'')+'">'
+      +'<div><div class="rank">#'+(i+1)+' · ranked by avg views</div><div class="word">'+esc(m.mood)+'</div></div>'
+      +'<div><div class="bignum">'+fmt(m.avg)+'</div><div class="lbl">avg views · '+m.n+' clips · '+fmt(m.total)+' total</div>'
+      +'<div class="spark">'+spark+'</div></div></div>';
+  }).join('');
+  const prev=document.getElementById('moodPrev'),next=document.getElementById('moodNext');
+  function step(){const card=track.querySelector('.mood-card');return card?card.getBoundingClientRect().width+22:280;}
+  function updateBtns(){const max=track.scrollWidth-track.clientWidth-2;prev.disabled=track.scrollLeft<=2;next.disabled=track.scrollLeft>=max;}
+  prev.addEventListener('click',()=>track.scrollBy({left:-step()*1.2,behavior:'smooth'}));
+  next.addEventListener('click',()=>track.scrollBy({left:step()*1.2,behavior:'smooth'}));
+  track.addEventListener('scroll',updateBtns,{passive:true});updateBtns();addEventListener('resize',updateBtns);
+  /* pointer drag-to-scroll (mouse) — never touches vertical page scroll */
+  let down=false,sx=0,sl=0,moved=0;
+  track.addEventListener('pointerdown',e=>{if(e.pointerType==='touch')return;down=true;moved=0;sx=e.clientX;sl=track.scrollLeft;track.classList.add('dragging');track.setPointerCapture(e.pointerId);});
+  track.addEventListener('pointermove',e=>{if(!down)return;const dx=e.clientX-sx;moved=Math.max(moved,Math.abs(dx));track.scrollLeft=sl-dx;});
+  function end(){if(!down)return;down=false;track.classList.remove('dragging');updateBtns();}
+  track.addEventListener('pointerup',end);track.addEventListener('pointercancel',end);track.addEventListener('pointerleave',end);
+  track.addEventListener('click',e=>{if(moved>6){e.preventDefault();e.stopPropagation();}},true);
+})();
+
+/* ---------- hero piano ---------- */
+(function(){
+  let actx;
+  function tone(freq){try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    const o=actx.createOscillator(),g=actx.createGain();o.type='triangle';o.frequency.value=freq;o.connect(g);g.connect(actx.destination);
+    const n=actx.currentTime;g.gain.setValueAtTime(.0001,n);g.gain.exponentialRampToValueAtTime(.10,n+.012);g.gain.exponentialRampToValueAtTime(.0001,n+1.5);
+    o.start(n);o.stop(n+1.6);}catch(e){}}
+  const kb=document.getElementById('keyboard'),nn=document.getElementById('notename');
+  const whites=[['C',261.63],['D',293.66],['E',329.63],['F',349.23],['G',392.00],['A',440.00],['B',493.88],['C',523.25],['D',587.33],['E',659.25],['F',698.46],['G',783.99],['A',880.00],['B',987.77],['C',1046.50]];
+  const blackAfter={0:['C#',277.18],1:['D#',311.13],3:['F#',369.99],4:['G#',415.30],5:['A#',466.16],7:['C#',554.37],8:['D#',622.25],10:['F#',739.99],11:['G#',830.61],12:['A#',932.33]};
+  const NW=whites.length;
+  function pressK(el,label,freq){tone(freq);nn.textContent=label+' · '+freq.toFixed(0)+'Hz';el.classList.add('on');setTimeout(()=>el.classList.remove('on'),150);}
+  whites.forEach((w,i)=>{const k=document.createElement('div');k.className='wkey';k.dataset.i=i;
+    k.addEventListener('mouseenter',()=>pressK(k,w[0],w[1]));k.addEventListener('click',()=>pressK(k,w[0],w[1]));kb.appendChild(k);});
+  const bkeys=[];
+  Object.entries(blackAfter).forEach(([idx,val])=>{const b=document.createElement('div');b.className='bkey';b.dataset.idx=idx;
+    b.addEventListener('mouseenter',()=>pressK(b,val[0],val[1]));b.addEventListener('click',()=>pressK(b,val[0],val[1]));kb.appendChild(b);bkeys.push({el:b,idx:+idx});});
+  function layoutKeys(){const W=kb.clientWidth/NW;
+    kb.querySelectorAll('.wkey').forEach((k,i)=>{k.style.left=(i*W)+'px';k.style.width=W+'px';});
+    const bw=W*0.62;bkeys.forEach(b=>{b.el.style.width=bw+'px';b.el.style.left=((b.idx+1)*W-bw/2)+'px';});}
+  layoutKeys();new ResizeObserver(layoutKeys).observe(kb);addEventListener('resize',layoutKeys);
+})();
+
+/* ---------- statement scroll reveal ---------- */
+(function(){
+  const el=document.getElementById('stmt');if(!el)return;
+  el.innerHTML=el.dataset.text.split(' ').map(w=>w.startsWith('|')?'<span class="w"><em>'+w.replace(/\|/g,'')+'</em></span>':'<span class="w">'+w+'</span>').join(' ');
+  const spans=[...el.querySelectorAll('.w')];
+  if(RM){spans.forEach(s=>s.style.opacity=1);return;}
+  function upd(){const r=el.getBoundingClientRect(),vh=innerHeight;const p=Math.max(0,Math.min(1,(vh-r.top)/(vh+r.height*.6)));const active=p*spans.length*1.5;spans.forEach((s,i)=>s.style.opacity=i<active?1:.14);}
+  addEventListener('scroll',upd,{passive:true});addEventListener('resize',upd);upd();
+})();
+
+/* ---------- preloader ---------- */
+(function(){
+  const wrap=document.getElementById('preload'),keys=document.getElementById('plKeys');
+  function finish(){if(wrap)wrap.classList.add('done');document.body.classList.remove('loading');wireCounters();}
+  if(RM||!wrap||!keys){finish();return;}
+  const pat=['w','b','w','b','w','w','b','w','b','w','b','w','w','b','w','b','w','w','b','w','b','w'];
+  const els=[];pat.forEach(t=>{const k=document.createElement('div');k.className='pk'+(t==='b'?' blk':'');keys.appendChild(k);els.push(k);});
+  const ws=els.filter(e=>!e.classList.contains('blk'));
+  const fill=document.getElementById('plFill'),pct=document.getElementById('plPct');
+  let i=0;const total=ws.length;
+  (function stp(){
+    if(i<total){const k=ws[i];k.classList.add('lit');const idx=els.indexOf(k);if(els[idx+1]&&els[idx+1].classList.contains('blk'))els[idx+1].classList.add('lit');i++;
+      const p=Math.round(i/total*100);if(fill)fill.style.width=p+'%';if(pct)pct.textContent=p+'%';setTimeout(stp,120);}
+    else{if(fill)fill.style.width='100%';if(pct)pct.textContent='100%';setTimeout(finish,360);}
+  })();
+  setTimeout(finish,6000);
+})();
+
+/* ---------- FIX (a): flowing waveform — slow ocean drift, fades behind content ---------- */
+(function(){
+  const cv=document.getElementById('wave');if(!cv||RM)return;const ctx=cv.getContext('2d');
+  let W,H,DPR;
+  function resize(){DPR=Math.min(window.devicePixelRatio||1,2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);}
+  resize();addEventListener('resize',resize);
+  const LINES=22;
+  let t=0,energy=0,lastY=window.scrollY;
+  function frame(){
+    t+=0.004+energy*0.010;      /* FIX (a): slow, calm ocean drift (was 0.022) */
+    energy*=0.92;
+    ctx.clearRect(0,0,W,H);
+    ctx.globalCompositeOperation='lighter';
+    const cx=W*0.5,band=Math.min(W*0.15,165);
+    for(let i=0;i<LINES;i++){
+      const p=i/(LINES-1);ctx.beginPath();
+      const amp=band*(0.30+0.70*p);
+      const phase=t*(1+p*0.6)+p*6.283;
+      for(let y=0;y<=H;y+=6){
+        const n=y/H,env=Math.pow(Math.sin(n*Math.PI),0.72);
+        const x=cx+env*amp*Math.sin(n*6.0*Math.PI+phase)+env*amp*0.5*Math.sin(n*3.0*Math.PI-phase*0.7);
+        y===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+      }
+      const g=ctx.createLinearGradient(0,0,0,H);
+      g.addColorStop(0,'rgba(47,230,214,0.15)');g.addColorStop(0.5,'rgba(77,132,255,0.17)');g.addColorStop(1,'rgba(162,115,255,0.15)');
+      ctx.strokeStyle=g;ctx.lineWidth=1.1;ctx.stroke();
+    }
+    ctx.globalCompositeOperation='source-over';
+    requestAnimationFrame(frame);
+  }
+  frame();
+  /* fade the wave to a faint glow once past the hero so it never competes with data */
+  function fade(){const vh=innerHeight;const o=Math.max(0.12,1-(window.scrollY/(vh*0.9))*0.9);cv.style.opacity=o.toFixed(3);}
+  fade();
+  addEventListener('scroll',()=>{const dy=Math.abs(window.scrollY-lastY);lastY=window.scrollY;energy=Math.min(1.0,energy+dy*0.003);fade();},{passive:true});
+})();
+</script>
+</body>
+</html>'''
+
+
+LANDING_WEEK_PLAN = [
+    ["Foundation", "Set the daily schedule and the single mood-word title formula."],
+    ["Foundation", "Batch-record clips; build the render + auto-upload pipeline."],
+    ["Foundation", "Establish the baseline stats dashboard and tracking."],
+    ["Rhythm", "Daily posting in full swing — 90+ clips a week."],
+    ["Rhythm", "Double down on winning mood words, cut the weak titles."],
+    ["Rhythm", "Reupload plan — refresh underperformers, open the TikTok loop."],
+    ["Scale", "Push top clips to TikTok daily once the Direct Post audit clears."],
+    ["Scale", "A/B the mood word and post-time framing on new uploads."],
+    ["Scale", "Lean into the best-performing clip styles (DREAM, MIDNIGHT, SERENE)."],
+    ["Harvest", "Compile the 12-week analysis: what worked, what did not."],
+    ["Harvest", "Lock the playbook from twelve weeks of real data."],
+    ["Harvest", "Hand the learnings to what comes next — the felt-piano channel."],
+]
+
+
 def render_dashboard() -> str:
-    """Home splash — choose a view."""
-    latest_rows = latest_video_stats()
-    total_views = sum(parse_stat_int(r.get("view_count", "")) for r in latest_rows)
-    tracked = len(latest_rows)
-    week = experiment_week()
-
-    tiles = [
-        ("t1", "/overview", "Overview", "Mission control",
-         '<rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/>', False),
-        ("t2", "/stats", "YouTube Stats", "Growth &amp; queue log", None, True),
-        ("t3", "/tiktok-candidates", "TikTok Candidates", "Top clips to repost",
-         '<path d="M9 18V5l3-1v10"/><circle cx="6" cy="18" r="3"/><path d="M14 7c1.5 2 4 2.5 6 2.5"/>', False),
-        ("t3b", "/tiktok-stats", "TikTok Stats", "Views &amp; engagement",
-         '<path d="M4 19V10m5 9V5m5 14v-6m5 6V8"/>', False),
-        ("t4", "/tracker", "Video Tracker", "Every clip logged",
-         '<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="20" x2="9" y2="9"/>', False),
-        ("t5", "/experiment", "12-Week Experiment", "Data-science project",
-         '<circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>', False),
-    ]
-    tile_html = []
-    for cls, href, label, small, svg, is_eq in tiles:
-        if is_eq:
-            icon = '<svg class="eq" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="9" width="3.4" height="12" rx="1"/><rect x="8.6" y="5" width="3.4" height="16" rx="1"/><rect x="14.2" y="11" width="3.4" height="10" rx="1"/><rect x="18" y="7" width="3.4" height="14" rx="1"/></svg>'
-        else:
-            icon = f'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">{svg}</svg>'
-        tile_html.append(
-            f'<a class="tile {cls}" href="{href}"><span class="go">→</span>'
-            f'<div class="ic">{icon}</div><b>{label}</b><small>{small}</small></a>'
-        )
-
-    body = (
-        '<div class="home">'
-        f'<div class="mark">{BRAND_SVG}</div>'
-        '<h1 class="big">Piano Shorts</h1>'
-        '<div class="kicker">Choose a view</div>'
-        f'<div class="stat-line"><b>{total_views:,}</b> views · <b>{tracked:,}</b> clips tracked · week <b>{week}</b> of {config.PROJECT_TOTAL_WEEKS}</div>'
-        f'<div class="glass" id="glass"><div class="grid5">{"".join(tile_html)}</div></div>'
-        + SOCIAL_HTML + '</div>'
-    )
+    """The scrollable showpiece landing page (new design), wired to live data."""
+    data = landing_page_data()
+    data["weeks"] = LANDING_WEEK_PLAN
+    data_json = json.dumps(data)
     return (
-        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        '<title>Piano Shorts</title>' + FONT_HEAD + STYLE_V6 + STYLE_LIVE
-        + '</head><body>' + BG_MARKUP + body + BG_SCRIPT + '</body></html>'
+        _LANDING_TEMPLATE
+        .replace("__FONTHEAD__", FONT_HEAD)
+        .replace("/*__DATA__*/{}", "/*__DATA__*/" + data_json)
     )
 
 
